@@ -299,14 +299,14 @@ function hideTreesNear(x, z, r) {
   const mk = (geo, color, n, flat) => { const m = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({ color, vertexColors: !!geo.attributes.color, flatShading: !!flat }), Math.max(1, n)); m.count = n; return m; };
   // 잎 덩이를 매끈한 공(플라스틱처럼 보임)이 아니게: 꼭짓점을 반지름 방향으로 ±amp 흔들고(같은 자리 꼭짓점은 같은 값이라 틈 없음), 면마다 밝기를 조금씩 다르게
   const hash = (x, y, z) => { const v = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453; return v - Math.floor(v); };
-  const lumpy = (geo, amp) => {
+  const lumpy = (geo, amp, seed = 0) => {
     const p = geo.attributes.position;
-    for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i), z = p.getZ(i), k = 1 + amp * (hash(+x.toFixed(3), +y.toFixed(3), +z.toFixed(3)) * 2 - 1); p.setXYZ(i, x * k, y * k, z * k); }
+    for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i), z = p.getZ(i), k = 1 + amp * (hash(+x.toFixed(3) + seed * 7.3, +y.toFixed(3), +z.toFixed(3) - seed * 3.1) * 2 - 1); p.setXYZ(i, x * k, y * k, z * k); }
     geo.computeVertexNormals(); return geo;
   };
-  const mottle = (geo, amt) => {   // shade() 뒤에: 세 꼭짓점(한 면)마다 같은 무작위 배율
+  const mottle = (geo, amt, seed = 0) => {   // shade() 뒤에: 세 꼭짓점(한 면)마다 같은 무작위 배율
     const c = geo.attributes.color;
-    for (let f = 0; f + 2 < c.count; f += 3) { const k = 1 + amt * (hash(f * 0.37, 1.3, 2.1) * 2 - 1); for (let j = 0; j < 3; j++) c.setXYZ(f + j, c.getX(f + j) * k, c.getY(f + j) * k, c.getZ(f + j) * k); }
+    for (let f = 0; f + 2 < c.count; f += 3) { const k = 1 + amt * (hash(f * 0.37, 1.3 + seed, 2.1) * 2 - 1); for (let j = 0; j < 3; j++) c.setXYZ(f + j, c.getX(f + j) * k, c.getY(f + j) * k, c.getZ(f + j) * k); }
     return geo;
   };
   // 높이에 따라 밝기를 바꾸는 꼭짓점 색: 아래 lo배 → 위 hi배(인스턴스 색과 곱해진다)
@@ -330,23 +330,39 @@ function hideTreesNear(x, z, r) {
   }
   if (broad.length) {
     // 잎 세 덩이: 가운데 큰 덩이 + 양옆으로 비켜 난 덩이 둘(풍성하게, 공 하나로 보이지 않게)
-    // 색은 4단계 초록 중 하나를 고르고, 옆 덩이는 조금 밝거나 어둡게
-    const leaf = mk(mottle(shade(lumpy(new THREE.IcosahedronGeometry(1, 1), 0.14), 0.62, 1.08), 0.09), '#ffffff', broad.length * 3, true);
-    broad.forEach(([x, z, h, rr], i) => {
-      const r = h * rr, k = Math.floor(rand() * LEAF.length), base = LEAF[k].clone().lerp(LEAF[Math.min(LEAF.length - 1, k + 1)], rand() * 0.5);
+    // 잎 덩이 모양은 세 가지(흔드는 씨앗이 다름)를 나무마다 돌려 쓴다 → 같은 공을 돌려 쓴 티가 덜 난다
+    // 색은 11월 말(자료를 모은 때): 가로수는 은행 노랑·마른 갈색·아직 초록이 섞이고, 공원·숲은 상록 위주에 일부만 물든다(장식).
+    //   주황·빨강은 '가게 없는 층'·'문 닫은 가게' 색이라 단풍에도 쓰지 않는다
+    const NV = 3, cnt = [0, 0, 0];
+    broad.forEach((t, i) => cnt[i % NV]++);
+    const leafs = [0, 1, 2].map(v => mk(mottle(shade(lumpy(new THREE.IcosahedronGeometry(1, 1), 0.15, v + 1), 0.62, 1.08), 0.09, v), '#ffffff', cnt[v] * 3, true));
+    const at = [0, 0, 0];
+    const GINKGO = ['#c4b452', '#cfbd5f', '#b9a84c'].map(h => new THREE.Color(h)), DRY = ['#a5884f', '#b39660', '#97804e'].map(h => new THREE.Color(h));
+    const OLIVE = ['#8e9a4c', '#9c9a52'].map(h => new THREE.Color(h));
+    const pick = (A) => A[Math.floor(rand() * A.length)].clone();
+    broad.forEach(([x, z, h, rr, kind], i) => {
+      const v = i % NV, leaf = leafs[v], b = at[v]++ * 3;
+      const r = h * rr, k = Math.floor(rand() * LEAF.length), green = LEAF[k].clone().lerp(LEAF[Math.min(LEAF.length - 1, k + 1)], rand() * 0.5);
+      const u = rand(), street = kind === 'street';
+      // 가로수: 은행 노랑 32% · 마른 갈색 23% · 초록 45% / 공원·숲: 초록 72% · 올리브 18% · 노랑 10%
+      // 노랑은 초록빛 쪽으로 낮췄다: 햇빛(따뜻한 색)과 곱해지면 주황으로 보이고, '고른 거리' 노란 선과 섞였다
+      const base = street ? (u < 0.32 ? pick(GINKGO) : u < 0.55 ? pick(DRY) : green) : (u < 0.72 ? green : u < 0.9 ? pick(OLIVE) : pick(GINKGO));
+      const turning = !base.equals(green);
       const sy = 0.82 + rand() * 0.22;
       q.setFromAxisAngle(up, rand() * Math.PI * 2);
-      pos.set(x, h - r * sy, z); scl.set(r, r * sy, r); mtx.compose(pos, q, scl); leaf.setMatrixAt(i * 3, mtx); leaf.setColorAt(i * 3, base);
+      pos.set(x, h - r * sy, z); scl.set(r, r * sy, r); mtx.compose(pos, q, scl); leaf.setMatrixAt(b, mtx); leaf.setColorAt(b, base);
       const a0 = rand() * Math.PI * 2;
       for (let s2 = 1; s2 <= 2; s2++) {
         const a = a0 + s2 * (2.2 + rand() * 0.6), r2 = r * (0.6 + rand() * 0.14), up2 = s2 === 1 ? 0.18 : -0.12;
         pos.set(x + Math.cos(a) * r * 0.58, h - r * sy + r * up2, z + Math.sin(a) * r * 0.58); scl.set(r2, r2 * 0.9, r2);
-        mtx.compose(pos, q, scl); leaf.setMatrixAt(i * 3 + s2, mtx);
-        leaf.setColorAt(i * 3 + s2, col.copy(base).multiplyScalar(s2 === 1 ? 1.06 : 0.92));
+        mtx.compose(pos, q, scl); leaf.setMatrixAt(b + s2, mtx);
+        // 물드는 나무는 아래 덩이 하나를 덜 물든 색으로(한 그루 안에서도 바뀌는 중인 느낌)
+        col.copy(base).multiplyScalar(s2 === 1 ? 1.06 : 0.92); if (turning && s2 === 2) col.lerp(green, 0.35);
+        leaf.setColorAt(b + s2, col);
       }
-      treeRefs[broadIdx[i]].parts.push([leaf, i * 3], [leaf, i * 3 + 1], [leaf, i * 3 + 2]);
+      treeRefs[broadIdx[i]].parts.push([leaf, b], [leaf, b + 1], [leaf, b + 2]);
     });
-    meshes.push(leaf);
+    meshes.push(...leafs);
   }
   if (cone.length) {
     // 침엽: 원뿔 두 단(아래가 넓고 위가 좁게)
