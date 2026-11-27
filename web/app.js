@@ -178,9 +178,10 @@ function ribbonMesh(list, y, color, order) {
 // ── 땅·바다·녹지·도로 ─────────────────────────────────────
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(R * 8, R * 8), new THREE.MeshLambertMaterial({ color: C.ground, depthWrite: false }));
 ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; ground.renderOrder = 0; scene.add(ground);
-flatMesh(D.greens.filter(g => g.k === 'wood' || g.k === 'forest' || g.k === 'scrub').map(g => g.p), 0, C.wood, 1);
-flatMesh(D.greens.filter(g => !['wood', 'forest', 'scrub', 'pitch'].includes(g.k)).map(g => g.p), 0, C.green, 2);
-flatMesh(D.greens.filter(g => g.k === 'pitch').map(g => g.p), 0, C.pitch, 3);
+// 녹지 바닥 3가지(숲·공원·운동장). 바닥층(ground.js)이 색을 맞추도록 __map.greens 로 내보냄
+const greenMeshes = { wood: flatMesh(D.greens.filter(g => g.k === 'wood' || g.k === 'forest' || g.k === 'scrub').map(g => g.p), 0, C.wood, 1),
+  green: flatMesh(D.greens.filter(g => !['wood', 'forest', 'scrub', 'pitch'].includes(g.k)).map(g => g.p), 0, C.green, 2),
+  pitch: flatMesh(D.greens.filter(g => g.k === 'pitch').map(g => g.p), 0, C.pitch, 3) };
 const waterMesh = flatMesh(D.water.map(w => w.p), 0, C.water, 4);
 waterMesh.receiveShadow = false;
 const MAJOR = new Set(['trunk', 'primary', 'secondary', 'tertiary', 'trunk_link', 'primary_link', 'secondary_link', 'tertiary_link']);
@@ -614,7 +615,7 @@ requestAnimationFrame(() => requestAnimationFrame(() => {
 
 // 점검용(자동 시험이 읽음)
 window.__map = { select, buildings: B, signedArea, camera, controls, HOME, labels, need, orbit, scene, renderer, R, esc, tint, setRoofs,
-  roads: roadMeshes, ground, xz, meta: D.meta,
+  roads: roadMeshes, ground, greens: greenMeshes, water: waterMesh, xz, meta: D.meta,
   get selected() { return selIdx; }, infoExtra: null };
 document.dispatchEvent(new Event('map-ready'));
 })();
