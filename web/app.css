@@ -260,7 +260,15 @@ table.floors .use { font-size: 14px; color: var(--g700); margin-bottom: 4px; }
 #sim.folded #sim-fold svg { transform: rotate(180deg); }
 #sim.folded .sim-body { display: none; }
 body:has(#info:not([hidden])) #sim { left: calc(var(--side) + (100% - var(--side) - 392px) / 2); width: min(560px, calc(100% - var(--side) - 392px - 48px)); }
-body:has(#info:not([hidden])) .sim-tour { display: none; }
+#sim .sim-tour { display: none; }   /* 같은 동작(빈 1층 둘러보기)을 기록지 바닥 주 버튼이 맡는다 */
+/* 상권 전체: 기록지 바닥에 주 버튼 하나 고정, 위쪽은 흐리게 이어 '더 내려 볼 수 있음' */
+body:not(.street-mode) #tour-btn { position: fixed; left: 20px; width: calc(var(--side) - 40px); bottom: max(16px, env(safe-area-inset-bottom)); z-index: 8; margin: 0;
+  justify-content: center; gap: 8px; min-height: 54px; background: var(--primary); color: #fff; font-size: 17px; }
+body:not(.street-mode) #tour-btn:hover { background: var(--primary-dark); }
+body:not(.street-mode) #tour-btn span { color: rgba(255, 255, 255, .85); }
+body:not(.street-mode) #rail { padding-bottom: 100px; }
+body:not(.street-mode) #rail::after { content: ''; position: fixed; left: 0; bottom: 0; width: var(--side); height: 96px; pointer-events: none; z-index: 7;
+  background: linear-gradient(rgba(255,255,255,0), #fff 34%); }
 #sim-range { width: 100%; margin: 14px 0 0; accent-color: var(--primary); height: 24px; }
 .sim-ticks { display: flex; justify-content: space-between; font-size: 12px; color: var(--g600); margin-top: -2px; }
 .sim-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--g700); margin: 12px 0 10px; }
@@ -323,6 +331,7 @@ body:has(#info:not([hidden])) #credit { display: none; }
   #rail { padding: 24px 18px 0; }
   .r-sec, .floor-sum { margin-left: -18px; margin-right: -18px; padding-left: 18px; padding-right: 18px; }
   .st-rank { margin-left: -18px; margin-right: -18px; padding-left: 18px; padding-right: 18px; }
+  body:not(.street-mode) #tour-btn { left: 18px; width: calc(var(--side) - 36px); }
   #sim { width: calc(100% - var(--side) - 110px); }
   #hint { display: none; }
 }
@@ -357,10 +366,9 @@ body:has(#info:not([hidden])) #credit { display: none; }
   body:has(#info:not([hidden])) #sim { display: none; }
   .lbl.place { font-size: 12px; }
   /* 폰: 주 버튼은 화면 맨 아래에 고정(화면마다 하나). 기록지 아래에는 그만큼 여백 */
-  body:not(.street-mode) #tour-btn { position: fixed; left: 12px; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); width: auto; z-index: 7; margin: 0;
-    justify-content: center; gap: 8px; min-height: 54px; background: var(--primary); color: #fff; font-size: 16.5px; box-shadow: 0 4px 16px rgba(47, 111, 237, .32); }
-  body:not(.street-mode) #tour-btn span { color: rgba(255, 255, 255, .85); }
+  body:not(.street-mode) #tour-btn { left: 12px; right: 12px; width: auto; bottom: max(12px, env(safe-area-inset-bottom)); font-size: 16.5px; }
   body:not(.street-mode) #rail { padding-bottom: 84px; }
+  body:not(.street-mode) #rail::after { width: 100%; height: 84px; }
   .st-rank { position: fixed; left: 0; right: 0; bottom: 0; z-index: 7; margin: 0; padding: 10px 14px max(12px, env(safe-area-inset-bottom));
     box-shadow: 0 -4px 16px rgba(0, 20, 60, .08); border-radius: 16px 16px 0 0; }
   .st-rank::after { display: none; }
@@ -368,5 +376,5 @@ body:has(#info:not([hidden])) #credit { display: none; }
   .st-rank select { min-height: 44px; font-size: 15px; }
   .st-rank #rk-run { min-height: 50px; margin-top: 8px; font-size: 16px; }
   body.street-mode #rail { padding-bottom: 156px; }
-  body:has(#info:not([hidden])) #tour-btn, body:has(#info:not([hidden])) .st-rank { display: none; }
+  body:has(#info:not([hidden])) #tour-btn, body:has(#info:not([hidden])) .st-rank, body:has(#info:not([hidden])) #rail::after { display: none; }
 }
