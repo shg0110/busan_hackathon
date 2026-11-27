@@ -79,6 +79,7 @@ body.street-mode #card { display: none; }
 .fs-sub { display: block; font-size: 14px; font-weight: 500; color: var(--g700); }
 .fs-note { margin: 8px 0 0; font-size: 13px; color: var(--g600); line-height: 1.6; }
 .floor-sum .src { margin-top: 4px; }
+.fs-key { margin: 12px 0 0; padding: 12px 14px; background: var(--g50); border-radius: 12px; font-size: 13.5px; line-height: 1.6; color: var(--g700); }
 
 /* ── 버튼 ───────────────────────────────── */
 /* 주 버튼: 화면마다 하나. 상권 전체 = '빈 층에 가게 열어 보기', 거리 = 고른 업종으로 빈 층에 열어 보기, 건물 실험 = 실행 */
