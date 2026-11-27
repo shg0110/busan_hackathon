@@ -178,9 +178,10 @@ function ribbonMesh(list, y, color, order) {
 // ── 땅·바다·녹지·도로 ─────────────────────────────────────
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(R * 8, R * 8), new THREE.MeshLambertMaterial({ color: C.ground, depthWrite: false }));
 ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; ground.renderOrder = 0; scene.add(ground);
-flatMesh(D.greens.filter(g => g.k === 'wood' || g.k === 'forest' || g.k === 'scrub').map(g => g.p), 0, C.wood, 1);
-flatMesh(D.greens.filter(g => !['wood', 'forest', 'scrub', 'pitch'].includes(g.k)).map(g => g.p), 0, C.green, 2);
-flatMesh(D.greens.filter(g => g.k === 'pitch').map(g => g.p), 0, C.pitch, 3);
+// 녹지 바닥 3가지(숲·공원·운동장). 바닥층(ground.js)이 색을 맞추도록 __map.greens 로 내보냄
+const greenMeshes = { wood: flatMesh(D.greens.filter(g => g.k === 'wood' || g.k === 'forest' || g.k === 'scrub').map(g => g.p), 0, C.wood, 1),
+  green: flatMesh(D.greens.filter(g => !['wood', 'forest', 'scrub', 'pitch'].includes(g.k)).map(g => g.p), 0, C.green, 2),
+  pitch: flatMesh(D.greens.filter(g => g.k === 'pitch').map(g => g.p), 0, C.pitch, 3) };
 const waterMesh = flatMesh(D.water.map(w => w.p), 0, C.water, 4);
 waterMesh.receiveShadow = false;
 const MAJOR = new Set(['trunk', 'primary', 'secondary', 'tertiary', 'trunk_link', 'primary_link', 'secondary_link', 'tertiary_link']);
@@ -209,8 +210,10 @@ function floorTexture() {
   const S = 64, cv = document.createElement('canvas'); cv.width = cv.height = S;
   const g = cv.getContext('2d');
   g.fillStyle = '#ffffff'; g.fillRect(0, 0, S, S);
-  g.fillStyle = '#e4e8ee'; g.fillRect(6, S * 0.22, S * 0.68, S * 0.46);   // 창(윗부분이 v 큰 쪽 → 캔버스 위쪽)
-  g.fillStyle = '#d6dce3'; g.fillRect(6, S * 0.22, S * 0.68, 2);
+  // 창: 유리처럼 위는 조금 진하고 아래로 밝게(하늘 반사), 위 틀은 진하게
+  const gr = g.createLinearGradient(0, S * 0.22, 0, S * 0.68); gr.addColorStop(0, '#c6d1dd'); gr.addColorStop(1, '#dfe6ee');
+  g.fillStyle = gr; g.fillRect(6, S * 0.22, S * 0.68, S * 0.46);   // 창(윗부분이 v 큰 쪽 → 캔버스 위쪽)
+  g.fillStyle = '#b4bfcb'; g.fillRect(6, S * 0.22, S * 0.68, 2);
   g.fillStyle = '#f2f3f5'; g.fillRect(0, S - 4, S, 4);                     // 층 사이 슬래브(v=0 쪽)
   const t = new THREE.CanvasTexture(cv);
   t.wrapS = t.wrapT = THREE.RepeatWrapping; t.encoding = THREE.sRGBEncoding;
@@ -220,13 +223,15 @@ function floorTexture() {
 const tmpC = new THREE.Color();
 const wallCols = C.walls.map(h => new THREE.Color(h));
 const roofCol = new THREE.Color(C.roof), roofApt = new THREE.Color(C.roofApt);
-const roofCols = ['#d0d4da', '#d6d3cd', '#ccd2d8', '#d4d2ce', '#cfd3d7', '#d8d6d2'].map(h => new THREE.Color(h));
+// 지붕은 땅(#eef0f2)보다 한 톤 진하게 — 같으면 위에서 볼 때 건물 윤곽이 땅에 묻힌다
+const roofCols = ['#c9ced5', '#d1cdc6', '#c6ccd3', '#cfcbc5', '#cbd0d6', '#d3d0ca'].map(h => new THREE.Color(h));
 // 용도별 재질(채도 낮게): 다가구·단독 = 붉은 벽돌톤, 상가(근린생활) = 베이지·회색 타일, 아파트 = 흰색, 숙박 = 크림, 공공·사무 = 차가운 회색
 const pal = (a) => a.map(h => new THREE.Color(h));
 const WALL_BY = {
   house: pal(['#cfa792', '#c79c87', '#d6b4a0', '#bf9481', '#d2b9a6', '#c8a38f', '#d9c2ae']),
   apartments: pal(['#f3f1ec', '#eef0f3', '#f1eee8']),
-  retail: pal(['#ece8e1', '#e3e6ea', '#eee6da', '#dde2e8', '#e8e1d5', '#e6e8eb', '#e4dccf']),
+  // 상가 건물: 옅은 타일·석재 + 일부는 진한 화강석·갈색 타일(옥포 상가 거리처럼 건물마다 다르게)
+  retail: pal(['#ece8e1', '#e3e6ea', '#eee6da', '#dde2e8', '#e8e1d5', '#e6e8eb', '#e4dccf', '#d8cfc3', '#cfd4da', '#e2d6c4', '#c9c3bb', '#d6ccbe']),
   hotel: pal(['#efe4dd', '#ebe4ee', '#f1e8dc', '#e9e6f0']),
   office: pal(['#e1e6ec', '#dce3ea', '#e6e9ee']), public: pal(['#e1e6ec', '#dce3ea', '#e6e9ee']),
   school: pal(['#efe6da', '#e8e1d6']), hospital: pal(['#eef0f3', '#e6ecf1']),
@@ -295,6 +300,20 @@ B.forEach((b, bi) => {
   roofRange.push([roofStart, bPos.length / 3]);
   bRange.push([start, bPos.length / 3]);
 });
+// 건물 윤곽선: 지붕 테두리 + 꺾이는 모서리(25° 넘게 꺾이는 곳)의 세로선. 흰 벽끼리 붙어 있어도 건물이 하나하나 읽히게
+const edgePos = [];
+B.forEach((b) => {
+  const p = b.p, n = p.length, y0 = b.b || 0, y1 = y0 + b.h;
+  for (let i = 0; i < n; i++) {
+    const a = p[i], c = p[(i + 1) % n], z = p[(i + n - 1) % n];
+    edgePos.push(a[0], y1 + 0.03, a[1], c[0], y1 + 0.03, c[1]);
+    const ux = a[0] - z[0], uz = a[1] - z[1], vx = c[0] - a[0], vz = c[1] - a[1], lu = Math.hypot(ux, uz), lv = Math.hypot(vx, vz);
+    if (lu > 0.5 && lv > 0.5 && (ux * vx + uz * vz) / (lu * lv) < 0.906) edgePos.push(a[0], y0, a[1], a[0], y1, a[1]);
+  }
+});
+const edgeGeo = new THREE.BufferGeometry(); edgeGeo.setAttribute('position', new THREE.Float32BufferAttribute(edgePos, 3));
+const edgeMat = new THREE.LineBasicMaterial({ color: '#6b7480', transparent: true, opacity: 0.32 });
+const edgeLines = new THREE.LineSegments(edgeGeo, edgeMat); edgeLines.renderOrder = 8; edgeLines.frustumCulled = false; scene.add(edgeLines);
 const bGeo = new THREE.BufferGeometry();
 bGeo.setAttribute('position', new THREE.Float32BufferAttribute(bPos, 3));
 bGeo.setAttribute('normal', new THREE.Float32BufferAttribute(bNrm, 3));
@@ -346,7 +365,7 @@ scene.add(bMesh);
 
 // 거리 집중: keep(건물 번호 Set) 밖 건물은 땅 색 쪽으로 흐리게. null 이면 원래대로
 let keepSet = null, estOn = false, tintK = 0.45, roofOver = null;
-function tint(keep, k = 0.45) { keepSet = keep; tintK = k; paintEstimated(estOn); }
+function tint(keep, k = 0.45) { keepSet = keep; tintK = k; edgeMat.opacity = keep ? 0.16 : 0.32; paintEstimated(estOn); }   // 거리 보기에선 윤곽선도 흐리게
 // 지붕 색 덮어쓰기: Map(건물 번호 → [r,g,b] 와 섞는 비율 k). null 이면 원래 지붕. 거리 밖 흐리게보다 먼저 칠한다
 function setRoofs(map) { roofOver = map; paintEstimated(estOn); }
 // 층수 추정 건물 강조 켜고 끄기
@@ -596,7 +615,7 @@ requestAnimationFrame(() => requestAnimationFrame(() => {
 
 // 점검용(자동 시험이 읽음)
 window.__map = { select, buildings: B, signedArea, camera, controls, HOME, labels, need, orbit, scene, renderer, R, esc, tint, setRoofs,
-  roads: roadMeshes, ground, xz, meta: D.meta,
+  roads: roadMeshes, ground, greens: greenMeshes, water: waterMesh, xz, meta: D.meta,
   get selected() { return selIdx; }, infoExtra: null };
 document.dispatchEvent(new Event('map-ready'));
 })();

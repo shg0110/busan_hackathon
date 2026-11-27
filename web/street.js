@@ -215,7 +215,7 @@ function render(s) {
   document.getElementById('rk-run').onclick = () => rank(s);
   // 주 버튼에 고른 업종을 넣어 누르기 전에 무엇을 하는지 알 수 있게: '빈 층이 있는 7채에 베트남 음식점 열어 보기'
   const sel = document.getElementById('rk-cat'), runLabel = () => { const sb = SIM && SIM.SUB[sel.value];
-    document.getElementById('rk-run').textContent = `빈 층이 있는 ${nEmptyB(s)}채에 ${sb ? sb.shop || sb.ko : '가게'} 열어 보기`; };
+    document.getElementById('rk-run').textContent = `${nEmptyB(s)}채의 빈 층에 열어 보기`; };   // 업종은 바로 위 선택 칸에 보임(버튼은 한 줄로)
   sel.addEventListener('change', runLabel); runLabel();
   if (!w.empty) document.getElementById('rk-run').disabled = true;
   setTimeout(() => flow(s), 60);
@@ -277,7 +277,7 @@ function streetBands(s) {
     const fh = (b.h - 0.6) / b.lv, y00 = b.b || 0;
     for (const f of x.fl) {
       const c = C2[f[1]]; if (!c || f[0] > b.lv) continue;
-      const y0 = y00 + (f[0] - 1) * fh + fh * 0.2, y1 = y00 + (f[0] - 1) * fh + fh * 0.75;
+      const y0 = y00 + (f[0] - 1) * fh + fh * 0.34, y1 = y00 + (f[0] - 1) * fh + fh * 0.62;   // floors.js 와 같은 얇은 띠
       for (let i = 0; i < p.length; i++) {
         const a = p[i], q = p[(i + 1) % p.length], dx = q[0] - a[0], dz = q[1] - a[1], l = Math.hypot(dx, dz); if (l < 0.3) continue;
         const nx = -dz / l, nz = dx / l, o = 0.14, ax = a[0] + nx * o, az = a[1] + nz * o, bx = q[0] + nx * o, bz = q[1] + nz * o;

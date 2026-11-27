@@ -315,7 +315,11 @@ function enter(a, s, t) {
   const h = Math.floor(t / 60) % 24; (STATS.byHour[s.i] || (STATS.byHour[s.i] = new Float32Array(24)))[h] += W;
   (STATS.byGroup[s.i] || (STATS.byGroup[s.i] = {}))[a.g] = ((STATS.byGroup[s.i] || {})[a.g] || 0) + W;
 }
-function runDay(we, seed) { FULL = true; reset(we, seed); for (let t = T0; t <= T1; t++) step(t, false); FULL = false; return STATS; }
+// 재생 화면의 상태(사람·가게 자리·통계)를 잠시 비켜 두고 다른 하루를 계산한 뒤 돌려놓는다.
+// 예전엔 계산 뒤 재생 상태를 05시부터 다시 돌려(seek) 0.3초씩 멈췄다
+function swapState(st) { const cur = { A, SHOP_ST, STATS, W, FULL }; ({ A, SHOP_ST, STATS, W, FULL } = st); return cur; }
+const blank = (full) => ({ A: [], SHOP_ST: null, STATS: null, W: 1, FULL: full });
+function runDay(we, seed) { const live = swapState(blank(true)); reset(we, seed); for (let t = T0; t <= T1; t++) step(t, false); const st = STATS; swapState(live); return st; }
 
 // ── 그리기: 사람 = 화면 크기 고정 점 ─────────────────────────
 const geo = new THREE.BufferGeometry();
@@ -471,7 +475,7 @@ function experiment(bi, floor, sub, price, seats) {
   }
   removeVirtual(s);
   res.nbCount = nb.length; res.nbSub = nb.filter(i => SHOPS[i].sub === sub).length;
-  seek(simT);   // 재생 화면을 원래 상태로
+  // 재생 화면 상태는 runDay 가 비켜 뒀다 돌려놓으므로 다시 계산할 필요 없음
   return res;
 }
 // 정보창: 빈 층이 있으면 '가게 열어 보기' 단추
@@ -593,6 +597,8 @@ function nodesNear(poly, r) {
 }
 // 하루 동안 이 노드들을 지나간 사람(가상): 길을 실제로 따라가며 센다. 시간대·부류별
 function flowDay(we, set, seed = 0) {
+  const live = swapState(blank(false));
+  try {
   reset(we, seed);
   const hour = new Float32Array(24), grp = {}; let tot = 0;
   for (let t = T0; t <= T1; t++) {
@@ -604,18 +610,36 @@ function flowDay(we, set, seed = 0) {
     }
   }
   return { tot, hour: Array.from(hour), grp };
+  } finally { swapState(live); }
 }
 // 유동인구 지도용: 하루 동안 길 노드마다 시간대별로 지나간 가상 인원(출발한 시각의 시간대에 센다)
 const NODEFLOW = {};
-function nodeFlow(we) {
-  const key = we ? 'we' : 'wd'; if (NODEFLOW[key]) return NODEFLOW[key];
-  reset(we, 0);
-  const F = new Float32Array(24 * NN);
-  for (let t = T0; t <= T1; t++) {
+function flowSteps(F, t0, t1) {
+  for (let t = t0; t <= t1; t++) {
     step(t, true);
     for (const a of A) if (a.st === 1 && a.t0 === t && a.path) { const h = Math.floor(t / 60) % 24, base = h * NN; for (const n of a.path) F[base + n] += W; }
   }
-  NODEFLOW[key] = F; return F;
+}
+function nodeFlow(we) {
+  const key = we ? 'we' : 'wd'; if (NODEFLOW[key]) return NODEFLOW[key];
+  const live = swapState(blank(false)); reset(we, 0);
+  const F = new Float32Array(24 * NN); flowSteps(F, T0, T1);
+  swapState(live); NODEFLOW[key] = F; return F;
+}
+// 화면이 멈추지 않게 1시간씩 나눠 계산(조각 사이에 화면이 그려짐). 조각마다 재생 상태를 비켜 두고 돌려놓는다
+const NF_WAIT = {};
+function nodeFlowAsync(we) {
+  const key = we ? 'we' : 'wd';
+  if (NODEFLOW[key]) return Promise.resolve(NODEFLOW[key]);
+  if (NF_WAIT[key]) return NF_WAIT[key];
+  return (NF_WAIT[key] = new Promise((res) => {
+    const F = new Float32Array(24 * NN);
+    let live = swapState(blank(false)); reset(we, 0); let mine = swapState(live), t = T0;
+    (function chunk() {
+      live = swapState(mine); const t1 = Math.min(T1, t + 59); flowSteps(F, t, t1); t = t1 + 1; mine = swapState(live);
+      if (t <= T1) setTimeout(chunk, 0); else { NODEFLOW[key] = F; delete NF_WAIT[key]; res(F); }
+    })();
+  }));
 }
 // 빈 자리에 가게를 열었을 때 손님·매출만(비교 없이, 자리 순위용)
 function trySlot(bi, floor, sub, price, seats, runs = 3) {
@@ -628,6 +652,6 @@ function trySlot(bi, floor, sub, price, seats, runs = 3) {
   removeVirtual(s);
   return r;
 }
-window.__sim = { runDay, experiment, seek, nodesNear, flowDay, trySlot, nodeFlow, restore: () => seek(simT), won, wonX, GROUPS, SUB, SUBS_OF, subOptions, NAT,
+window.__sim = { runDay, experiment, seek, nodesNear, flowDay, trySlot, nodeFlow, nodeFlowAsync, restore: () => { drawDirty = true; need(); }, won, wonX, GROUPS, SUB, SUBS_OF, subOptions, NAT,
   graph: { NX, NZ, ADJ, NN }, get scen() { return scen; }, get A() { return A; }, get W() { return W; }, SHOPS, CFG, nodes: NN, get t() { return simT; } };
 })();

@@ -91,7 +91,9 @@ if (F) for (const k in F.b) {
   const b = B[+k]; if (!b || b.k === 'roof') continue;
   const empties = F.b[k].filter(f => f.state === 'empty' && f.n <= b.lv); if (!empties.length) continue;
   const e = streetEdge(b); if (!e || e.L < 3) continue;
-  for (const f of empties) rents.push({ b, e, f: f.n });
+  // 실제로는 건물에 현수막 한두 장(빈 층마다 다 붙이면 층마다 쌓여 어색함): 가장 낮은 빈 층 1장 + 빈 층이 3개 이상이면 가장 높은 빈 층 1장
+  rents.push({ b, e, f: empties[0].n });
+  if (empties.length >= 3) rents.push({ b, e, f: empties[empties.length - 1].n });
 }
 const rentMesh = new THREE.InstancedMesh(plane, new THREE.MeshBasicMaterial({ map: rentTex, side: THREE.DoubleSide }), rents.length);
 rents.forEach((r, i) => {
