@@ -35,7 +35,7 @@ fs.mkdirSync(OUT, { recursive: true });
 
     // 패널 겹침·화면 밖·글자 잘림
     const layout = await pg.evaluate(() => {
-      const ids = ['card', 'layers', 'nav', 'credit', 'hint'];
+      const ids = ['card', 'layers', 'nav', 'credit', 'hint', 'sim'];
       const vis = ids.map(id => document.getElementById(id)).filter(e => e && getComputedStyle(e).display !== 'none' && !e.hidden);
       const rect = (e) => e.getBoundingClientRect();
       const W = innerWidth, H = innerHeight, out = [], overlap = [], clipped = [];
@@ -77,6 +77,23 @@ fs.mkdirSync(OUT, { recursive: true });
       picked.closed = await pg.evaluate(() => document.getElementById('info').hidden && window.__map.selected === -1);
     }
 
+    // 층별 현황: '가게 등록 없음' 층이 있는 건물 중 화면 가운데에 가까운 것을 골라 정보창
+    const floorsInfo = await pg.evaluate(() => {
+      if (!window.FLOORS) return null;
+      const M = window.__map, v = new THREE.Vector3(); let best = null;
+      for (const k in window.FLOORS.b) {
+        const fl = window.FLOORS.b[k]; if (!fl.some(f => f.state === 'empty') || !fl.some(f => f.state === 'open')) continue;
+        const b = M.buildings[+k]; let x = 0, z = 0; for (const p of b.p) { x += p[0]; z += p[1]; } x /= b.p.length; z /= b.p.length;
+        v.set(x, b.h, z).project(M.camera); const d = Math.hypot(v.x, v.y + 0.1);
+        if (v.z < 1 && (!best || d < best.d)) best = { k: +k, d };
+      }
+      if (!best) return { found: false };
+      M.select(best.k);
+      return { found: true, rows: document.querySelectorAll('#info table.floors tr').length, bands: window.__floors && window.__floors.bands,
+        text: document.getElementById('i-body').innerText.slice(0, 200) };
+    });
+    if (floorsInfo && floorsInfo.found) { await pg.waitForTimeout(200); await shot('floors-info'); await pg.click('#i-close'); }
+
     // 보기 설정·카드 접기·조작 버튼
     const ui = {};
     await pg.click('label:has(#L-est)'); await pg.waitForTimeout(200); await shot('estimated');
@@ -106,7 +123,7 @@ fs.mkdirSync(OUT, { recursive: true });
     await pg.waitForFunction('window.__bench', null, { timeout: 30000 }).catch(() => errs.push('bench 안 됨'));
     const bench = await pg.evaluate(() => window.__bench);
 
-    report[s.name] = { readyMs: ready, errors: errs, layout, picked, ui, bench };
+    report[s.name] = { readyMs: ready, errors: errs, layout, picked, floorsInfo, ui, bench };
     await ctx.close();
   }
   await br.close();

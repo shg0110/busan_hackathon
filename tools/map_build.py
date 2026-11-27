@@ -96,6 +96,8 @@ def est_levels(kind, a, key):
         return 1 + int(r * 2)
     if kind == 'apartments':
         return 12 + int(r * 8)
+    if a < 30:
+        return 1   # 창고·부속 건물 크기
     if a < 80:
         return 2
     if a < 300:
@@ -108,7 +110,7 @@ def est_levels(kind, a, key):
 buildings, bshapes = [], []
 
 
-def add_building(key, ring, tags, src):
+def add_building(key, ring, tags, src, extra=None):
     pts = clean_ring(ring)
     if not pts:
         return
@@ -127,17 +129,64 @@ def add_building(key, ring, tags, src):
         h, base = round(lv * FLOOR_H.get(kind, 3.4) + 0.6, 1), 0.0
     buildings.append(dict(id=key, p=[list(p) for p in pts], h=h, b=base, lv=lv, real=real, k=kind,
                           ko=KIND_KO.get(kind, '건물'), n=ko_name(tags), a=round(a), src=src,
-                          c=hsh(key, 'c') % 6))
+                          c=hsh(key, 'c') % 6, **(extra or {})))
     bshapes.append(Polygon(pts))
 
 
+# 국토부 GIS건물통합정보(브이월드)가 있으면 건물 모양·지번·용도는 그것이 기준이다.
+# 층수가 없으면 많이 겹치는 OSM 건물의 층수를 쓰고, 그것도 없으면 추정. OSM 에만 있는 건물은 그대로 더한다.
+USE_KIND = {'단독주택': 'house', '공동주택': 'apartments', '제1종근린생활시설': 'retail', '제2종근린생활시설': 'retail',
+            '판매시설': 'retail', '숙박시설': 'hotel', '위락시설': 'retail', '업무시설': 'office', '교육연구시설': 'school',
+            '종교시설': 'church', '공장': 'industrial', '창고시설': 'warehouse', '노유자시설': 'public', '의료시설': 'hospital',
+            '문화및집회시설': 'public', '운동시설': 'public', '자동차관련시설': 'garage', '제1종근린생활시설(소매점)': 'retail'}
+osm_polys = []
 for el in EL:
     t = el.get('tags', {})
     if 'building' not in t and 'building:part' not in t:
         continue
     for r in polys_of(el):
+        pts = clean_ring(r)
+        if pts and area(pts) >= 6:
+            osm_polys.append((el, r, t, Polygon(pts)))
+vw_path = os.path.join(ROOT, 'data', 'raw', 'vworld', f'{NAME}.json')
+vw_n = 0
+if os.path.exists(vw_path):
+    VW = json.load(open(vw_path, encoding='utf-8'))
+    osm_tree = STRtree([o[3] for o in osm_polys])
+    for k, v in enumerate(VW['buildings']):
+        pts = clean_ring([tuple(q) for q in v['ring']])
+        if not pts or area(pts) < 6:
+            continue
+        poly = Polygon(pts)
+        if not poly.is_valid:
+            poly = poly.buffer(0)
+        tags = {'building': USE_KIND.get(v['use'], 'yes')}
+        lv_src = ''
+        if v['lv'] > 0:
+            tags['building:levels'] = v['lv']; lv_src = 'vworld'
+        else:   # 겹치는 OSM 건물의 층수(겹친 넓이가 이 건물의 절반 넘을 때만)
+            best = max(((poly.intersection(osm_polys[i][3]).area, i) for i in osm_tree.query(poly)), default=(0, -1))
+            if best[0] > 0.5 * poly.area and 'building:levels' in osm_polys[best[1]][2]:
+                tags['building:levels'] = osm_polys[best[1]][2]['building:levels']; lv_src = 'osm'
+        nm = v['name'] or ''
+        if nm:
+            tags['name'] = nm
+        add_building(f'vw{k}', [tuple(q) for q in v['ring']], tags, 'vworld',
+                     extra=dict(pnu=v['pnu'], use=v['use'], appr=v['appr'], dn=v['dn'], farea=v['farea'], lvsrc=lv_src,
+                                jibun=v['dong'].replace('경상남도 ', '') + ' ' + v['jibun']))
+        if v['use']:
+            buildings[-1]['ko'] = v['use']
+        vw_n += 1
+    vw_tree = STRtree(bshapes)
+    for el, r, t, poly in osm_polys:
+        hit = sum(poly.intersection(bshapes[i]).area for i in vw_tree.query(poly))
+        if hit > 0.3 * poly.area:
+            continue
         add_building(f"osm{el['type'][0]}{el['id']}", r, t, 'osm')
-osm_n = len(buildings)
+else:
+    for el, r, t, poly in osm_polys:
+        add_building(f"osm{el['type'][0]}{el['id']}", r, t, 'osm')
+osm_n = len(buildings) - vw_n
 
 ov_path = os.path.join(ROOT, 'data', 'raw', 'overture', f'{NAME}.json')
 ov_added = 0
@@ -295,19 +344,32 @@ for el in EL:
         continue
     places.append(dict(n=nm, k=kind, x=x, z=z))
 
+# ── R-ONE 상권 경계(있으면): 지도에 선으로 그리고, 건물마다 경계 안(i)인지 표시 ──
+bnd_path = os.path.join(ROOT, 'data', 'processed', f'{NAME}_rone_boundary.geojson')
+boundary = None
+if os.path.exists(bnd_path):
+    g = json.load(open(bnd_path, encoding='utf-8'))
+    geom = (g['features'][0] if 'features' in g else g)['geometry']
+    ring = geom['coordinates'][0] if geom['type'] == 'Polygon' else geom['coordinates'][0][0]
+    boundary = [list(xz(la, lo)) for lo, la in ring]
+    bpoly = Polygon(boundary)
+    for b in buildings:
+        c = Polygon(b['p']).representative_point()
+        b['i'] = bool(bpoly.contains(c))
 hx, hz = xz(S, E)
 out = dict(
     meta=dict(region=NAME, bbox=[S, W, N, E], lat0=LAT0, lon0=LON0, kx=round(KX, 3), kz=KZ,
               half=[abs(hx), abs(hz)], built=time.strftime('%Y-%m-%d %H:%M'), osm_fetched=osm.get('_fetched', ''),
-              counts=dict(buildings=len(buildings), osm=osm_n, overture=ov_added,
+              counts=dict(buildings=len(buildings), vworld=vw_n, osm=osm_n, overture=ov_added,
                           real_levels=sum(b['real'] for b in buildings), roads=len(roads), water=len(water),
                           greens=len(greens), places=len(places))),
     buildings=buildings, roads=roads, water=water, greens=greens, road_labels=road_labels, places=places,
+    boundary=boundary, boundary_src='한국부동산원 R-ONE 상권구획도(그림 추적, 오차 약 ±14m)' if boundary else None,
 )
 os.makedirs(os.path.join(ROOT, 'web', 'data'), exist_ok=True)
 dst = os.path.join(ROOT, 'web', 'data', f'{NAME}_map.js')
 with open(dst, 'w', encoding='utf-8') as f:
-    f.write('/* 자동 생성: tools/map_build.py — 손으로 고치지 말 것. 출처: OpenStreetMap 기여자(ODbL)'
+    f.write('/* 자동 생성: tools/map_build.py — 손으로 고치지 말 것. 출처: 국토교통부 GIS건물통합정보, OpenStreetMap 기여자(ODbL)'
             + (', Overture Maps' if ov_added else '') + ' */\n')
     f.write('window.MAP_DATA = ')
     json.dump(out, f, ensure_ascii=False, separators=(',', ':'))

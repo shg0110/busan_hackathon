@@ -1,0 +1,457 @@
+/* 가상 손님 하루 — 옥포 상권 시뮬레이션.
+   가상 인물이며 실제 사람·실제 구매가 아니다. 결과는 조건끼리 비교하는 용도(예측 아님).
+   자료: window.SIM_DATA(tools/okpo_sim_data.py: 가게·집·입구), window.MAP_DATA(도로), window.PERSONA_CFG(있으면 근거 값).
+   하루 = 05:00 ~ 다음 날 02:00(분 단위). 대구판에서 남은 문제를 고친 것:
+   - 시각이 24시에서 멈추지 않음(주점 손님까지 02시까지 계산)
+   - 05시 전 도착자를 한꺼번에 처리하지 않음(모든 일정은 05시 이후 분 단위로)
+   - 돈이 모자라면 자리를 기다리지 않고 바로 다른 곳·집으로
+   - 금액 표기는 크기에 맞춰 원·만 원·억 원 */
+(() => {
+'use strict';
+const SD = window.SIM_DATA, MP = window.__map, D = window.MAP_DATA;
+if (!SD || !MP) return;
+const { scene, need, esc } = MP;
+
+// ── 설정(근거 있는 값은 PERSONA_CFG 로 덮어씀, 없으면 '가정') ─────────────
+const CFG0 = {
+  // 하루 상권에 나오는 사람 수(가정). 근거: docs/okpo-persona-sources.md 로 바꿀 것
+  groups: {
+    worker:   { ko: '조선소 통근자',   col: '#1c64f2', wd: 3000, we: 1800, src: '가정' },
+    foreign:  { ko: '외국인 근로자',   col: '#7048e8', wd: 1500, we: 2200, src: '가정' },
+    resident: { ko: '주민',           col: '#0b7285', wd: 3500, we: 3800, src: '가정' },
+    tourist:  { ko: '주말 방문객',     col: '#d6336c', wd: 0,    we: 600,  src: '가정' },
+  },
+  shift: { in: [390, 460], out: [1020, 1110], src: '가정(근거 미확인)' },   // 출근 06:30~07:40, 퇴근 17:00~18:30
+  // 업종: 가격(1인 원)·자리·머무는 시간(분)·영업시간(분, 1440 넘으면 다음 날)
+  cats: {
+    meal: { ko: '식사',        col: '#e8613c', price: 9500,  seats: 24, stay: 40,  open: 600, close: 1320 },
+    pub:  { ko: '주점·호프',    col: '#8c4fd1', price: 22000, seats: 32, stay: 100, open: 1020, close: 1560 },
+    cafe: { ko: '카페·빵',      col: '#b9733f', price: 4800,  seats: 18, stay: 30,  open: 480, close: 1320 },
+    intl: { ko: '다국적 식당',  col: '#d9480f', price: 10000, seats: 20, stay: 40,  open: 660, close: 1320 },
+    mart: { ko: '장보기',       col: '#2f8f6b', price: 11000, seats: 14, stay: 12,  open: 420, close: 1440 },
+    life: { ko: '생활 서비스',  col: '#4a5568', price: 18000, seats: 3,  stay: 45,  open: 600, close: 1200 },
+  },
+  upperFloor: 0.7,   // 2층 이상 가게가 눈에 띄는 정도(1층 = 1). 가정
+  walk: 70,          // 걷는 속도 m/분. 가정
+};
+const CFG = window.PERSONA_CFG ? deepMerge(CFG0, window.PERSONA_CFG) : CFG0;
+function deepMerge(a, b) { const o = Array.isArray(a) ? a.slice() : { ...a }; for (const k in b) o[k] = (b[k] && typeof b[k] === 'object' && !Array.isArray(b[k]) && a[k]) ? deepMerge(a[k], b[k]) : b[k]; return o; }
+const CATS = Object.keys(CFG.cats), GROUPS = Object.keys(CFG.groups);
+const T0 = 300, T1 = 1560;   // 05:00 ~ 26:00(다음 날 02:00)
+
+// ── 난수(시드 고정) ─────────────────────────────────────
+function rng(seed) { let a = seed >>> 0; return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a);
+  t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function hash01(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0) / 4294967296; }
+
+// ── 길 그래프(도로 전부, 0.5m 로 이음, 20m 마다 쪼갬) ──────────────
+const NX = [], NZ = [], ADJ = [], KEY = new Map();
+function node(x, z) { const k = Math.round(x * 2) + ',' + Math.round(z * 2); let i = KEY.get(k);
+  if (i === undefined) { i = NX.length; KEY.set(k, i); NX.push(x); NZ.push(z); ADJ.push([]); } return i; }
+function link(a, b) { if (a === b) return; const d = Math.hypot(NX[a] - NX[b], NZ[a] - NZ[b]); ADJ[a].push(b, d); ADJ[b].push(a, d); }
+for (const r of D.roads) {
+  let prev = -1;
+  for (let k = 0; k < r.p.length; k++) {
+    const [x, z] = r.p[k];
+    if (k > 0) { const [px, pz] = r.p[k - 1], L = Math.hypot(x - px, z - pz), n = Math.ceil(L / 20);
+      for (let s = 1; s < n; s++) { const m = node(px + (x - px) * s / n, pz + (z - pz) * s / n); link(prev, m); prev = m; } }
+    const cur = node(x, z); if (prev >= 0) link(prev, cur); prev = cur;
+  }
+}
+const NN = NX.length;
+// 가장 큰 연결 덩어리만 쓴다(떨어진 길 조각에 사람이 갇히지 않게)
+const comp = new Int32Array(NN).fill(-1); let bestC = 0, bestN = 0;
+for (let s = 0, c = 0; s < NN; s++) { if (comp[s] >= 0) continue; let n = 0; const st = [s]; comp[s] = c;
+  while (st.length) { const u = st.pop(); n++; const A = ADJ[u]; for (let j = 0; j < A.length; j += 2) if (comp[A[j]] < 0) { comp[A[j]] = c; st.push(A[j]); } }
+  if (n > bestN) { bestN = n; bestC = c; } c++; }
+const GR = 30, GRID = new Map();
+for (let i = 0; i < NN; i++) { if (comp[i] !== bestC) continue; const k = Math.floor(NX[i] / GR) + ',' + Math.floor(NZ[i] / GR); (GRID.get(k) || GRID.set(k, []).get(k)).push(i); }
+function nearest(x, z) {
+  for (let r = 0; r < 12; r++) { let best = -1, bd = 1e18; const gx = Math.floor(x / GR), gz = Math.floor(z / GR);
+    for (let i = -r; i <= r; i++) for (let j = -r; j <= r; j++) { const L = GRID.get((gx + i) + ',' + (gz + j)); if (!L) continue;
+      for (const n of L) { const d = (NX[n] - x) ** 2 + (NZ[n] - z) ** 2; if (d < bd) { bd = d; best = n; } } }
+    if (best >= 0) return best; }
+  return 0;
+}
+// 목적지 노드를 뿌리로 하는 최단 경로 나무(무방향 → 어디서든 그 목적지까지의 길과 거리). 최근 것 400개만 들고 있음
+const TREES = new Map();
+function tree(t) {
+  let T = TREES.get(t); if (T) { TREES.delete(t); TREES.set(t, T); return T; }
+  const dist = new Float32Array(NN).fill(Infinity), nxt = new Int32Array(NN).fill(-1);
+  const hn = [t], hd = [0]; dist[t] = 0;
+  while (hn.length) {
+    // 이진 힙 꺼내기
+    const u = hn[0], du = hd[0]; const ln = hn.pop(), ld = hd.pop();
+    if (hn.length) { hn[0] = ln; hd[0] = ld; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i;
+      if (l < hn.length && hd[l] < hd[m]) m = l; if (r < hn.length && hd[r] < hd[m]) m = r; if (m === i) break;
+      [hn[i], hn[m]] = [hn[m], hn[i]]; [hd[i], hd[m]] = [hd[m], hd[i]]; i = m; } }
+    if (du > dist[u]) continue;
+    const A = ADJ[u];
+    for (let j = 0; j < A.length; j += 2) { const v = A[j], nd = du + A[j + 1];
+      if (nd < dist[v]) { dist[v] = nd; nxt[v] = u; hn.push(v); hd.push(nd); let i = hn.length - 1;
+        while (i > 0) { const p = (i - 1) >> 1; if (hd[p] <= hd[i]) break; [hn[i], hn[p]] = [hn[p], hn[i]]; [hd[i], hd[p]] = [hd[p], hd[i]]; i = p; } } }
+  }
+  T = { dist, nxt }; TREES.set(t, T); if (TREES.size > 400) TREES.delete(TREES.keys().next().value); return T;
+}
+function pathFrom(a, t) { const T = tree(t), p = [a]; let u = a, guard = 0; while (u !== t && u >= 0 && guard++ < 20000) { u = T.nxt[u]; if (u >= 0) p.push(u); } return p; }
+
+// ── 가게 ─────────────────────────────────────────────────
+// 가게마다 가격·자리·매력은 업종 기준값에서 이름 해시로 ±(같은 이름 = 언제나 같은 값)
+const SHOPS = SD.shops.map((s, i) => {
+  const c = CFG.cats[s.c], h = hash01(s.n + i), h2 = hash01(s.n + 'seat' + i);
+  return { i, n: s.n, c: s.c, cs: s.cs, x: s.x, z: s.z, b: s.b, f: s.f, node: nearest(s.x, s.z),
+    price: Math.round(c.price * (0.8 + 0.4 * h) / 500) * 500, seats: Math.max(2, Math.round(c.seats * (0.6 + 0.8 * h2))),
+    open: c.open, close: c.close, attract: (0.6 + 0.8 * hash01(s.n + 'a')) * (s.f && s.f >= 2 ? CFG.upperFloor : 1), virtual: false };
+});
+const BYCAT = {}; for (const c of CATS) BYCAT[c] = SHOPS.filter(s => s.c === c);
+
+// ── 사람 만들기 ───────────────────────────────────────────
+const HOMES = SD.homes.map(h => ({ ...h, node: nearest(h.x, h.z) }));
+const GATES = (SD.gates.length ? SD.gates : [{ x: 0, z: 0, n: '입구' }]).map(g => ({ ...g, node: nearest(g.x, g.z) }));
+const STOPS = SD.stops.map(s => ({ ...s, node: nearest(s.x, s.z) }));
+function pickW(list, w, r) { let s = 0; for (const x of list) s += w(x); let u = r() * s; for (const x of list) { u -= w(x); if (u <= 0) return x; } return list[list.length - 1]; }
+const AGENTS_MAX = 2400;
+// 사람 한 명의 하루 일정(나들이 목록). 업종 고르는 비율·시간대는 가정(docs/okpo-sim-assumptions.md)
+function makeDay(g, we, r) {
+  const sh = CFG.shift, U = (a, b) => a + (b - a) * r(), I = (a, b) => Math.round(U(a, b));
+  const out = [];
+  if (g === 'worker') {
+    const home = pickW(HOMES, h => h.w * (h.k === 'apt' ? 1.6 : 1), r), gate = GATES[Math.floor(r() * GATES.length)];
+    if (!we) {
+      const tin = I(sh.in[0], sh.in[1]);
+      out.push({ t: tin - 25, from: home.node, stops: r() < 0.18 ? [r() < 0.6 ? 'mart' : 'cafe'] : [], to: gate.node, budget: 8000 });
+      const tout = I(sh.out[0], sh.out[1]);
+      const eve = r();
+      out.push({ t: tout, from: gate.node, stops: eve < 0.22 ? ['meal'] : eve < 0.42 ? ['meal', 'pub'] : eve < 0.55 ? ['pub'] : eve < 0.65 ? ['mart'] : [], to: home.node, budget: I(25000, 60000) });
+    } else if (r() < 0.6) {
+      const day = r() < 0.55;
+      out.push({ t: day ? I(660, 960) : I(1080, 1230), from: home.node, stops: day ? [pickW(['meal', 'cafe', 'mart', 'life'], c => ({ meal: 4, cafe: 2, mart: 3, life: 1.5 }[c]), r)] : (r() < 0.5 ? ['meal', 'pub'] : ['pub']), to: home.node, budget: I(20000, 70000) });
+    }
+    return { home, out };
+  }
+  if (g === 'foreign') {
+    const home = pickW(HOMES, h => h.w * (h.k === 'house' ? 3 : 0.4), r), gate = GATES[Math.floor(r() * GATES.length)];
+    if (!we) {
+      out.push({ t: I(sh.in[0], sh.in[1]) - 30, from: home.node, stops: r() < 0.12 ? ['mart'] : [], to: gate.node, budget: 5000 });
+      const v = r();
+      out.push({ t: I(sh.out[0] + 10, sh.out[1] + 30), from: gate.node, stops: v < 0.3 ? ['mart'] : v < 0.45 ? ['intl'] : v < 0.55 ? ['meal'] : v < 0.62 ? ['life'] : [], to: home.node, budget: I(9000, 20000) });
+    } else {
+      const v = r();
+      out.push({ t: I(630, 1080), from: home.node, stops: v < 0.35 ? ['mart', 'intl'] : v < 0.55 ? ['intl'] : v < 0.7 ? ['life', 'mart'] : v < 0.82 ? ['meal'] : ['mart'], to: home.node, budget: I(15000, 40000) });
+    }
+    return { home, out };
+  }
+  if (g === 'resident') {
+    const home = pickW(HOMES, h => h.w, r), v = r();
+    const t = I(600, 1170);
+    const stops = v < 0.35 ? ['mart'] : v < 0.5 ? ['life'] : v < 0.62 ? ['cafe'] : v < 0.82 ? ['meal'] : v < 0.9 ? ['meal', 'cafe'] : ['pub'];
+    out.push({ t: stops[0] === 'pub' ? I(1110, 1260) : t, from: home.node, stops, to: home.node, budget: I(15000, 50000) });
+    return { home, out };
+  }
+  // tourist: 정류장(없으면 입구)으로 들어와 둘러보고 나감
+  const st = STOPS.length ? STOPS[Math.floor(r() * STOPS.length)] : GATES[0];
+  out.push({ t: I(660, 1020), from: st.node, stops: r() < 0.6 ? ['meal', 'cafe'] : ['meal'], to: st.node, budget: I(25000, 60000) });
+  return { home: null, out };
+}
+
+// ── 하루 계산 ─────────────────────────────────────────────
+// 상태: 0 집/밖(안 보임) 1 걷는 중 2 가게 안 3 자리 기다림
+let A = [], SHOP_ST = null, STATS = null, W = 1, scen = 'wd', seedNow = 0;
+function populate(we, seed) {
+  const r = rng(1234 + seed * 7919 + (we ? 99 : 0));
+  const tot = GROUPS.reduce((s, g) => s + (CFG.groups[g][we ? 'we' : 'wd'] || 0), 0);
+  const n = Math.min(AGENTS_MAX, tot); W = tot / n;
+  A = [];
+  for (const g of GROUPS) {
+    const k = Math.round((CFG.groups[g][we ? 'we' : 'wd'] || 0) / W);
+    for (let i = 0; i < k; i++) {
+      const d = makeDay(g, we, r);
+      for (const o of d.out) o.t = Math.max(T0, Math.min(T1 - 60, o.t));
+      d.out.sort((a, b) => a.t - b.t);
+      A.push({ g, out: d.out, oi: 0, st: 0, x: 0, z: 0, path: null, pd: null, t0: 0, t1: 0, goal: null, stops: null, si: 0,
+        wallet: 0, until: 0, shop: -1, waitEnd: 0, visits: [], spent: 0, r: rng(seed * 104729 + A.length * 31 + 7) });
+    }
+  }
+}
+function reset(we, seed) {
+  populate(we, seed);
+  SHOP_ST = SHOPS.map(() => ({ occ: [] }));
+  STATS = { visits: new Float32Array(SHOPS.length), spend: new Float32Array(SHOPS.length), byHour: Array.from({ length: SHOPS.length }, () => null),
+    byGroup: Array.from({ length: SHOPS.length }, () => null), lost: new Float32Array(SHOPS.length), noMoney: 0 };
+}
+const live = (s) => !s.off;
+function seatFree(si, t) { const o = SHOP_ST[si].occ; let n = 0; for (let k = o.length - 1; k >= 0; k--) { if (o[k] > t) n++; else o.splice(k, 1); } return n < SHOPS[si].seats; }
+function openAt(s, t) { return t >= s.open && t < s.close - 10; }
+function chooseShop(a, cat, t, nodeFrom) {
+  const list = BYCAT[cat].filter(live); if (!list.length) return null;
+  const T = null; // 직선거리로 고른다(빠름). 실제 이동 시간은 길 거리로 계산
+  const fx = NX[nodeFrom], fz = NZ[nodeFrom], lam = cat === 'pub' ? 420 : cat === 'mart' ? 220 : 300;
+  const groupPref = (s) => {
+    if (a.g === 'foreign') { if (s.c === 'intl') return 3.0; if (s.price > 12000 && s.c !== 'pub') return 0.35; }
+    if (a.g === 'tourist' && s.c === 'meal' && /회|해물|해산물|생선/.test(s.cs || '')) return 1.8;
+    return 1;
+  };
+  const cand = [];
+  for (const s of list) {
+    if (!openAt(s, t + 5)) continue;
+    const d = Math.hypot(s.x - fx, s.z - fz);
+    const w = s.attract * groupPref(s) * Math.exp(-d / lam);
+    if (w > 1e-4) cand.push([s, w]);
+  }
+  if (!cand.length) return null;
+  let sum = 0; for (const c of cand) sum += c[1]; let u = a.r() * sum;
+  for (const c of cand) { u -= c[1]; if (u <= 0) return c[0]; }
+  return cand[cand.length - 1][0];
+}
+function startTrip(a, fromNode, toNode, t, render) {
+  const T = tree(toNode), d = T.dist[fromNode];
+  const L = isFinite(d) ? d : Math.hypot(NX[fromNode] - NX[toNode], NZ[fromNode] - NZ[toNode]) * 1.3;
+  a.st = 1; a.t0 = t; a.t1 = t + Math.max(1, L / CFG.walk); a.goalNode = toNode;
+  if (render) { a.path = isFinite(d) ? pathFrom(fromNode, toNode) : [fromNode, toNode]; a.pd = null; }
+}
+function nextStop(a, t, render) {
+  const o = a.out[a.oi];
+  while (a.si < a.stops.length) {
+    const cat = a.stops[a.si++];
+    const s = chooseShop(a, cat, t, a.cur);
+    if (!s) continue;
+    if (a.wallet < s.price) { STATS.noMoney += W; continue; }   // 돈이 모자라면 기다리지 않고 다음으로
+    a.shop = s.i; startTrip(a, a.cur, s.node, t, render); return;
+  }
+  a.shop = -1; startTrip(a, a.cur, o.to, t, render);
+}
+function step(t, render) {
+  for (const a of A) {
+    if (a.st === 0) {
+      const o = a.out[a.oi];
+      if (o && t >= o.t) { a.cur = o.from; a.stops = o.stops; a.si = 0; a.wallet = o.budget; nextStop(a, t, render); }
+      continue;
+    }
+    if (a.st === 1 && t >= a.t1) {
+      a.cur = a.goalNode;
+      if (a.shop >= 0) {
+        const s = SHOPS[a.shop];
+        if (!openAt(s, t)) { nextStop(a, t, render); continue; }
+        if (seatFree(s.i, t)) enter(a, s, t);
+        else { a.st = 3; a.waitEnd = t + (a.g === 'foreign' ? 8 : 12); }
+      } else {   // 나들이 끝
+        a.st = 0; a.oi++; a.path = null;
+        if (a.oi >= a.out.length) a.done = true;
+      }
+      continue;
+    }
+    if (a.st === 3) {
+      const s = SHOPS[a.shop];
+      if (seatFree(s.i, t)) enter(a, s, t);
+      else if (t >= a.waitEnd) { STATS.lost[s.i] += W; nextStop(a, t, render); }
+      continue;
+    }
+    if (a.st === 2 && t >= a.until) nextStop(a, t, render);
+  }
+}
+function enter(a, s, t) {
+  const stay = Math.max(5, CFG.cats[s.c].stay * (0.7 + 0.6 * a.r()));
+  a.st = 2; a.until = t + stay; SHOP_ST[s.i].occ.push(a.until);
+  a.wallet -= s.price; a.spent += s.price; a.visits.push([s.i, t]);
+  STATS.visits[s.i] += W; STATS.spend[s.i] += s.price * W;
+  const h = Math.floor(t / 60) % 24; (STATS.byHour[s.i] || (STATS.byHour[s.i] = new Float32Array(24)))[h] += W;
+  (STATS.byGroup[s.i] || (STATS.byGroup[s.i] = {}))[a.g] = ((STATS.byGroup[s.i] || {})[a.g] || 0) + W;
+}
+function runDay(we, seed) { reset(we, seed); for (let t = T0; t <= T1; t++) step(t, false); return STATS; }
+
+// ── 그리기: 사람 = 화면 크기 고정 점 ─────────────────────────
+const geo = new THREE.BufferGeometry();
+const pos = new Float32Array(AGENTS_MAX * 3), col = new Float32Array(AGENTS_MAX * 3);
+geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+const dot = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
+  g.fillStyle = '#fff'; g.beginPath(); g.arc(32, 32, 26, 0, Math.PI * 2); g.fill(); g.lineWidth = 6; g.strokeStyle = 'rgba(255,255,255,.95)'; g.stroke();
+  const t = new THREE.CanvasTexture(c); return t; })();
+const ptsMat = new THREE.PointsMaterial({ size: 5.5 * MP.renderer.getPixelRatio(), sizeAttenuation: false, vertexColors: true, map: dot, alphaTest: 0.5, transparent: false, depthTest: true });
+const points = new THREE.Points(geo, ptsMat); points.renderOrder = 20; points.frustumCulled = false; scene.add(points);
+const GCOL = {}; for (const g of GROUPS) GCOL[g] = new THREE.Color(CFG.groups[g].col);
+function placeOnPath(a, t) {
+  const p = a.path; if (!p || p.length < 2) { a.x = NX[a.cur]; a.z = NZ[a.cur]; return; }
+  if (!a.pd) { a.pd = new Float32Array(p.length); for (let i = 1; i < p.length; i++) a.pd[i] = a.pd[i - 1] + Math.hypot(NX[p[i]] - NX[p[i - 1]], NZ[p[i]] - NZ[p[i - 1]]); }
+  const L = a.pd[p.length - 1], f = Math.min(1, Math.max(0, (t - a.t0) / (a.t1 - a.t0))), d = f * L;
+  let i = 1; while (i < p.length - 1 && a.pd[i] < d) i++;
+  const seg = a.pd[i] - a.pd[i - 1] || 1, u = (d - a.pd[i - 1]) / seg;
+  a.x = NX[p[i - 1]] + (NX[p[i]] - NX[p[i - 1]]) * u; a.z = NZ[p[i - 1]] + (NZ[p[i]] - NZ[p[i - 1]]) * u;
+}
+function draw(t) {
+  let n = 0;
+  for (const a of A) {
+    if (a.st !== 1 && a.st !== 3) continue;
+    if (a.st === 1) placeOnPath(a, t); else { const s = SHOPS[a.shop]; a.x = s.x + (a.r() - 0.5) * 1.5; a.z = s.z + (a.r() - 0.5) * 1.5; }
+    // 같은 길 위 사람이 한 줄로 겹치지 않게 사람마다 조금 옆으로
+    const j = (a.jit ?? (a.jit = (hash01(String(A.indexOf(a))) - 0.5) * 3));
+    pos[n * 3] = a.x + j; pos[n * 3 + 1] = 1.2; pos[n * 3 + 2] = a.z - j * 0.6;
+    const c = GCOL[a.g]; col[n * 3] = c.r; col[n * 3 + 1] = c.g; col[n * 3 + 2] = c.b; n++;
+  }
+  geo.setDrawRange(0, n); geo.attributes.position.needsUpdate = true; geo.attributes.color.needsUpdate = true;
+  return n;
+}
+
+// ── 화면: 하루 재생 패널 ─────────────────────────────────────
+const hm = (t) => { const d = t >= 1440, m = Math.floor(t) % 1440; return (d ? '다음 날 ' : '') + String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
+function won(v) { if (v >= 1e8) return (v / 1e8).toFixed(v >= 1e9 ? 1 : 2) + '억 원'; if (v >= 1e4) return Math.round(v / 1e4).toLocaleString('ko-KR') + '만 원'; return Math.round(v).toLocaleString('ko-KR') + '원'; }
+const panel = document.createElement('section'); panel.id = 'sim'; panel.setAttribute('aria-label', '가상 손님 하루');
+panel.innerHTML = `
+  <div class="sim-head">
+    <button id="sim-play" class="sim-play" aria-label="재생">▶</button>
+    <div class="sim-time"><b id="sim-clock">05:00</b><span id="sim-sub">가상 손님 하루</span></div>
+    <div class="seg" role="group" aria-label="요일">
+      <button data-s="wd" class="on">평일</button><button data-s="we">주말</button>
+    </div>
+    <button id="sim-fold" class="icon-btn" aria-label="접기" title="접기"><svg viewBox="0 0 20 20"><path d="M5 8l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+  </div>
+  <div class="sim-body">
+    <input id="sim-range" type="range" min="${T0}" max="${T1}" step="1" value="${T0}" aria-label="시각">
+    <div class="sim-ticks"><span>05시</span><span>12시</span><span>18시</span><span>24시</span><span>02시</span></div>
+    <div class="sim-legend" id="sim-legend"></div>
+    <div class="sim-stats" id="sim-stats"></div>
+    <p class="sim-note" id="sim-note"></p>
+  </div>`;
+document.body.appendChild(panel);
+const $ = (id) => document.getElementById(id);
+$('sim-legend').innerHTML = GROUPS.map(g => `<span><i style="background:${CFG.groups[g].col}"></i>${CFG.groups[g].ko}</span>`).join('');
+const assumed = GROUPS.filter(g => CFG.groups[g].src === '가정').length;
+$('sim-note').textContent = `가상 인물 ${' '}점 1개 = 사람 약 ${'{W}'}명. ` + (assumed ? '사람 수·교대 시간은 아직 근거 확인 전 가정 값입니다.' : '');
+let simT = T0, playing = false, speed = 20, lastNow = 0;
+let drawDirty = true;   // 멈춰 있을 때도 시각을 옮기면 점을 다시 그려야 한다
+function seek(t) { reset(scen === 'we', 0); for (let s = T0; s <= t; s++) step(s, true); simT = t; drawDirty = true; ui(); }
+function ui() {
+  $('sim-clock').textContent = hm(simT); $('sim-range').value = Math.round(simT);
+  let walk = 0, inside = 0, wait = 0, spend = 0;
+  for (const a of A) { if (a.st === 1) walk++; else if (a.st === 2) inside++; else if (a.st === 3) wait++; spend += a.spent; }
+  $('sim-stats').innerHTML = `<div><b>${Math.round(walk * W).toLocaleString('ko-KR')}</b>명<span>걷는 중</span></div>
+    <div><b>${Math.round(inside * W).toLocaleString('ko-KR')}</b>명<span>가게 안</span></div>
+    <div><b>${Math.round(wait * W).toLocaleString('ko-KR')}</b>명<span>자리 기다림</span></div>
+    <div><b>${won(spend * W)}</b><span>지금까지 쓴 돈</span></div>`;
+  $('sim-note').textContent = `점 1개 = 가상 인물 약 ${W.toFixed(1)}명. ` + (assumed ? '사람 수·교대 시간·업종 고르는 비율은 근거 확인 전 가정 값입니다.' : '');
+  need();
+}
+$('sim-play').onclick = () => { playing = !playing; $('sim-play').textContent = playing ? '❚❚' : '▶'; $('sim-play').setAttribute('aria-label', playing ? '멈춤' : '재생'); if (playing && simT >= T1) seek(T0); };
+$('sim-range').oninput = (e) => seek(+e.target.value);
+panel.querySelectorAll('.seg button').forEach(b => b.onclick = () => {
+  panel.querySelectorAll('.seg button').forEach(x => x.classList.toggle('on', x === b)); scen = b.dataset.s; seek(simT);
+});
+$('sim-fold').onclick = () => { const f = panel.classList.toggle('folded'); $('sim-fold').setAttribute('aria-label', f ? '펴기' : '접기'); };
+if (Math.min(innerWidth, innerHeight) < 720) panel.classList.add('folded');
+
+function tick(now) {
+  requestAnimationFrame(tick);
+  if (!lastNow) lastNow = now; const dt = Math.min(0.1, (now - lastNow) / 1000); lastNow = now;
+  if (playing) {
+    const to = Math.min(T1, simT + speed * dt);
+    for (let s = Math.floor(simT) + 1; s <= Math.floor(to); s++) step(s, true);
+    simT = to; if (simT >= T1) { playing = false; $('sim-play').textContent = '▶'; }
+    ui();
+  }
+  if (playing || drawDirty) { const n = draw(simT); points.visible = n > 0; drawDirty = false; need(); }
+}
+seek(Q('simt') ? parseT(Q('simt')) : 18 * 60);
+function Q(k) { return new URLSearchParams(location.search).get(k); }
+function parseT(s) { const [h, m] = s.split(':').map(Number); return Math.max(T0, Math.min(T1, h * 60 + (m || 0) + (h < 5 ? 1440 : 0))); }
+requestAnimationFrame(tick);
+
+// ── 빈 층에 가게 열어 보기 ───────────────────────────────────
+// 가게를 하나 더하고(또는 끄고) 하루를 평일·주말 × 다섯 번(다른 난수) 돌려 평균을 낸다.
+const RUNS = 5;
+const EXP_CATS = [
+  ['pub', '옛날식 호프·주점'], ['intl', '가성비 다국적 식당'], ['meal', '백반·한식'], ['cafe', '카페'], ['mart', '편의점·식료품'], ['life', '생활 서비스(휴대폰·미용 등)'],
+];
+function addVirtual(bi, floor, cat, price, seats, open, close) {
+  const b = MP.buildings[bi]; let cx = 0, cz = 0; for (const p of b.p) { cx += p[0]; cz += p[1]; } cx /= b.p.length; cz /= b.p.length;
+  const s = { i: SHOPS.length, n: '새 가게(실험)', c: cat, cs: '', x: cx, z: cz, b: bi, f: floor, node: nearest(cx, cz),
+    price, seats, open, close, attract: 1.0 * (floor >= 2 ? CFG.upperFloor : 1), virtual: true };
+  SHOPS.push(s); BYCAT[cat].push(s); return s;
+}
+function removeVirtual(s) { SHOPS.pop(); BYCAT[s.c].splice(BYCAT[s.c].indexOf(s), 1); }
+function neighbors(s, R) { return SHOPS.filter(o => !o.virtual && o.c === s.c && Math.hypot(o.x - s.x, o.z - s.z) <= R).map(o => o.i); }
+function experiment(bi, floor, cat, price, seats, open, close) {
+  const s = addVirtual(bi, floor, cat, price, seats, open, close);
+  const nb = neighbors(s, 250);
+  const res = {};
+  for (const sc of ['wd', 'we']) {
+    const runs = [];
+    for (let k = 0; k < RUNS; k++) {
+      s.off = true; const base = runDay(sc === 'we', k); const nbBase = nb.reduce((a, i) => a + base.visits[i], 0);
+      s.off = false; const st = runDay(sc === 'we', k); const nbNew = nb.reduce((a, i) => a + st.visits[i], 0);
+      runs.push({ v: st.visits[s.i], won: st.spend[s.i], lost: st.lost[s.i], hour: st.byHour[s.i] ? Array.from(st.byHour[s.i]) : new Array(24).fill(0),
+        grp: { ...(st.byGroup[s.i] || {}) }, nb: nbNew - nbBase });
+    }
+    const avg = (f) => runs.reduce((a, r) => a + f(r), 0) / runs.length;
+    res[sc] = { v: avg(r => r.v), vMin: Math.min(...runs.map(r => r.v)), vMax: Math.max(...runs.map(r => r.v)), won: avg(r => r.won), lost: avg(r => r.lost),
+      nb: avg(r => r.nb), nbSame: runs.every(r => r.nb < 0) || runs.every(r => r.nb > 0), hour: Array.from({ length: 24 }, (_, h) => avg(r => r.hour[h])),
+      grp: Object.fromEntries(GROUPS.map(g => [g, avg(r => r.grp[g] || 0)])) };
+  }
+  removeVirtual(s);
+  res.nbCount = nb.length;
+  seek(simT);   // 재생 화면을 원래 상태로
+  return res;
+}
+// 정보창: 빈 층이 있으면 '가게 열어 보기' 단추
+const prevExtra = MP.infoExtra;
+MP.infoExtra = (b, bi) => {
+  const base = prevExtra ? prevExtra(b, bi) : '';
+  const fl = window.FLOORS && window.FLOORS.b[String(bi)];
+  const empties = fl ? fl.filter(f => f.state === 'empty') : [];
+  if (!empties.length) return base;
+  const opts = empties.map(f => `<option value="${f.n}">${f.n}층 · ${Math.round(f.area || 0)}㎡</option>`).join('');
+  return base + `<div class="exp" id="exp">
+    <p class="exp-title">이 빈 층에 가게 열어 보기</p>
+    <div class="exp-grid">
+      <label>층<select id="x-floor">${opts}</select></label>
+      <label>업종<select id="x-cat">${EXP_CATS.map(([c, k]) => `<option value="${c}">${k}</option>`).join('')}</select></label>
+      <label>1인 가격<input id="x-price" type="number" min="1000" step="500"></label>
+      <label>자리<input id="x-seats" type="number" min="2" max="200" step="1"></label>
+    </div>
+    <button id="x-run" class="btn-primary">하루 돌려 보기 <span>평일·주말 각 ${RUNS}번</span></button>
+    <div id="x-out" aria-live="polite"></div>
+  </div>`;
+};
+const HIST = [];   // 같은 자리에서 바꿔 본 결과(업종 비교표)
+document.addEventListener('click', (e) => {
+  if (e.target.closest && e.target.closest('#x-run')) runExp();
+});
+document.addEventListener('change', (e) => { if (e.target.id === 'x-cat') fillDefaults(); });
+const obs = new MutationObserver(() => { if ($('x-cat') && !$('x-price').value) fillDefaults(); });
+obs.observe($('i-body'), { childList: true });
+function fillDefaults() { const c = CFG.cats[$('x-cat').value]; $('x-price').value = c.price; $('x-seats').value = c.seats; }
+function runExp() {
+  const bi = MP.selected; if (bi < 0) return;
+  const floor = +$('x-floor').value, cat = $('x-cat').value, price = Math.max(1000, +$('x-price').value || CFG.cats[cat].price), seats = Math.max(2, +$('x-seats').value || CFG.cats[cat].seats);
+  const c = CFG.cats[cat];
+  $('x-out').innerHTML = '<p class="exp-wait">계산 중…</p>';
+  setTimeout(() => {
+    const t0 = performance.now();
+    const r = experiment(bi, floor, cat, price, seats, c.open, c.close);
+    const ms = performance.now() - t0;
+    HIST.unshift({ bi, floor, cat, price, seats, r });
+    while (HIST.length > 6) HIST.pop();
+    renderExp(r, cat, price, ms, bi, floor);
+  }, 30);
+}
+function renderExp(r, cat, price, ms, bi, floor) {
+  const k = EXP_CATS.find(x => x[0] === cat)[1];
+  const row = (sc, lab) => { const x = r[sc]; return `<tr><th>${lab}</th><td><b>${Math.round(x.v).toLocaleString('ko-KR')}명</b><span class="rng">${Math.round(x.vMin)}~${Math.round(x.vMax)}</span></td><td>${won(x.won)}</td></tr>`; };
+  const g = r.wd.grp, gw = r.we.grp, tot = (o) => Object.values(o).reduce((a, b) => a + b, 0) || 1;
+  const mix = (o) => GROUPS.filter(x => o[x] > 0.5).map(x => `<span><i style="background:${CFG.groups[x].col}"></i>${CFG.groups[x].ko} ${Math.round(100 * o[x] / tot(o))}%</span>`).join('') || '<span>손님 없음</span>';
+  const hourMax = Math.max(1, ...r.wd.hour, ...r.we.hour);
+  const bars = (hr, colr) => hr.map((v, h) => `<i style="height:${Math.round(100 * v / hourMax)}%;background:${colr}" title="${h}시 ${Math.round(v)}명"></i>`).join('');
+  const nbTxt = r.nbCount ? `반경 250m 같은 업종 ${r.nbCount}곳: 평일 손님 ${r.wd.nb >= 0 ? '+' : ''}${Math.round(r.wd.nb)}명` + (r.wd.nbSame ? ' (다섯 번 모두 같은 방향)' : ' (돌릴 때마다 방향이 바뀜 → 원인으로 보기 어려움)') : '반경 250m 안에 같은 업종 가게가 없습니다.';
+  const same = HIST.filter(h => h.bi === bi && h.floor === floor);
+  const cmp = same.length > 1 ? `<table class="exp-cmp"><tr><th>업종</th><th>가격</th><th>평일</th><th>주말</th><th>평일 매출</th></tr>${same.map(h => `<tr><td>${EXP_CATS.find(x => x[0] === h.cat)[1]}</td><td>${won(h.price)}</td><td>${Math.round(h.r.wd.v)}명</td><td>${Math.round(h.r.we.v)}명</td><td>${won(h.r.wd.won)}</td></tr>`).join('')}</table>` : '<p class="exp-tip">업종을 바꿔 한 번 더 돌리면 이 자리에서 업종끼리 비교표가 생깁니다.</p>';
+  $('x-out').innerHTML = `
+    <table class="exp-res"><tr><th></th><th>하루 손님(평균·범위)</th><th>하루 매출</th></tr>${row('wd', '평일')}${row('we', '주말')}</table>
+    <p class="exp-sub">평일 손님 구성</p><div class="exp-mix">${mix(g)}</div>
+    <p class="exp-sub">시간대별 손님 <span class="lg"><i style="background:#2f6fed"></i>평일 <i style="background:#7048e8"></i>주말</span></p>
+    <div class="exp-hours"><div>${bars(r.wd.hour, '#2f6fed')}</div><div>${bars(r.we.hour, '#7048e8')}</div><div class="ax"><span>0시</span><span>12시</span><span>23시</span></div></div>
+    <p class="exp-sub">주변 가게 영향</p><p class="exp-nb">${nbTxt}</p>
+    ${cmp}
+    <p class="exp-foot">${k} · ${floor}층 · 1인 ${won(price)} · 계산 ${(ms / 1000).toFixed(1)}초. 가상 인물로 조건끼리 비교한 값이며 실제 매출 예측이 아닙니다.</p>`;
+  need();
+}
+
+window.__sim = { runDay, experiment, seek, get A() { return A; }, get W() { return W; }, SHOPS, CFG, nodes: NN, get t() { return simT; } };
+})();
