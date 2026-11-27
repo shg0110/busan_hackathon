@@ -48,6 +48,9 @@ function meshOf(B_) {
   m.receiveShadow = true; m.renderOrder = 11; scene.add(m); return m;
 }
 const bandMesh = meshOf(buf.empty), restMesh = meshOf(buf.rest);
+// 밤(재생 시각이 해 진 뒤)에는 조명 없는 재질로 바꿔 제 색이 그대로 보이게
+const nightMat = new THREE.MeshBasicMaterial({ vertexColors: true }), dayMats = [bandMesh.material, restMesh.material];
+document.addEventListener('map-light', (e) => { const n = e.detail.night >= 0.5; bandMesh.material = n ? nightMat : dayMats[0]; restMesh.material = n ? nightMat : dayMats[1]; need(); });
 restMesh.visible = false;
 
 // ── 보기 설정 + 범례 ──────────────────────────────────

@@ -95,7 +95,7 @@ canvas.addEventListener('pointerdown', () => { const h = document.getElementById
 // ── 빛 ───────────────────────────────────────────────
 // 빛: 위를 향한 면(지붕·땅)이 정한 색 그대로 나오도록(합이 약 1). 너무 세면 지붕·땅이 하얗게 잘린다
 // 하늘빛을 높이고 햇빛을 줄여 등진 벽도 밝은 회색, 해를 받는 벽은 더 밝게(면마다 차이). 해는 살짝 따뜻하게, 땅 반사는 살짝 푸르게
-scene.add(new THREE.HemisphereLight('#ffffff', '#a3adba', 0.64));
+const hemi = new THREE.HemisphereLight('#ffffff', '#a3adba', 0.64); scene.add(hemi);
 const sun = new THREE.DirectionalLight('#fff3e3', 0.56);
 sun.position.set(-R * 0.5, R * 0.9, R * 0.35);
 sun.castShadow = true;
@@ -189,6 +189,9 @@ const MAJOR = new Set(['trunk', 'primary', 'secondary', 'tertiary', 'trunk_link'
 const roadMeshes = [ribbonMesh(D.roads.filter(r => r.ped), 0, C.ped, 5),
   ribbonMesh(D.roads.filter(r => !r.ped && !MAJOR.has(r.k)), 0, C.roadMinor, 6),
   ribbonMesh(D.roads.filter(r => MAJOR.has(r.k)), 0, C.road, 7)];
+// 지도 가장자리 흐리기: 자료가 끝나는 곳에서 0, 안쪽 160m 부터 1(바닥층 ground.js 도 같은 함수를 씀)
+const EDGE_IN = 160, HALF = D.meta.half || [R, R];
+function edgeFade(x, z) { const d = Math.min(HALF[0] - Math.abs(x), HALF[1] - Math.abs(z)), k = Math.max(0, Math.min(1, d / EDGE_IN)); return k * k * (3 - 2 * k); }
 // 위경도 → 지도 좌표(m). tools/map_build.py xz() 와 같은 식
 const xz = (lat, lon) => [(lon - D.meta.lon0) * D.meta.kx, -(lat - D.meta.lat0) * D.meta.kz];
 // R-ONE 상권 경계: 땅 위 굵은 선(닫힌 고리) + 이름표
@@ -206,19 +209,35 @@ if (D.boundary) {
 const B = D.buildings;
 const bPos = [], bNrm = [], bCol = [], bUv = [], triOwner = [];
 const ROOF_UV = [0.95, 0.15];   // 무늬의 흰 칸(지붕은 무늬 없이)
-function floorTexture() {
-  const S = 64, cv = document.createElement('canvas'); cv.width = cv.height = S;
+// 창 무늬는 창 8칸 × 층 8칸 묶음 한 장(repeat 1/8). 낮 무늬와 밤 불빛 무늬가 같은 칸 배치를 써야 창 위치가 맞는다
+const WN = 8, WS = 64;
+function cellTexture(draw) {
+  const cv = document.createElement('canvas'); cv.width = cv.height = WN * WS;
   const g = cv.getContext('2d');
-  g.fillStyle = '#ffffff'; g.fillRect(0, 0, S, S);
-  // 창: 유리처럼 위는 조금 진하고 아래로 밝게(하늘 반사), 위 틀은 진하게
-  const gr = g.createLinearGradient(0, S * 0.22, 0, S * 0.68); gr.addColorStop(0, '#c6d1dd'); gr.addColorStop(1, '#dfe6ee');
-  g.fillStyle = gr; g.fillRect(6, S * 0.22, S * 0.68, S * 0.46);   // 창(윗부분이 v 큰 쪽 → 캔버스 위쪽)
-  g.fillStyle = '#b4bfcb'; g.fillRect(6, S * 0.22, S * 0.68, 2);
-  g.fillStyle = '#f2f3f5'; g.fillRect(0, S - 4, S, 4);                     // 층 사이 슬래브(v=0 쪽)
+  for (let i = 0; i < WN; i++) for (let j = 0; j < WN; j++) { g.save(); g.translate(i * WS, j * WS); draw(g, WS, i, j); g.restore(); }
   const t = new THREE.CanvasTexture(cv);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.encoding = THREE.sRGBEncoding;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.encoding = THREE.sRGBEncoding; t.repeat.set(1 / WN, 1 / WN);
   t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
   return t;
+}
+function floorTexture() {
+  return cellTexture((g, S) => {
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, S, S);
+    // 창: 유리처럼 위는 조금 진하고 아래로 밝게(하늘 반사), 위 틀은 진하게
+    const gr = g.createLinearGradient(0, S * 0.22, 0, S * 0.68); gr.addColorStop(0, '#c6d1dd'); gr.addColorStop(1, '#dfe6ee');
+    g.fillStyle = gr; g.fillRect(6, S * 0.22, S * 0.68, S * 0.46);   // 창(윗부분이 v 큰 쪽 → 캔버스 위쪽)
+    g.fillStyle = '#b4bfcb'; g.fillRect(6, S * 0.22, S * 0.68, 2);
+    g.fillStyle = '#f2f3f5'; g.fillRect(0, S - 4, S, 4);                     // 층 사이 슬래브(v=0 쪽)
+  });
+}
+// 밤에 불 켜진 창: 칸마다 정해진 확률로 따뜻한 전등색(나머지는 검정 = 빛 없음). 무늬 칸이 아닌 벽·지붕은 검정
+function litTexture() {
+  const cols = ['#ffd38a', '#ffe2b0', '#fff2d8', '#ffc66e', '#e9f0ff'];
+  return cellTexture((g, S, i, j) => {
+    g.fillStyle = '#000'; g.fillRect(0, 0, S, S);
+    const h = ((i * 73856093) ^ (j * 19349663)) >>> 0, u = (h % 1000) / 1000;
+    if (u < 0.46) { g.fillStyle = cols[h % cols.length]; g.fillRect(7, S * 0.24, S * 0.66, S * 0.42); }
+  });
 }
 const tmpC = new THREE.Color();
 const wallCols = C.walls.map(h => new THREE.Color(h));
@@ -259,18 +278,19 @@ B.forEach((b, bi) => {
   const fh = b.k === 'roof' ? 99 : (b.h - 0.6) / b.lv;   // 층고(지붕만 있는 구조물은 무늬 없음)
   const v1 = b.k === 'roof' ? 0.15 : (y1 - y0 - 0.6) / fh + 0.0;
   let run = 0;
+  const offU = (b.c * 3 + bi * 7) % WN, offV = (bi * 5 + b.c) % WN;
   for (let i = 0; i < p.length; i++) {
     const a = p[i], c2 = p[(i + 1) % p.length];
     const dx = c2[0] - a[0], dz = c2[1] - a[1], l = Math.hypot(dx, dz);
     if (l < 0.05) continue;
     const n = [-dz / l, 0, dx / l];
     const A = [a[0], y0, a[1]], Bv = [c2[0], y0, c2[1]], Cv = [c2[0], y1, c2[1]], Dv = [a[0], y1, a[1]];
-    const u0 = run / 3.6, u1 = (run + l) / 3.6; run += l;     // 창 간격 3.6m
+    const u0 = run / 3.6 + offU, u1 = (run + l) / 3.6 + offU; run += l;     // 창 간격 3.6m(건물마다 시작 칸을 옮김)
     const vTop = v1 + 0.6 / fh;                               // 벽 위 0.6m(난간)는 v 가 층 수를 넘어 흰 칸
     const yAO = Math.min(y1, y0 + 3), vAO = (yAO - y0) / fh;
     const E2 = [c2[0], yAO, c2[1]], F2 = [a[0], yAO, a[1]];
     bPos.push(...A, ...Bv, ...E2, ...A, ...E2, ...F2);         // 아래 띠(그늘)
-    bUv.push(u0, 0, u1, 0, u1, vAO, u0, 0, u1, vAO, u0, vAO);
+    bUv.push(u0, offV, u1, offV, u1, vAO + offV, u0, offV, u1, vAO + offV, u0, vAO + offV);
     for (let k = 0; k < 6; k++) bNrm.push(...n);
     for (const cc of [wallBot, wallBot, wc, wallBot, wc, wc]) bCol.push(cc.r, cc.g, cc.b);
     triOwner.push(bi, bi);
@@ -278,7 +298,7 @@ B.forEach((b, bi) => {
       const yCap = b.h > 4 ? Math.max(yAO, y1 - 0.45) : y1, vCap = (yCap - y0) / fh;
       const G2 = [c2[0], yCap, c2[1]], H2 = [a[0], yCap, a[1]];
       bPos.push(...F2, ...E2, ...G2, ...F2, ...G2, ...H2);
-      bUv.push(u0, vAO, u1, vAO, u1, vCap, u0, vAO, u1, vCap, u0, vCap);
+      bUv.push(u0, vAO + offV, u1, vAO + offV, u1, vCap + offV, u0, vAO + offV, u1, vCap + offV, u0, vCap + offV);
       for (let k = 0; k < 6; k++) { bNrm.push(...n); bCol.push(wc.r, wc.g, wc.b); }
       triOwner.push(bi, bi);
       if (yCap < y1 - 0.01) {   // 난간 띠
@@ -312,7 +332,10 @@ B.forEach((b) => {
   }
 });
 const edgeGeo = new THREE.BufferGeometry(); edgeGeo.setAttribute('position', new THREE.Float32BufferAttribute(edgePos, 3));
-const edgeMat = new THREE.LineBasicMaterial({ color: '#6b7480', transparent: true, opacity: 0.32 });
+{ const lc = new THREE.Color('#6b7480'), bg = new THREE.Color('#f1efea'), ec = new Float32Array(edgePos.length);
+  for (let i = 0; i < edgePos.length; i += 3) { const f = edgeFade(edgePos[i], edgePos[i + 2]); ec[i] = bg.r + (lc.r - bg.r) * f; ec[i + 1] = bg.g + (lc.g - bg.g) * f; ec[i + 2] = bg.b + (lc.b - bg.b) * f; }
+  edgeGeo.setAttribute('color', new THREE.Float32BufferAttribute(ec, 3)); }
+const edgeMat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.32 });
 const edgeLines = new THREE.LineSegments(edgeGeo, edgeMat); edgeLines.renderOrder = 8; edgeLines.frustumCulled = false; scene.add(edgeLines);
 const bGeo = new THREE.BufferGeometry();
 bGeo.setAttribute('position', new THREE.Float32BufferAttribute(bPos, 3));
@@ -320,11 +343,27 @@ bGeo.setAttribute('normal', new THREE.Float32BufferAttribute(bNrm, 3));
 bGeo.setAttribute('uv', new THREE.Float32BufferAttribute(bUv, 2));
 const colAttr = new THREE.Float32BufferAttribute(bCol, 3);
 bGeo.setAttribute('color', colAttr);
+// 가장자리 건물은 땅색 쪽으로 섞어 칼로 자른 듯 끝나지 않게(바닥 흐리기와 같은 함수)
+{ const fadeTo = new THREE.Color('#f1efea');
+  B.forEach((b, bi) => { let cx = 0, cz = 0; for (const p of b.p) { cx += p[0]; cz += p[1]; } const f = edgeFade(cx / b.p.length, cz / b.p.length);
+    if (f >= 0.999) return; const k = (1 - f) * 0.9, [s0, e0] = bRange[bi];
+    for (let v = s0; v < e0; v++) { bCol[v * 3] = bCol[v * 3] * (1 - k) + fadeTo.r * k; bCol[v * 3 + 1] = bCol[v * 3 + 1] * (1 - k) + fadeTo.g * k; bCol[v * 3 + 2] = bCol[v * 3 + 2] * (1 - k) + fadeTo.b * k; } });
+  colAttr.array.set(bCol); }
 const baseCol = Float32Array.from(bCol);
+// 밤에도 '가게 없는 층' 주황 지붕이 보이게: 칠한 지붕 꼭짓점만 glow=1 → 밤 정도만큼 스스로 빛남(셰이더에 한 줄 추가)
+const glowAttr = new THREE.Float32BufferAttribute(new Float32Array(bCol.length / 3), 1);
+bGeo.setAttribute('glow', glowAttr);
 bGeo.computeBoundingSphere();
 // 창 무늬는 가까이 볼 때만(멀리서는 작은 건물이 빽빽해 무늬가 잡음처럼 보인다 → 깨끗한 덩어리로)
 const winTex = floorTexture();
-const bMat = new THREE.MeshLambertMaterial({ vertexColors: true, map: null });
+const litTex = litTexture();
+const bMat = new THREE.MeshLambertMaterial({ vertexColors: true, map: null, emissive: '#ffffff', emissiveMap: litTex, emissiveIntensity: 0 });
+const uRoofGlow = { value: 0 };
+bMat.onBeforeCompile = (sh) => {
+  sh.uniforms.uRoofGlow = uRoofGlow;
+  sh.vertexShader = 'attribute float glow;\nvarying float vGlow;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vGlow = glow;');
+  sh.fragmentShader = 'uniform float uRoofGlow;\nvarying float vGlow;\n' + sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n  totalEmissiveRadiance += vColor.rgb * vGlow * uRoofGlow;');
+};
 const WIN_NEAR = 330;
 function syncWindows() {
   const want = camera.position.distanceTo(controls.target) < WIN_NEAR ? winTex : null;
@@ -373,8 +412,10 @@ function paintEstimated(on) {
   estOn = on;
   const arr = colAttr.array, est = new THREE.Color(C.est);
   arr.set(baseCol);
+  const ga = glowAttr.array; ga.fill(0);
   if (roofOver) for (const [bi, o] of roofOver) { const [s0, e0] = roofRange[bi];
-    for (let v = s0; v < e0; v++) for (let k = 0; k < 3; k++) arr[v * 3 + k] = arr[v * 3 + k] * (1 - o.k) + o.c[k] * o.k; }
+    for (let v = s0; v < e0; v++) { ga[v] = 1; for (let k = 0; k < 3; k++) arr[v * 3 + k] = arr[v * 3 + k] * (1 - o.k) + o.c[k] * o.k; } }
+  glowAttr.needsUpdate = true;
   if (keepSet) {
     const g = [0.9, 0.91, 0.925];   // 거리 밖 건물: 옅은 회색 쪽으로 조금만(하얗게 날리지 않게)
     B.forEach((b, bi) => { if (keepSet.has(bi)) return; const [s0, e0] = bRange[bi];
@@ -587,6 +628,39 @@ resize();
 
 const bench = BENCH ? { t0: 0, frames: [] } : null;
 let last = performance.now();
+// ── 하루 빛: 재생 시각(sim-time)에 맞춰 해·하늘·안개 색과 밤 창 불빛을 바꾼다 ─────────────
+// 일출 07:10·일몰 17:15, 시민박명 06:43~17:42(옥포 2026-11-27, 계산값). 해 방향은 고정(그림자를 다시 계산하면 멈칫해서)
+const LK = (o) => ({ bg: o.bg && new THREE.Color(o.bg), sky: new THREE.Color(o.sky), gnd: new THREE.Color(o.gnd), hI: o.hI, sunC: new THREE.Color(o.sunC), sunI: o.sunI, lit: o.lit });
+const DAY = LK({ bg: null, sky: '#ffffff', gnd: '#a3adba', hI: 0.64, sunC: '#fff3e3', sunI: 0.56, lit: 0 });
+const LKEY = [
+  [300, LK({ bg: '#1e2433', sky: '#5d6f96', gnd: '#262b38', hI: 0.4, sunC: '#a9bde3', sunI: 0.1, lit: 1 })],    // 05:00 밤
+  [403, LK({ bg: '#2b3146', sky: '#6b789c', gnd: '#2c3140', hI: 0.42, sunC: '#b7c3e0', sunI: 0.12, lit: 0.9 })], // 06:43 새벽빛 시작
+  [430, LK({ bg: '#cfc4cf', sky: '#e3dbe8', gnd: '#8a8698', hI: 0.52, sunC: '#ffc79a', sunI: 0.34, lit: 0.25 })], // 07:10 해 뜸
+  [480, DAY], [995, DAY],                                                                                         // 08:00 ~ 16:35 낮
+  [1035, LK({ bg: '#f0e5d8', sky: '#fff0dc', gnd: '#9d9590', hI: 0.58, sunC: '#ffd2a6', sunI: 0.5, lit: 0.15 })], // 17:15 해 짐(노을, 은은하게)
+  [1062, LK({ bg: '#4b4f6b', sky: '#8a8fb8', gnd: '#3d3f52', hI: 0.44, sunC: '#ff9a6b', sunI: 0.14, lit: 0.7 })], // 17:42 땅거미
+  [1100, LK({ bg: '#1e2433', sky: '#5d6f96', gnd: '#262b38', hI: 0.4, sunC: '#a9bde3', sunI: 0.1, lit: 1 })],    // 18:20 밤
+  [1560, LK({ bg: '#1e2433', sky: '#5d6f96', gnd: '#262b38', hI: 0.4, sunC: '#a9bde3', sunI: 0.1, lit: 1 })],
+];
+let dayBg = null, lastBg = null, nightNow = -1;
+const _c = new THREE.Color();
+function dayLight(t) {
+  // 바닥층(ground.js)이 낮 배경색을 바꾸면 그 색을 낮 기준으로 삼는다
+  if (!dayBg || (scene.background && lastBg && !scene.background.equals(lastBg))) dayBg = scene.background.clone();
+  let i = 0; while (i < LKEY.length - 2 && LKEY[i + 1][0] <= t) i++;
+  const [t0, A0] = LKEY[i], [t1, A1] = LKEY[i + 1], k = Math.max(0, Math.min(1, (t - t0) / (t1 - t0 || 1)));
+  const e = k * k * (3 - 2 * k), bgA = A0.bg || dayBg, bgB = A1.bg || dayBg;
+  hemi.color.copy(A0.sky).lerp(A1.sky, e); hemi.groundColor.copy(A0.gnd).lerp(A1.gnd, e); hemi.intensity = A0.hI + (A1.hI - A0.hI) * e;
+  sun.color.copy(A0.sunC).lerp(A1.sunC, e); sun.intensity = A0.sunI + (A1.sunI - A0.sunI) * e;
+  _c.copy(bgA).lerp(bgB, e); scene.background.copy(_c); if (scene.fog) scene.fog.color.copy(_c); lastBg = scene.background.clone();
+  const lit = A0.lit + (A1.lit - A0.lit) * e;
+  bMat.emissiveIntensity = lit * 0.95; uRoofGlow.value = lit * 0.6;
+  document.body.classList.toggle('night', lit >= 0.5);   // 이름표 등 화면 글자가 어두운 배경용 모양으로 바뀔 수 있게(app.css)
+  if (Math.abs(lit - nightNow) > 0.02) { nightNow = lit; document.dispatchEvent(new CustomEvent('map-light', { detail: { night: lit } })); }   // 가로등·간판 등이 따라 켜지게
+  need();
+}
+document.addEventListener('sim-time', (e) => dayLight(e.detail.t));
+
 function frame(now) {
   requestAnimationFrame(frame);
   if (bench) {
@@ -615,7 +689,7 @@ requestAnimationFrame(() => requestAnimationFrame(() => {
 
 // 점검용(자동 시험이 읽음)
 window.__map = { select, buildings: B, signedArea, camera, controls, HOME, labels, need, orbit, scene, renderer, R, esc, tint, setRoofs,
-  roads: roadMeshes, ground, greens: greenMeshes, water: waterMesh, xz, meta: D.meta,
+  roads: roadMeshes, ground, greens: greenMeshes, water: waterMesh, xz, meta: D.meta, dayLight, edgeFade, get night() { return Math.max(0, nightNow); },
   get selected() { return selIdx; }, infoExtra: null };
 document.dispatchEvent(new Event('map-ready'));
 })();
