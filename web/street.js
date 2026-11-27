@@ -121,9 +121,12 @@ function drawBand(s) {
   s.snapHit = sn.hit; s.pRoad = q;
   band = new THREE.Group();
   const fill = [], edge = [];
-  laneStrip(q, half, 0, 0.07, fill);                       // 노면(실제 도로 폭)
-  laneStrip(q, 0.35, half + 0.2, 0.09, edge); laneStrip(q, 0.35, -half - 0.2, 0.09, edge);   // 양쪽 가장자리선
-  band.add(meshOf(fill, '#ffd43b', 0.42, 9.3), meshOf(edge, '#e0a800', 0.95, 9.65));
+  // 노면은 아주 옅게만(아스팔트·횡단보도가 보이게 — 진하게 덮으면 흙길처럼 탁해짐), 구간은 양쪽 노란 선으로 또렷하게
+  const glow = [];
+  laneStrip(q, half, 0, 0.07, fill);                                                   // 노면(실제 도로 폭)
+  laneStrip(q, 1.1, half - 0.9, 0.08, glow); laneStrip(q, 1.1, -half + 0.9, 0.08, glow);   // 선 안쪽 번짐
+  laneStrip(q, 0.55, half + 0.1, 0.09, edge); laneStrip(q, 0.55, -half - 0.1, 0.09, edge);   // 양쪽 가장자리선
+  band.add(meshOf(fill, '#ffe066', 0.12, 9.3), meshOf(glow, '#ffd43b', 0.3, 9.35), meshOf(edge, '#fcc419', 1, 9.65));
   // 시작·끝 표지: 원판 + 이름표
   const ends = [q[0], q[q.length - 1]], names = END_NAMES[s.id];
   const mid = q[Math.floor(q.length / 2)];
