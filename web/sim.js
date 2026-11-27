@@ -558,11 +558,17 @@ const ptsMat = new THREE.PointsMaterial({ size: 8 * MP.renderer.getPixelRatio(),
 const points = new THREE.Points(geo, ptsMat); points.renderOrder = 20; points.frustumCulled = false; scene.add(points);
 // 가까이 보면 사람 모양(아래 drawFigures). 상수는 syncDot 이 처음 불리기 전에 있어야 함
 let drawDirty = true;   // 멈춰 있을 때도 시각을 옮기면 점을 다시 그려야 한다
+let simT = T0, playing = false, speed = 15, lastNow = 0;   // syncDot(멀리 옅게)이 처음 불리기 전에 있어야 함
 const FIG_MAX = 4000, FIG_NEAR = 200, FIG_R = 420;
 function figMode() { return MP.camera.position.distanceTo(MP.controls.target) < FIG_NEAR; }
 // 2만 명 1:1이라 멀리서 8px 점이 길을 덮음 → 카메라 거리에 따라 크기(가까이 8 · 중간 5.5 · 멀리 3.5px)
 const dotPx = () => { const d = MP.camera.position.distanceTo(MP.controls.target); return d < 260 ? 6.5 : d < 620 ? 4.5 : 3.2; };
-let dotNow = 0, figNow = null; function syncDot() { const v = dotPx(); if (v !== dotNow) { dotNow = v; ptsMat.size = v * MP.renderer.getPixelRatio(); need(); }
+// 멀리(700m 넘게) 보고 재생 중이 아니면 사람 점을 옅게(크기 60%·불투명도 0.5) — 상권 전체에서 빈 층 주황이 점에 묻히지 않게, 재생하면 진하게(seohogyun-20 제안 C)
+const DIM_D = 700; let dimNow = null;
+function dimDots() { return MP.camera.position.distanceTo(MP.controls.target) > DIM_D && !playing; }
+let dotNow = 0, figNow = null; function syncDot() { const dim = dimDots(), v = dotPx() * (dim ? 0.6 : 1);
+  if (dim !== dimNow) { dimNow = dim; ptsMat.transparent = dim; ptsMat.opacity = dim ? 0.5 : 1; ptsMat.depthWrite = !dim; ptsMat.needsUpdate = true; need(); }
+  if (v !== dotNow) { dotNow = v; ptsMat.size = v * MP.renderer.getPixelRatio(); need(); }
   const f = figMode(); if (f !== figNow || f) { figNow = f; drawDirty = true; } }
 MP.controls.addEventListener('change', syncDot); syncDot();
 // 점은 화면에 서 있는 네모라 아래쪽 반이 앞의 연석(15cm)·낮은 물체에 가려 반달처럼 보임 → 깊이를 카메라 쪽으로 조금 당김(건물은 여전히 가림)
@@ -696,7 +702,6 @@ const assumed = GROUPS.filter(g => CFG.groups[g].src === '가정' || /가정/.te
   </ul><p>근거: docs/okpo-persona-sources.md</p>`;
 }
 $('sim-note').textContent = `가상 인물 ${' '}점 1개 = 사람 약 ${'{W}'}명. ` + (assumed ? '사람 수·교대 시간은 아직 근거 확인 전 가정 값입니다.' : '');
-let simT = T0, playing = false, speed = 15, lastNow = 0;
 // 재생 막대 옮기기: 예전엔 매번 05시부터 다시 계산(18시 0.3초·새벽 1시 0.5초). 이제
 //  - 앞으로 옮기면 지금 상태에서 이어서 계산
 //  - 뒤로 옮기면 1시간마다 저장해 둔 상태 중 가장 가까운 것에서 이어서 계산
@@ -758,7 +763,7 @@ function ui() {
   }
   need();
 }
-function playBtn() { $('sim-play').innerHTML = playing ? '<span class="ico">❚❚</span> 멈추기' : '<span class="ico">▶</span> 하루 돌려 보기'; $('sim-play').classList.toggle('on', playing); }
+function playBtn() { syncDot(); document.dispatchEvent(new CustomEvent('sim-play', { detail: { playing } })); $('sim-play').innerHTML = playing ? '<span class="ico">❚❚</span> 멈추기' : '<span class="ico">▶</span> 하루 돌려 보기'; $('sim-play').classList.toggle('on', playing); }
 $('sim-play').onclick = () => { playing = !playing; playBtn(); if (playing && (simT >= TS.p1 || simT < TS.p0)) seek(TS.p0); };
 $('sim-range').oninput = (e) => seek(+e.target.value);
 $('sim-day').querySelectorAll('button').forEach(b => b.onclick = () => {
@@ -1171,6 +1176,6 @@ function trySlot(bi, floor, sub, price, seats, runs = 3, hrs) {
   removeVirtual(s);
   return r;
 }
-window.__sim = { get _fig() { return figMesh; }, get cfgVer() { return TS.ver; }, TS, applyTS, _catwin: CAT_WIN, hoursOf, fillHours, readHours, hoursTxt, _shops: () => SHOPS, _active: () => ACTIVE, _md: { MDX, MDZ, NX, NZ, NSW, NWD }, peakTxt, _ck: CK, runDay, experiment, seek, nodesNear, flowDay, trySlot, nodeFlow, nodeFlowAsync, restore: () => { drawDirty = true; need(); }, won, wonX, GROUPS, SUB, SUBS_OF, subOptions, NAT,
+window.__sim = { get playing() { return playing; }, get _fig() { return figMesh; }, get cfgVer() { return TS.ver; }, TS, applyTS, _catwin: CAT_WIN, hoursOf, fillHours, readHours, hoursTxt, _shops: () => SHOPS, _active: () => ACTIVE, _md: { MDX, MDZ, NX, NZ, NSW, NWD }, peakTxt, _ck: CK, runDay, experiment, seek, nodesNear, flowDay, trySlot, nodeFlow, nodeFlowAsync, restore: () => { drawDirty = true; need(); }, won, wonX, GROUPS, SUB, SUBS_OF, subOptions, NAT,
   graph: { NX, NZ, ADJ, NN }, get scen() { return scen; }, get A() { return A; }, get W() { return W; }, SHOPS, CFG, nodes: NN, get t() { return simT; } };
 })();
