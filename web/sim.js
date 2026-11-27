@@ -476,7 +476,7 @@ function tick(now) {
   }
   if (playing || drawDirty) { const n = draw(simT); points.visible = n > 0; drawDirty = false; need(); }
 }
-seek(Q('simt') ? parseT(Q('simt')) : 18 * 60);
+seek(Q('simt') ? parseT(Q('simt')) : 14 * 60);   // 첫 화면은 낮 14시(빈 층 주황이 또렷하게). 밤은 '하루 돌려 보기'로 넘어가며 보임
 function Q(k) { return new URLSearchParams(location.search).get(k); }
 function parseT(s) { const [h, m] = s.split(':').map(Number); return Math.max(T0, Math.min(T1, h * 60 + (m || 0) + (h < 5 ? 1440 : 0))); }
 requestAnimationFrame(tick);
