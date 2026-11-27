@@ -13,7 +13,7 @@
      - 주차장 면은 OSM 실제 위치, 그 안의 주차 칸 선은 장식이다.
    그리기 순서(renderOrder): 인도 3.5 · 주차장 4.5 · 길 포장 7.1~7.6 · 선 8 · 횡단보도·정지선 8.9 · (ea 거리 띠·빈 층 고리 9.3~9.7) · 건물 10.
    높이(y)는 모두 0.06 아래(ea 의 땅 위 표시가 0.07~0.12).
-   app.js 연결점(#52): __map.roads(옛 길 띠 3겹)는 숨기고, __map.ground(땅 평면) 색만 바꾼다. */
+   app.js 연결점(#52·#55): __map.roads(옛 길 띠 3겹)는 숨기고, __map.ground(땅)·greens(숲·공원·운동장)·water(바다) 색만 바꾼다. */
 (() => {
 'use strict';
 const M = window.__map, D = window.MAP_DATA;
@@ -33,6 +33,8 @@ const G = {
   center: '#f2c230', lane: '#ffffff', zebra: '#fbfbf8',
   parking: '#9da2a9', stall: '#f4f4f2',
   edge: '#848b94',                               // 골목 가장자리선
+  // 녹지·물 바닥(app.js 가 그림, #55 연결점으로 색만 바꿈): 차분한 잎(#4e7c45~#77a465, decor.js)과 같은 계열로 채도를 낮춤
+  wood: '#a8bc95', green: '#bfd0aa', pitch: '#b9cda3', water: '#9cbfdc',
 };
 const MAJOR = new Set(['trunk', 'primary', 'secondary', 'tertiary']);
 const LINK = new Set(['trunk_link', 'primary_link', 'secondary_link', 'tertiary_link']);
@@ -303,6 +305,8 @@ if (Array.isArray(M.roads)) for (const r of M.roads) if (r) r.visible = false;
 if (M.ground && M.ground.material) M.ground.material.color.set(G.ground);
 if (M.scene.background && M.scene.background.isColor) M.scene.background.set(G.ground);
 if (M.scene.fog) M.scene.fog.color.set(G.ground);
+if (M.greens) for (const k of ['wood', 'green', 'pitch']) { const g = M.greens[k]; if (g && g.material) g.material.color.set(G[k]); }
+if (M.water && M.water.material) M.water.material.color.set(G.water);
 
 if (M.renderer) M.renderer.shadowMap.needsUpdate = true;
 M.need && M.need();
