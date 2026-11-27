@@ -26,7 +26,7 @@ OUT = os.path.join(ROOT, 'data', 'processed', 'personas')
 WEB_DATA_OUT = os.path.join(ROOT, 'web', 'data', 'okpo_personas.js')
 M_POOL = 50000
 SEED = 20261127
-VERSION = '0.6.0'
+VERSION = '0.6.1'
 GEN_DATE = '2026-11-27'
 
 # ── 데이터 없는 곳에만 남긴 최소 가정값 + 현장 상인 인터뷰(2026-11) 구조 보정값 ──
@@ -47,9 +47,9 @@ ASSUMED = {
     'expat_family_budget_scale': 1.15,
     'expat_pub_pref_scale': 1.60,              # 옛 '옥포 이태원' 펍·바의 주 고객(머니투데이 2017-04-03 「불꺼진 '옥포 이태원', 선주의 빈자리」)
     'expat_weekday_arrival_mode': {'morning': 0.05, 'lunch': 0.12, 'after': 0.83, 'shift': 0.0},
-    'sex_male_by_visa_class': {                # 체류자격 부류별 남성 비율(가정). 결과는 옥포1동 등록외국인 남성 비율 실측과 독립 비교(V9)
-        'worker': 0.97, 'dongpo_worker': 0.70, 'expat': 0.93, 'expat_family': 0.30, 'marriage': 0.18,
-        'family': 0.35, 'student': 0.55, 'e6': 0.15, 'general': 0.60, 'other': 0.70,
+    'sex_male_by_visa_class': {                # 체류자격 부류별 남성 비율 중 실측으로 못 바꾼 두 부류(가정). 나머지는 법무부 체류자격별 성별(23)
+        'worker': 0.97,                        # 조선소 E-7·E-9. 전국 E-7 88.5%·E-9 90.1%는 농업·식품 등이 섞여 낮다. 옥포1동 실측 남성 679명에서 다른 부류(전국 비율)를 빼면 0.976
+        'e6': 0.15,                            # 옥포 E-6은 전부 호텔유흥(E-6-2). 전국 E-6(39.0%)은 예술·운동선수가 섞여 맞지 않음
     },
     'lunch_out_from_outside_job': 0.25,        # 동 밖 직장인이 평일 점심에 옥포1동 상권으로 오는 정도(근처 직장일 때만, 12시 칸만)
     'foreign_paid_tx_factor': 1.0,             # 외국인 결제 빈도 배수(내국인 = 1.0). 0.52였으나 예산 배수와 같은 절약 성향을 두 번 곱해 R1이 0.15배로 지나치게 낮아져 1.0으로 둠(시나리오 조절용으로 남김)
@@ -552,9 +552,28 @@ def visa_job(v):
     return '기타(구직·난민 등)', code, 'other'
 
 
-# 체류자격 부류별 남성 비율(가정: 출입국 통계의 일반적 구성 — 조선·제조 취업 비자는 거의 남성, 결혼이민·동반 가족은 여성 중심)
+# 체류자격 부류별 남성 비율: 법무부 통계월보(2026-10) 전국 체류자격(상위 코드)별 남녀(23_visa_sex_national)를
+# 거제 등록외국인의 체류자격 구성(21_foreign_by_dong_visa)으로 가중 평균한다. 조선소 근로자·E-6만 가정(ASSUMED)
 # 결과는 옥포1동 등록외국인 남성 비율 실측(679/1,049 = 64.7%)과 독립 비교한다(V9)
-SEX_MALE_BY_CLASS = ASSUMED['sex_male_by_visa_class']
+visa_sex_rows = rcsv(os.path.join(P_IN, '23_visa_sex_national.csv'))
+VISA_MALE_SHARE = {r['코드']: int(r['남성']) / (int(r['남성']) + int(r['여성'])) for r in visa_sex_rows}
+
+
+def visa_male_share(code):
+    top = '-'.join(code.split('-')[:2])
+    return VISA_MALE_SHARE.get(top, VISA_MALE_SHARE['기타'])
+
+
+_sex_acc = defaultdict(lambda: [0.0, 0.0])
+for r in foreign_dong_rows:
+    _, _code, _cls = visa_job(r['체류자격'])
+    n = int(r['인원'])
+    _sex_acc[_cls][0] += n
+    _sex_acc[_cls][1] += n * visa_male_share(_code)
+SEX_MALE_BY_CLASS = {c: round(m / n, 3) for c, (n, m) in _sex_acc.items() if n}
+SEX_MALE_BY_CLASS.update(ASSUMED['sex_male_by_visa_class'])
+for _c in ('worker', 'dongpo_worker', 'expat', 'expat_family', 'marriage', 'family', 'student', 'e6', 'general', 'other'):
+    SEX_MALE_BY_CLASS.setdefault(_c, VISA_MALE_SHARE['기타'])
 # 체류자격별로 나올 수 있는 국적(거제 국적 분포에서 이 안에서만 뽑는다)
 EPS_NATS = {'베트남', '인도네시아', '우즈베키스탄', '네팔', '스리랑카', '미얀마', '타이', '필리핀', '중국', '캄보디아', '방글라데시',
             '파키스탄', '몽골', '키르기즈', '티모르민주공화국', '타지키스탄', '라오스'}   # 고용허가제(E-9) 송출국
@@ -1883,7 +1902,7 @@ for p in people:
         fr_nat[p['nationality']] += p['weekday_expansion_weight']
 add_range_check('independent', 'V9. 옥포1동 등록외국인 남성 비율 vs 실측(679/1,049 = 64.7%)',
                 fr_w['남'] / max(sum(fr_w.values()), 1.0), fd1['male'] / fd1['total'] - 0.05, fd1['male'] / fd1['total'] + 0.05,
-                '체류자격별 성비 가정(sex_male_by_visa_class)으로 만든 성별을 동 실측 성비와 독립 비교')
+                '체류자격별 성비(법무부 전국 체류자격별 남녀, 조선소 근로자·E-6-2만 가정)로 만든 성별을 동 실측 성비와 독립 비교')
 nat_top_tgt = {k: v / fd1['total'] for k, v in fd1['top'].items()}
 nat_top_tgt['그 밖'] = 1.0 - sum(nat_top_tgt.values())
 fr_tot = sum(fr_nat.values()) or 1.0
@@ -1988,6 +2007,7 @@ SOURCES = [
     {'name': '한국은행 2024 지급수단 이용행태 조사 · 농촌경제연구원 식품소비행태조사', 'use': '현금 결제 건수 비중(15.9%) 분리 표기, 외식 선택 기준 기본 가중치', 'file': 'data/processed/okpo/17_flow_targets.json'},
     {'name': '2025 이민자체류실태 및 고용조사 — 소득과 소비 (국가데이터처·법무부)', 'use': f'외국인 총소득 중 국내 지출(생활비+기타) {FOREIGN_LOCAL_SPEND_SHARE:.1%}, E-9 송금 {E9_REMIT_SHARE:.1%}·무상 거처 76.7% → 외국인 예산 배수 근거, R1 참고 비교', 'file': 'data/processed/okpo/22_foreign_spending_survey.csv'},
     {'name': '옥포1동 기술센터(대우조선 복합업무지원단지) 입주 점포', 'use': f"설계·엔지니어링 {TECH_CENTER['engineering_firms']}곳과 사내식당(웰리브) {TECH_CENTER['cafeteria']}곳이 한 건물 → 설계·기술직 점심 외출 축소 근거", 'file': 'data/processed/okpo_stores.csv (지번 옥포동 1991-9)'},
+    {'name': '법무부 출입국외국인정책 통계월보 체류외국인 원본 통계표 (2026-10-31, 전국)', 'use': f'체류자격별 남녀 → 거제 체류자격 구성으로 가중한 부류별 남성 비율(선주 감독관 {SEX_MALE_BY_CLASS["expat"]:.1%}·결혼이민 {SEX_MALE_BY_CLASS["marriage"]:.1%}·동반 가족 {SEX_MALE_BY_CLASS["family"]:.1%} 등). 조선소 근로자·E-6-2는 가정', 'file': 'data/processed/okpo/23_visa_sex_national.csv'},
     {'name': '거제시 읍면동별 체류자격별 외국인 현황 (2026-10-31)', 'use': '타동에서 옥포로 오는 외국인의 사는 곳(동별 등록외국인 × 거리)·체류자격', 'file': 'data/processed/okpo/21_foreign_by_dong_visa.csv'},
     {'name': '머니투데이 「[르포]불꺼진 \'옥포 이태원\', 선주의 빈자리」(2017-04-03)', 'use': '선박설비(D-9-3) 선주 감독관·가족을 저소비 근로자와 나눠 외국인거리 펍·바 손님으로 둠(expat_pub_pref_scale)', 'file': 'docs/okpo-evidence.md'},
     {'name': '옥포 상인회 인터뷰 녹취 (2026-11-27)', 'use': '① 저녁·주말 외국인 유입 증가 및 저소비(무소비 산책·송금) ② 한화오션 외부 설계동 사내 이전 및 사내식당 식사로 인한 평일 점심 외출 실종 ③ 외국인 비중 증가·혼성 근무로 인한 저녁 회식(주점) 수요 축소 반영', 'file': 'docs/persona-plan.md'},
@@ -2034,6 +2054,7 @@ rules = {
         'summer_aug_weight, winter_feb_weight (월별 상권 유동·기념공원 입장객)',
     ],
     'assumed_fields': ASSUMED,
+    'sex_male_by_visa_class_used': SEX_MALE_BY_CLASS,
     'assumed_field_sources': ASSUMED_SOURCES,
     'sources': SOURCES,
 }

@@ -1,8 +1,8 @@
 {
- "version": "0.6.0",
+ "version": "0.6.1",
  "generated": "2026-11-27",
  "seed": 20261127,
- "n": 23952,
+ "n": 23983,
  "candidate_pool": 50000,
  "script": "tools/build_personas.py",
  "population_scope": "거제시 옥포1동(R-ONE 「거제옥포」 상권 중심)에 하루 동안 머물거나 방문하는 10세 이상 인구(내·외국인 주민, 동내 사업체 근무자, 시외 숙소형·통근형 유입, 거제 타동 방문객, 관광객)",
@@ -11,10 +11,10 @@
   "resident": {
    "ko": "옥포1동 주민",
    "sim_group": "resident",
-   "count": 5128,
-   "share_of_personas": 0.2141,
+   "count": 5129,
+   "share_of_personas": 0.2139,
    "weekday_unique_persons": 5129,
-   "weekday_simultaneous_persons": 3583.7
+   "weekday_simultaneous_persons": 3592.4
   },
   "foreign_resident": {
    "ko": "옥포 거주 외국인",
@@ -22,39 +22,39 @@
    "count": 963,
    "share_of_personas": 0.0402,
    "weekday_unique_persons": 963,
-   "weekday_simultaneous_persons": 743.4
+   "weekday_simultaneous_persons": 741.7
   },
   "okpo1_worker": {
    "ko": "옥포1동 상권·사업체 근무자",
    "sim_group": "worker",
-   "count": 2115,
-   "share_of_personas": 0.0883,
-   "weekday_unique_persons": 2184,
-   "weekday_simultaneous_persons": 840.9
+   "count": 2113,
+   "share_of_personas": 0.0881,
+   "weekday_unique_persons": 2158,
+   "weekday_simultaneous_persons": 832.4
   },
   "stayer": {
    "ko": "시외 체류·숙소형 유입",
    "sim_group": "worker",
-   "count": 2384,
-   "share_of_personas": 0.0995,
-   "weekday_unique_persons": 2383,
-   "weekday_simultaneous_persons": 1929.1
+   "count": 2380,
+   "share_of_personas": 0.0992,
+   "weekday_unique_persons": 2381,
+   "weekday_simultaneous_persons": 1928.5
   },
   "commuter": {
    "ko": "시외 주간 유입(통근·출장)",
    "sim_group": "worker",
-   "count": 4526,
-   "share_of_personas": 0.189,
-   "weekday_unique_persons": 4540,
-   "weekday_simultaneous_persons": 1441.4
+   "count": 4524,
+   "share_of_personas": 0.1886,
+   "weekday_unique_persons": 4552,
+   "weekday_simultaneous_persons": 1440.9
   },
   "geoje_visitor": {
    "ko": "거제 타동 방문객",
    "sim_group": "resident",
-   "count": 8524,
-   "share_of_personas": 0.3559,
-   "weekday_unique_persons": 8506,
-   "weekday_simultaneous_persons": 313.4
+   "count": 8562,
+   "share_of_personas": 0.357,
+   "weekday_unique_persons": 8548,
+   "weekday_simultaneous_persons": 314.7
   },
   "tourist": {
    "ko": "관광객",
@@ -62,7 +62,7 @@
    "count": 312,
    "share_of_personas": 0.013,
    "weekday_unique_persons": 312,
-   "weekday_simultaneous_persons": 41.7
+   "weekday_simultaneous_persons": 43.0
   }
  },
  "categories": {
@@ -163,8 +163,8 @@
   "method": "후보 50,000명 생성 → 다중 주변합 반복 비례 맞춤(raking) → 도출된 하루 순유동 인원 N = round(Σw) 전원 1:1 체계 추출(PPS) → 미세 보정",
   "primary_target_simultaneous": 8893.666666666666,
   "primary_target_src": "경남빅데이터허브 옥포1동 동 생활인구(시각 평균 인원, 2026년 1~9월, 10세 이상·등록외국인 포함)",
-  "emergent_daily_unique_weekday": 24018,
-  "persona_count_1to1": 23952,
+  "emergent_daily_unique_weekday": 24044,
+  "persona_count_1to1": 23983,
   "emergent_daily_unique_benchmark": "29,067명(거제시 2026-10 월보) · 29,264명(소상공인365 2026-08)",
   "weekend_multipliers_by_segment": {
    "resident": 1.0,
@@ -516,15 +516,7 @@
   },
   "sex_male_by_visa_class": {
    "worker": 0.97,
-   "dongpo_worker": 0.7,
-   "expat": 0.93,
-   "expat_family": 0.3,
-   "marriage": 0.18,
-   "family": 0.35,
-   "student": 0.55,
-   "e6": 0.15,
-   "general": 0.6,
-   "other": 0.7
+   "e6": 0.15
   },
   "lunch_out_from_outside_job": 0.25,
   "foreign_paid_tx_factor": 1.0,
@@ -590,6 +582,18 @@
    "대기": 0.12,
    "분위기": 0.1
   }
+ },
+ "sex_male_by_visa_class_used": {
+  "worker": 0.97,
+  "marriage": 0.281,
+  "other": 0.642,
+  "general": 0.474,
+  "student": 0.492,
+  "family": 0.335,
+  "expat_family": 0.335,
+  "expat": 0.877,
+  "e6": 0.15,
+  "dongpo_worker": 0.604
  },
  "assumed_field_sources": {
   "child_escort_age": "assumption",
@@ -690,6 +694,11 @@
    "name": "옥포1동 기술센터(대우조선 복합업무지원단지) 입주 점포",
    "use": "설계·엔지니어링 19곳과 사내식당(웰리브) 2곳이 한 건물 → 설계·기술직 점심 외출 축소 근거",
    "file": "data/processed/okpo_stores.csv (지번 옥포동 1991-9)"
+  },
+  {
+   "name": "법무부 출입국외국인정책 통계월보 체류외국인 원본 통계표 (2026-10-31, 전국)",
+   "use": "체류자격별 남녀 → 거제 체류자격 구성으로 가중한 부류별 남성 비율(선주 감독관 87.7%·결혼이민 28.1%·동반 가족 33.5% 등). 조선소 근로자·E-6-2는 가정",
+   "file": "data/processed/okpo/23_visa_sex_national.csv"
   },
   {
    "name": "거제시 읍면동별 체류자격별 외국인 현황 (2026-10-31)",
