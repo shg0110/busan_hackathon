@@ -145,7 +145,7 @@ function render(s) {
     <div id="st-flow"><p class="exp-wait">계산 중…</p></div>
     <p class="st-sub">가게 없는 층 자리 순위</p>
     <div class="st-rank">
-      <select id="rk-cat" aria-label="업종"><option value="intl">가성비 다국적 식당</option><option value="pub">옛날식 호프·주점</option><option value="meal">백반·한식</option><option value="cafe">카페</option><option value="mart">편의점·식료품</option><option value="life">생활 서비스</option></select>
+      <select id="rk-cat" aria-label="업종">${SIM.subOptions ? SIM.subOptions('viet') : ''}</select>
       <button class="btn-primary" id="rk-run">${new Set(s.slots.filter(x => x.fl.some(f => f[1] === 'empty')).map(x => x.b)).size}개 건물에 열어 보기</button>
     </div>
     <div id="rk-out"></div>`;
@@ -176,7 +176,7 @@ function flow(s) {
     <p class="st-tip">가상 인물이 이 길(중심선 14m 안)을 지나간 횟수입니다. 실제 유동인구가 아닙니다. 사람 수·교대 시간은 '자료와 가정 보기'(아래 패널)를 따릅니다.</p>`;
 }
 function rank(s) {
-  const cat = document.getElementById('rk-cat').value, cfg = SIM.CFG.cats[cat];
+  const sub = document.getElementById('rk-cat').value, cfg = SIM.SUB[sub];   // 세부 업종 기본값(대표 메뉴 1인 지출·자리)
   // 건물마다 가장 낮은 빈 층 하나(같은 건물 위층은 위치가 같아 결과도 같음)
   const slots = s.slots.map(x => { const f = x.fl.filter(f => f[1] === 'empty').sort((a, c) => a[0] - c[0])[0]; return f ? { ...x, floor: f[0], area: f[2] } : null; }).filter(Boolean);
   const out = document.getElementById('rk-out'), btn = document.getElementById('rk-run');
@@ -188,12 +188,12 @@ function rank(s) {
       SIM.restore(); btn.disabled = false;
       res.sort((a, b) => (b.r.wd + b.r.we) - (a.r.wd + a.r.we));
       out.innerHTML = `<table class="exp-cmp rk"><tr><th>순위</th><th>자리</th><th>평일</th><th>주말</th><th>평일 매출</th></tr>${res.map((x, k) => `<tr data-b="${x.b}"><td>${k + 1}</td><td>${x.floor}층 · ${x.side === 'L' ? '왼쪽' : '오른쪽'} ${Math.round(x.s)}m${x.area ? ` · ${Math.round(x.area)}㎡` : ''}</td><td>${Math.round(x.r.wd)}명</td><td>${Math.round(x.r.we)}명</td><td>${SIM.won(x.r.wdWon)}</td></tr>`).join('')}</table>
-        <p class="exp-foot">${esc(document.getElementById('rk-cat').selectedOptions[0].textContent)} · 1인 ${SIM.won(cfg.price)} · 건물마다 가장 낮은 빈 층, 평일·주말 2번씩 평균(사람 1:1), 2층 이상은 눈에 덜 띄는 것(가정)을 반영 · 계산 ${((performance.now() - t0) / 1000).toFixed(1)}초. 행을 누르면 그 건물로 가서 자세히 실험할 수 있습니다. 가상 인물로 자리끼리 비교한 값입니다.</p>`;
+        <p class="exp-foot">${esc(document.getElementById('rk-cat').selectedOptions[0].textContent)} · 1인 ${SIM.wonX(cfg.basket)}(대표 메뉴 기준) · 건물마다 가장 낮은 빈 층, 평일·주말 2번씩 평균(사람 1:1), 2층 이상은 눈에 덜 띄는 것(가정)을 반영 · 계산 ${((performance.now() - t0) / 1000).toFixed(1)}초. 행을 누르면 그 건물로 가서 자세히 실험할 수 있습니다. 가상 인물로 자리끼리 비교한 값입니다.</p>`;
       out.querySelectorAll('tr[data-b]').forEach(tr => tr.onclick = () => flyBuilding(+tr.dataset.b));
       need(); return;
     }
     const x = slots[i++];
-    res.push({ ...x, r: SIM.trySlot(x.b, x.floor, cat, cfg.price, cfg.seats, 2) });
+    res.push({ ...x, r: SIM.trySlot(x.b, x.floor, sub, cfg.basket, cfg.seats, 2) });
     out.querySelector('.prog i').style.width = (100 * i / slots.length) + '%'; document.getElementById('rk-p').textContent = `${i} / ${slots.length}`;
     setTimeout(next, 0);
   }

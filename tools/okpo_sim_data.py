@@ -49,6 +49,9 @@ def inside(pt):
             c = not c
     return c
 stores = list(csv.DictReader(open(os.path.join(ROOT, 'data', 'processed', f'{NAME}_stores.csv'), encoding='utf-8-sig')))
+# 세부 업종: data/processed/<지역>_menu.json 의 match(상가정보 소분류)로 정한다. 맞는 세부 업종이 없으면 큰 업종 규칙(sim_cat)만
+MENU = json.load(open(os.path.join(ROOT, 'data', 'processed', f'{NAME}_menu.json'), encoding='utf-8'))
+SUB_OF = {m: (s['id'], s['cat']) for s in MENU['subs'] for m in s['match']}
 # 가게 → 건물·층: tools/okpo_floors.py 결과에서 이름으로 찾는다(같은 판정 규칙을 두 번 쓰지 않게)
 shop_floor = {}
 for bi, fl in FLO['b'].items():
@@ -57,7 +60,10 @@ for bi, fl in FLO['b'].items():
             shop_floor.setdefault(s['n'], []).append((int(bi), f['n']))
 shops = []
 for r in stores:
-    c = sim_cat(r['상권업종대분류명'], r['상권업종중분류명'], r['상권업종소분류명'], r['상호명'])
+    sub, c = SUB_OF.get(r['상권업종소분류명'], (None, None))
+    if not c:
+        c = sim_cat(r['상권업종대분류명'], r['상권업종중분류명'], r['상권업종소분류명'], r['상호명'])
+        sub = {'meal': 'baekban', 'pub': 'hof', 'cafe': 'cafe', 'intl': 'viet', 'mart': 'grocery', 'life': 'hair'}.get(c)
     if not c:
         continue
     x, z = xz(float(r['위도']), float(r['경도']))
@@ -66,7 +72,7 @@ for r in stores:
     nm = r['상호명'] + (' ' + r['지점명'] if r['지점명'] else '')
     loc = shop_floor.get(nm, [])
     bi, fl = (loc[0] if loc else (-1, None))
-    shops.append(dict(n=nm, c=c, cs=r['상권업종소분류명'], x=x, z=z, b=bi, f=fl, i=int(inside((x, z)))))
+    shops.append(dict(n=nm, c=c, sub=sub, cs=r['상권업종소분류명'], x=x, z=z, b=bi, f=fl, i=int(inside((x, z)))))
 
 # ── 집 ───────────────────────────────────────────────────
 homes = []
@@ -103,7 +109,7 @@ for e in osm['elements']:
 in_all = sum(1 for r in stores if inside(xz(float(r['위도']), float(r['경도']))))
 in_sim = sum(1 for s_ in shops if s_['i'])
 out = dict(shops=shops, homes=homes, gates=gates, stops=stops, inside=dict(stores_all=in_all, stores_sim=in_sim),
-           counts=dict(shops=len(shops), by_cat=collections.Counter(s['c'] for s in shops), homes=len(homes),
+           counts=dict(shops=len(shops), by_cat=collections.Counter(s['c'] for s in shops), by_sub=collections.Counter(s['sub'] for s in shops), homes=len(homes),
                        home_area=round(sum(h['w'] for h in homes)), gates=len(gates), stops=len(stops)))
 dst = os.path.join(ROOT, 'web', 'data', f'{NAME}_sim.js')
 with open(dst, 'w', encoding='utf-8') as f:
