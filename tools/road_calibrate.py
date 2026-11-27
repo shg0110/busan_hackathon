@@ -7,6 +7,7 @@
   - OSM lanes 가 적힌 가닥은 폭을 차로 수 × 3m 아래로 줄이지 않는다(그 가닥의 실제 차로 수가 들어가게)
   - 중앙분리 도로(같은 이름의 일방 가닥이 둘 이상, 예: 거제대로): 횡단보도가 두 가닥을 함께 건넌다고 보고 폭·차로 수를 반으로(폭 최소 6m)
     — 기록에 가닥 구분이 없어 내린 판단이다. 두 가닥 가운데선 사이가 6~15m 인 것과 맞는다
+  - 노면 재질: OSM surface 가 아스팔트가 아닌 길(콘크리트·보도블록·흙)은 surface 로 따로 내보낸다(r.surf)
   - 결과는 okpo_map.js 를 바꾸지 않고 web/data/<지역>_roadcal.js 로 따로 둔다. web/roadcal.js 가 불러온 직후 MAP_DATA 에 덮어쓴다(?roadcal=0 이면 안 씀)
 실행: python3 -I tools/road_calibrate.py okpo
 """
@@ -48,7 +49,22 @@ def main():
             ln = r.get('ln') or 0   # 골목은 차로 수를 바꾸지 않는다
         out[i] = [w, new_ln]
         rows.append((nm, r['w'], w, r.get('ln') or 0, new_ln, twin, len(rec[nm])))
-    res = {'src': '전국횡단보도표준데이터(공공데이터포털, 거제시 2026-07-20) 도로명별 횡단보도연장 중앙값·차로수 최빈값, tools/road_calibrate.py',
+    # 노면 재질: OSM surface 태그가 아스팔트가 아닌 길(지도 자료에는 재질 칸이 없어 원자료 선의 양 끝 점으로 맞춘다)
+    el = json.load(open(os.path.join(ROOT, 'data', 'raw', 'osm', f'{NAME}.json'), encoding='utf-8'))['elements']
+    meta = M['meta']; xz = lambda la, lo: (round((lo - meta['lon0']) * meta['kx'], 1), round(-(la - meta['lat0']) * meta['kz'], 1))
+    ends = {}
+    for i, r in enumerate(M['roads']):
+        ends.setdefault((tuple(r['p'][0]), tuple(r['p'][-1])), []).append(i); ends.setdefault((tuple(r['p'][-1]), tuple(r['p'][0])), []).append(i)
+    surf = {}
+    for e in el:
+        tg = e.get('tags', {})
+        if e['type'] != 'way' or 'highway' not in tg or tg.get('surface', 'asphalt') == 'asphalt':
+            continue
+        g = [xz(q['lat'], q['lon']) for q in e.get('geometry') or [] if q]
+        for i in (ends.get((g[0], g[-1])) or []) if len(g) > 1 else []:
+            surf[i] = tg['surface']
+    print('노면 재질', {M['roads'][i]['k'] + ':' + v: 1 for i, v in surf.items()})
+    res = {'surface': surf, 'src': '전국횡단보도표준데이터(공공데이터포털, 거제시 2026-07-20) 도로명별 횡단보도연장 중앙값·차로수 최빈값, tools/road_calibrate.py',
            'roads': out}
     dst = os.path.join(ROOT, 'web', 'data', f'{NAME}_roadcal.js')
     with open(dst, 'w', encoding='utf-8') as f:
