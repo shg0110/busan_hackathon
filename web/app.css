@@ -390,6 +390,15 @@ body .map-tip span { color: var(--g700); }
 body .map-tip b { font-weight: 700; color: var(--g900); }
 body .map-tip b.emp { color: var(--vac); }
 body .map-tip em { font-style: normal; font-size: 12.5px; font-weight: 600; color: var(--primary-ink); margin-top: 2px; }
+/* 시간 정하기 창(ea #112 .ts-dlg): 선택 칸·검색 칸을 기록지의 '어떤 가게를 열어 볼까요' 칸과 같은 회색 채움으로, 여는/닫는 시각 칸 폭을 같게 */
+body .ts-dlg select { height: 40px; min-width: 96px; padding: 0 34px 0 12px; border: 0; border-radius: 10px; background-color: var(--g100); color: var(--g900);
+  font: inherit; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; cursor: pointer; appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5 8l5 5 5-5' fill='none' stroke='%234e5968' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; background-size: 16px; }
+body .ts-dlg select:hover { background-color: var(--g200); }
+body .ts-dlg .ts-tb select { width: 148px; }
+body .ts-dlg .ts-q { height: 44px; border: 0; border-radius: 10px; background: var(--g100); padding: 0 14px; font-size: 15px; }
+body .ts-dlg .ts-q::placeholder { color: var(--g600); }
+body .ts-dlg select:focus-visible, body .ts-dlg .ts-q:focus-visible { outline: 3px solid rgba(47, 111, 237, .45); outline-offset: 1px; }
 /* 지도 밖 큰 곳 방향(조선소): 작은 회색 알약, 바깥쪽 화살 대신 '방향'이라는 말로 */
 .lbl.place.edge { font-size: 12.5px; color: var(--g700); background: rgba(255,255,255,.92); border-radius: 8px; padding: 3px 9px; text-shadow: none; box-shadow: 0 1px 3px rgba(0, 20, 60, .14); }
 /* 밤(app.js 가 body.night 를 붙임): 흰 테두리 글자가 어두운 지도에서 얼룩처럼 보이지 않게, 밝은 글자 + 어두운 테두리 */
