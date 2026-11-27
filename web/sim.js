@@ -18,7 +18,7 @@ const CFG0 = {
   groups: {
     worker:   { ko: '조선소 통근자',   col: '#1c64f2', wd: 3000, we: 1800, src: '가정' },
     foreign:  { ko: '외국인 근로자',   col: '#7048e8', wd: 1500, we: 2200, src: '가정' },
-    resident: { ko: '주민',           col: '#0b7285', wd: 3500, we: 3800, src: '가정' },
+    resident: { ko: '주민',           col: '#9a6236', wd: 3500, we: 3800, src: '가정' },
     tourist:  { ko: '주말 방문객',     col: '#d6336c', wd: 0,    we: 600,  src: '가정' },
   },
   shift: { in: [390, 460], out: [1020, 1110], src: '가정(근거 미확인)' },   // 출근 06:30~07:40, 퇴근 17:00~18:30
