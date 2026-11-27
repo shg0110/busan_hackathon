@@ -6,24 +6,24 @@
 /* 빈 층 실험: 대표 메뉴(세부 업종마다 메뉴 가격 × 1인 수량 = 1인 지출). 좁은 정보창에 맞게 메뉴마다 두 줄 */
 .x-menu { margin: 8px 0 10px; font-size: 12.5px; }
 .x-menu-h { margin: 0 0 4px; font-weight: 700; color: #212529; }
-.x-menu-h span { font-weight: 400; color: #868e96; margin-left: 4px; font-size: 11.5px; }
+.x-menu-h span { font-weight: 400; color: #6b7280; margin-left: 4px; font-size: 11.5px; }
 .m-row { padding: 6px 0; border-bottom: 1px solid #f1f3f5; }
 .m-name { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 5px; }
 .m-name b { font-weight: 600; color: #212529; }
-.m-name .u { color: #868e96; font-size: 11px; }
+.m-name .u { color: #6b7280; font-size: 11px; }
 .m-name .src { font-size: 10.5px; padding: 0 5px; border-radius: 4px; }
 .m-name .src.okpo { background: #e6f4ea; color: #2b7a3d; }       /* 옥포 업소 가격 */
 .m-name .src.geoje { background: #e7f0fb; color: #2f5f9e; }      /* 옥포 밖 거제 값 */
 .m-name .src.wide, .m-name .src.card { background: #fff4e0; color: #8a5a00; }   /* 전국·경남, 카드 건당 계산 */
-.m-name .src.guess { background: #f1f3f5; color: #868e96; }
+.m-name .src.guess { background: #f1f3f5; color: #5f666d; }   /* 대비 5.2 */
 .m-calc { display: flex; align-items: center; gap: 5px; margin-top: 4px; }
 .m-calc input { font: inherit; padding: 3px 6px; border: 1px solid #dee2e6; border-radius: 6px; text-align: right; background: #fff; box-sizing: border-box; min-width: 0; }
 .m-calc .m-p { width: 76px; } .m-calc .m-q { width: 52px; }
-.m-calc .op { color: #868e96; font-size: 11.5px; white-space: nowrap; }
+.m-calc .op { color: #6b7280; font-size: 11.5px; white-space: nowrap; }
 .m-calc .m-s { margin-left: auto; color: #495057; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .m-tot { display: flex; justify-content: space-between; align-items: baseline; padding-top: 7px; }
 .m-tot span { font-weight: 600; color: #212529; } .m-tot b { font-size: 15px; font-weight: 800; color: #212529; font-variant-numeric: tabular-nums; }
-.x-menu-note { font-size: 11px; color: #868e96; margin: 4px 0 0; line-height: 1.45; }
+.x-menu-note { font-size: 11px; color: #6b7280; margin: 4px 0 0; line-height: 1.45; }
 
 /* ── 임시: rail 화면(seohogyun-20, #rail)이 없을 때만 적용. rail 이 들어오면 이 블록은 지워도 됨 ── */
 body:not(:has(#rail)) .sim-play { width: auto; height: 40px; padding: 0 14px 0 12px; border-radius: 999px; white-space: nowrap; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; }
@@ -39,5 +39,5 @@ body:not(:has(#rail)) .st-how p, body:not(:has(#rail)) .st-from { font-size: 11.
 .st-sub .lgd .lg-it i { margin-left: 0; }
 
 /* 빈 층이 몰린 곳 이름표(지도 위) */
-.lbl.hot { font-size: 13px; font-weight: 700; color: #fff; background: #e8590c; border-radius: 8px; padding: 3px 9px 3px 4px; text-shadow: none; box-shadow: 0 2px 6px rgba(0,0,0,.18); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-.lbl.hot b { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: #fff; color: #e8590c; font-size: 11.5px; }
+.lbl.hot { font-size: 13px; font-weight: 700; color: #fff; background: #c94a06; border-radius: 8px; padding: 3px 9px 3px 4px; text-shadow: none; box-shadow: 0 2px 6px rgba(0,0,0,.18); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.lbl.hot b { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: #fff; color: #c94a06; font-size: 11.5px; }
