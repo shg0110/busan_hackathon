@@ -407,16 +407,16 @@ const litB = litTexture(0.32, [4 / 64, 0.18, 0.88, 0.58], ['#eef4ff', '#fff6e6',
 const litC = litTexture(0.58, [6 / 64, 0.24, 0.8, 0.32]);                                  // 아파트: 따뜻한 전등, 많이 켜짐
 const litShop = litTexture(0.85, [3 / 64, 0.22, 0.9, 0.62], ['#fff4d6', '#ffe9b8', '#ffffff']);   // 1층 가게: 대부분 켜짐
 const bMat = new THREE.MeshLambertMaterial({ vertexColors: true, map: null, emissive: '#ffffff', emissiveMap: litTex, emissiveIntensity: 0 });
-const uRoofGlow = { value: 0 };
+const uRoofGlow = { value: 0 }, uOfficeK = { value: 1 }, uShopK = { value: 1 };   // 시각별: 사무실 불(저녁 7~8시에 대부분 꺼짐), 1층 가게 불(밤 10시 넘어 닫음)
 const GL2 = renderer.capabilities.isWebGL2;
 // 건물 셰이더에 더하는 것: 밤 주황 지붕 빛남(glow), 건물 종류별 창 무늬·1층 가게 앞면(wst), 밤에 빈 층 불 끄기(bid·woff → emptyTex)
 bMat.onBeforeCompile = (sh) => {
-  Object.assign(sh.uniforms, { uRoofGlow, uWinB: { value: winTexB }, uWinC: { value: winTexC }, uShop: { value: shopTex },
+  Object.assign(sh.uniforms, { uRoofGlow, uOfficeK, uShopK, uWinB: { value: winTexB }, uWinC: { value: winTexC }, uShop: { value: shopTex },
     uLitB: { value: litB }, uLitC: { value: litC }, uLitShop: { value: litShop }, uEmpty: { value: emptyTex } });
   sh.vertexShader = 'attribute float glow, wst, bid, woff;\nvarying float vGlow, vWst, vBid, vWoff;\nvarying vec2 vRaw;\n' +
     sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vGlow = glow; vWst = wst; vBid = bid; vWoff = woff; vRaw = uv;');
   const pick = (a, b, c, d) => `(isShop ? ${d} : (st < 0.5 ? ${a} : (st < 1.5 ? ${b} : ${c})))`;
-  const head = 'uniform float uRoofGlow;\nuniform sampler2D uWinB, uWinC, uShop, uLitB, uLitC, uLitShop, uEmpty;\nvarying float vGlow, vWst, vBid, vWoff;\nvarying vec2 vRaw;\n';
+  const head = 'uniform float uRoofGlow, uOfficeK, uShopK;\nuniform sampler2D uWinB, uWinC, uShop, uLitB, uLitC, uLitShop, uEmpty;\nvarying float vGlow, vWst, vBid, vWoff;\nvarying vec2 vRaw;\n';
   const pre = `float st = mod(vWst, 4.0); float flf = floor(vRaw.y - vWoff); bool isShop = vWst > 3.5 && flf < 0.5 && flf > -0.5;`;
   sh.fragmentShader = head + sh.fragmentShader
     .replace('#include <map_fragment>', `${pre}
@@ -428,6 +428,7 @@ bMat.onBeforeCompile = (sh) => {
   vec4 emissiveColor = ${pick('texture2D(emissiveMap, vUv)', 'texture2D(uLitB, vUv)', 'texture2D(uLitC, vUv)', 'texture2D(uLitShop, vUv)')};
   ${GL2 ? `int fi = int(flf); int msk = int(texelFetch(uEmpty, ivec2(int(vBid + 0.5), 0), 0).r + 0.5);
   if (fi >= 0 && fi < 24 && ((msk >> fi) & 1) == 1) emissiveColor.rgb *= 0.0;` : ''}
+  emissiveColor.rgb *= isShop ? uShopK : (st > 0.5 && st < 1.5 ? uOfficeK : 1.0);
   totalEmissiveRadiance *= emissiveColor.rgb;
 #endif
   totalEmissiveRadiance += vColor.rgb * vGlow * uRoofGlow;`);
@@ -759,7 +760,10 @@ function dayLight(t) {
   _c.copy(bgA).lerp(bgB, e); scene.background.copy(_c); if (scene.fog) scene.fog.color.copy(_c); lastBg = scene.background.clone();
   skyU.hor.value.copy(_c); skyU.top.value.copy(A0.zen).lerp(A1.zen, e);
   const lit = A0.lit + (A1.lit - A0.lit) * e;
-  bMat.emissiveIntensity = lit * 0.95; uRoofGlow.value = lit * 0.6; stars.material.opacity = Math.max(0, lit - 0.4) / 0.6 * 0.85;
+  bMat.emissiveIntensity = lit * 0.95; uRoofGlow.value = lit * 0.6;
+  // 사무·상가 위층 불: 18:30까지 그대로 → 20:00 에 25% / 1층 가게: 22:00 까지 → 23:30 에 15%(일부 술집·편의점만)
+  const ramp = (a, b, lo) => t <= a ? 1 : t >= b ? lo : 1 - (1 - lo) * (t - a) / (b - a);
+  uOfficeK.value = t < 600 ? 0.3 : ramp(1110, 1200, 0.25); uShopK.value = t < 600 ? 0.2 : ramp(1320, 1410, 0.15); stars.material.opacity = Math.max(0, lit - 0.4) / 0.6 * 0.85;
   document.body.classList.toggle('night', lit >= 0.5);   // 이름표 등 화면 글자가 어두운 배경용 모양으로 바뀔 수 있게(app.css)
   if (Math.abs(lit - nightNow) > 0.02) { nightNow = lit; document.dispatchEvent(new CustomEvent('map-light', { detail: { night: lit } })); }   // 가로등·간판 등이 따라 켜지게
   need();
