@@ -188,6 +188,9 @@ body.street-mode .tog:has(#L-floors)::after, body.street-mode .tog:has(#L-open):
   background: center / 18px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5 8l5 5 5-5' fill='none' stroke='%234e5968' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
 .key[open] summary::after { transform: rotate(180deg); }
 .key ul { margin: 0; padding: 0 0 6px; list-style: none; line-height: 1.55; }
+.key h3 { margin: 10px 0 2px; font-size: 12.5px; font-weight: 700; color: var(--g600); letter-spacing: -.01em; }
+.key h3:first-of-type { margin-top: 0; }
+.key ul + h3 { padding-top: 10px; border-top: 1px solid var(--g200); }
 .key li { display: flex; gap: 10px; align-items: baseline; padding: 4px 0; }
 .key li i { flex: none; width: 12px; height: 12px; border-radius: 3px; transform: translateY(1px); }
 .key li i.pin { border-radius: 50%; background: #f03e3e; box-shadow: 0 0 0 2px #fff, 0 0 0 3px #868e96; }
@@ -197,6 +200,10 @@ body.street-mode .tog:has(#L-floors)::after, body.street-mode .tog:has(#L-open):
 .key li i.sig { width: 8px; height: 14px; border-radius: 2px; background: #24282e; box-shadow: inset 0 3px 0 -1px #ff4d4f, inset 0 -3px 0 -1px #38d27a; align-self: center; transform: none; }
 .key li i.kbd { width: 14px; height: 14px; font-size: 12px; font-style: normal; line-height: 14px; color: var(--g600); background: none; transform: none; }
 .key li i.kid { width: 14px; height: 10px; border-radius: 3px; background: #ffe066; align-self: center; transform: none; }
+/* 여러 줄 항목에서도 아이콘이 첫 줄 옆에 붙게(가운데에 뜨지 않게) */
+.key li i.num, .key li i.sig, .key li i.kid { align-self: flex-start; margin-top: 4px; }
+.key li i.dash { align-self: flex-start; margin-top: 10px; }
+.key li i.kbd { align-self: flex-start; margin-top: 3px; font-size: 13px; color: var(--g700); }
 .key li i.dot { border-radius: 50%; width: 8px; height: 8px; background: #1c64f2; box-shadow: 10px 0 0 #7048e8; margin-right: 10px; }
 .key p { margin: 6px 0 12px; font-size: 13px; color: var(--g600); line-height: 1.6; }
 
@@ -390,6 +397,9 @@ body .map-tip span { color: var(--g700); }
 body .map-tip b { font-weight: 700; color: var(--g900); }
 body .map-tip b.emp { color: var(--vac); }
 body .map-tip em { font-style: normal; font-size: 12.5px; font-weight: 600; color: var(--primary-ink); margin-top: 2px; }
+/* 기록지·정보창의 모든 선택 칸을 같은 화살표로(브라우저 기본 화살표·화살표 없음이 섞여 있었음: 업종·층·영업시간) */
+#rail select, #info select { -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5 8l5 5 5-5' fill='none' stroke='%234e5968' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat;
+  background-position: right 12px center; background-size: 16px; padding-right: 36px; cursor: pointer; }
 /* 시간 정하기 창(ea #112 .ts-dlg): 선택 칸·검색 칸을 기록지의 '어떤 가게를 열어 볼까요' 칸과 같은 회색 채움으로, 여는/닫는 시각 칸 폭을 같게 */
 body .ts-dlg select { height: 40px; min-width: 96px; padding: 0 34px 0 12px; border: 0; border-radius: 10px; background-color: var(--g100); color: var(--g900);
   font: inherit; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; cursor: pointer; appearance: none; -webkit-appearance: none;
