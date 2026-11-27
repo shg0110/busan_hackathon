@@ -1,0 +1,3 @@
+출처: https://www.data.go.kr/data/15164376/openapi.do
+API: https://apis.data.go.kr/6260000/DongPopAgeService/getDongPopAge
+받은 날짜: 2026-11-27

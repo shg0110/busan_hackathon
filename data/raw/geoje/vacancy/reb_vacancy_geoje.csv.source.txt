@@ -1,0 +1,5 @@
+데이터명: 한국부동산원 상업용부동산 임대동향조사 상권별 공실률(거제고현·거제옥포)
+제공기관: 한국부동산원 R-ONE Open API
+출처: https://www.reb.or.kr/r-one/
+받은 방법: python3 -I tools/reb_fetch_busan.py data/raw/geoje/vacancy/reb_vacancy_geoje.csv 경남>거제
+받은 날짜: 2026-11-27

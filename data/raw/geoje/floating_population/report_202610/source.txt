@@ -1,0 +1,4 @@
+데이터명: 빅데이터기반 지역현황 분석(2026년 10월)
+제공기관: 거제시 데이터포털(정보통신과)
+출처: https://data.geoje.go.kr/board/view.geoje?boardId=BBS_0000021&menuCd=DOM_000000201006000000&dataSid=9028
+받은 날짜: 2026-11-27

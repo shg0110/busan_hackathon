@@ -21,3 +21,5 @@ data/raw/localdata/*.csv
 data/raw/sbiz/*.csv
 # 브이월드 원본·잘라낸 파일(원본은 ~/Downloads, 잘라낸 것은 다시 만들 수 있음)
 data/raw/vworld/*.prj
+# 거제 카드매출 원본(76MB): 옥포 값은 data/processed/okpo/04~07 에 있음. 다시 받기: python3 -I tools/datagokr_fetch_files.py 15163856
+data/raw/geoje/card_sales/*.csv
