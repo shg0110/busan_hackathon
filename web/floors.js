@@ -27,7 +27,7 @@ for (const key in F.b) {
   for (const f of floors) {
     const c = cc[f.state]; if (!c || f.n > b.lv) continue;
     const { pos, nrm, col } = f.state === 'empty' ? buf.empty : buf.rest;
-    const y0 = y00 + (f.n - 1) * fh + fh * 0.2, y1 = y00 + (f.n - 1) * fh + fh * 0.75;   // 층 가운데 띠(층 사이 벽이 보여 층이 하나하나 읽힘)
+    const y0 = y00 + (f.n - 1) * fh + fh * 0.34, y1 = y00 + (f.n - 1) * fh + fh * 0.62;   // 층 가운데 얇은 띠(층고의 28%) — 두꺼우면 공사장 테이프처럼 보여서
     for (let i = 0; i < p.length; i++) {
       const a = p[i], q = p[(i + 1) % p.length];
       const dx = q[0] - a[0], dz = q[1] - a[1], l = Math.hypot(dx, dz); if (l < 0.3) continue;

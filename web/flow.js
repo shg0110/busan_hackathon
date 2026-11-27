@@ -1,4 +1,4 @@
-/* 유동인구 지도: 가상 손님이 길을 지나간 횟수로 도로 위에 파란 흐름 띠를 그린다(많을수록 진하고 굵게).
+/* 유동인구 지도: 가상 손님이 길을 지나간 횟수로 도로 위에 먹색 흐름 띠를 그린다(많을수록 진하고 굵게).
    재생 패널의 시각을 옮기면 그 시각 앞뒤 1시간의 흐름으로 바뀐다. 실제 유동인구가 아니라 가상 인물의 흐름이다. */
 (() => {
 'use strict';
@@ -9,7 +9,8 @@ const { scene, need } = M, { NX, NZ, ADJ, NN } = SIM.graph;
 const EA = [], EB = [];
 for (let a = 0; a < NN; a++) { const A = ADJ[a]; for (let j = 0; j < A.length; j += 2) { const b = A[j]; if (b > a) { EA.push(a); EB.push(b); } } }
 const NE = EA.length;
-const RAMP = ['#b8cdf2', '#8fb0ea', '#6690df', '#3f6fcf', '#2a54a8', '#1d3c7c'].map(c => new THREE.Color(c));
+// 먹색 계열: 파랑은 누르는 단추, 보라는 외국인 근로자 점, 주황은 빈 층, 노랑은 고른 거리라 겹치지 않게
+const RAMP = ['#c9cdd2', '#a5abb3', '#7f8790', '#5b636c', '#3e454d', '#262b31'].map(c => new THREE.Color(c));
 let mesh = null, on = true, last = '';
 function build(F, t) {
   const h = Math.floor(t / 60) % 24, hs = [-2, -1, 0, 1, 2].map(d => (h + d + 24) % 24);   // 앞뒤 2시간
@@ -37,7 +38,7 @@ function build(F, t) {
 // 보기 설정에 켜고 끄기 + 범례
 const layers = document.getElementById('layers');
 const lab = document.createElement('label'); lab.className = 'tog';
-lab.innerHTML = '<input type="checkbox" id="L-flow" checked><span><i class="sw" style="background:#1c64f2"></i>사람 흐름(가상)</span>';
+lab.innerHTML = '<input type="checkbox" id="L-flow" checked><span><i class="sw" style="background:#3e454d"></i>사람 흐름(가상)</span>';
 layers.prepend(lab);
 const legend = document.createElement('div'); legend.className = 'flow-legend';
 legend.innerHTML = `<div class="fl-bar">${RAMP.map(c => `<i style="background:#${c.getHexString()}"></i>`).join('')}</div><div class="fl-ax"><span>적음</span><span>많음</span></div><p class="fl-cap"></p>`;
@@ -47,9 +48,9 @@ let pend = null;
 document.addEventListener('sim-time', (e) => {
   const { t, scen } = e.detail, key = scen + Math.floor(t / 60);
   if (key === last) return; last = key;
-  clearTimeout(pend); pend = setTimeout(() => build(SIM.nodeFlow(scen === 'we'), t), 30);
+  clearTimeout(pend); pend = setTimeout(() => SIM.nodeFlowAsync(scen === 'we').then(F => { if (last === key) build(F, t); }), 30);
 });
-// 처음 한 번
-setTimeout(() => { build(SIM.nodeFlow(SIM.scen === 'we'), SIM.t); SIM.restore(); }, 50);
+// 처음 한 번(나눠 계산해 페이지가 멈추지 않게)
+SIM.nodeFlowAsync(SIM.scen === 'we').then(F => build(F, SIM.t));
 window.__flow = { build, get mesh() { return mesh; } };
 })();
