@@ -1455,21 +1455,45 @@ document.addEventListener('click', (e) => {
 
 // ── 건물 안 인원 ──────────────────────────────────────
 // 지금 가게 안(st 2)·자리 기다림(st 3)인 사람을 그 가게가 있는 건물로 모은다
+// 일행: 결제한 가상 시민 한 명이 일행(본인 포함, 페르소나 party, web/data/okpo_persona_party.js)과 함께 있다고 보고 '사람 수'에 더한다.
+//   표시만 그렇다 — 결제·매출·자리(seats) 계산은 지금처럼 결제자 한 명 기준. 일행 파일이 없으면 1명씩.
+const PARTY = window.PERSONA_PARTY && PD && window.PERSONA_PARTY.n === PD.n ? window.PERSONA_PARTY.s : null;
+const partyOf = (a) => PARTY && a.pi >= 0 ? (+PARTY[a.pi] || 1) : 1;
+// 가게 → 건물(배지·건물 정보창용): 층 매칭(tools/okpo_floors.py)에서 이름이 안 맞아 건물 번호가 없는 가게(-1)는
+// 좌표가 들어 있는 건물, 없으면 20m 안 가장 가까운 건물에 붙인다(2026-11 기준 93곳 모두 20m 안). 시뮬 계산(SHOPS[].b)은 바꾸지 않는다.
+const SHOP_B = SHOPS.map(s => s.b != null && s.b >= 0 ? s.b : nearBuilding(s.x, s.z, 20));
+function nearBuilding(x, z, R) {
+  const L = MP.buildings || []; let best = -1, bd = R;
+  for (let i = 0; i < L.length; i++) {
+    const p = L[i].p; if (!p) continue; let ins = false, m = Infinity;
+    for (let k = 0, j = p.length - 1; k < p.length; j = k++) {
+      const [ax, az] = p[k], [bx, bz] = p[j];
+      if ((az > z) !== (bz > z) && x < (bx - ax) * (z - az) / (bz - az) + ax) ins = !ins;
+      const dx = bx - ax, dz = bz - az, l2 = dx * dx + dz * dz || 1, t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / l2));
+      m = Math.min(m, Math.hypot(x - ax - dx * t, z - az - dz * t));
+    }
+    if (ins) return i;
+    if (m < bd) { bd = m; best = i; }
+  }
+  return best;
+}
+const shopB = (si) => si < SHOP_B.length ? SHOP_B[si] : SHOPS[si].b;   // 실험용 가상 가게(뒤에 붙음)는 원래 값
 function occNow() {
   const byB = new Map();
   for (let i = 0; i < ACTIVE.length; i++) {
     const a = ACTIVE[i]; if ((a.st !== 2 && a.st !== 3) || a.shop < 0) continue;
-    const s = SHOPS[a.shop]; if (s.b == null || s.b < 0) continue;
-    let o = byB.get(s.b); if (!o) byB.set(s.b, o = { in: 0, wait: 0, ag: [] });
-    if (a.st === 2) o.in++; else o.wait++; o.ag.push(a);
+    const b = shopB(a.shop); if (b == null || b < 0) continue;
+    let o = byB.get(b); if (!o) byB.set(b, o = { in: 0, wait: 0, pin: 0, pwait: 0, ag: [] });   // in·wait: 결제자(가상 시민) 수, pin·pwait: 일행 포함 사람 수
+    const k = partyOf(a); if (a.st === 2) { o.in++; o.pin += k; } else { o.wait++; o.pwait += k; } o.ag.push(a);
   }
   return byB;
 }
 const bName = (bi) => { const b = MP.buildings[bi]; return b ? (b.n || b.dn || (b.jibun ? b.jibun.replace('거제시 ', '') : b.ko === '건물' ? '이름 없는 건물' : b.ko)) : ''; };
-const SHOPS_OF_B = new Map(); for (const s of SHOPS) if (s.b != null && s.b >= 0) (SHOPS_OF_B.get(s.b) || SHOPS_OF_B.set(s.b, []).get(s.b)).push(s);
+const SHOPS_OF_B = new Map(); SHOPS.forEach((s, i) => { const b = shopB(i); if (b != null && b >= 0) (SHOPS_OF_B.get(b) || SHOPS_OF_B.set(b, []).get(b)).push(s); });
 
-// 지도 배지: 사람이 있는 건물 위에 '사람 N'(많은 순 30곳). '지도에 보이는 것'에서 끄고 켬
-const OCC_MAX = 30, occLabels = [];
+// 지도 배지: 사람이 있는 건물 위에 '사람 N'(일행 포함, 많은 순 최대 150곳 — 겹치면 적은 쪽이 숨으므로 가까이 볼수록 많이 보임). '지도에 보이는 것'에서 끄고 켬
+// 예전엔 30곳만이라 가게 많은 큰 건물 몇 곳에만 사람이 있는 것처럼 보였음(가게 단위로는 상위 10곳 몫이 8%로 고르게 퍼져 있음)
+const OCC_MAX = 150, occLabels = [];
 let occOn = true;
 for (let k = 0; k < OCC_MAX; k++) {
   const el = document.createElement('div'); el.className = 'lbl place occ off';
@@ -1488,24 +1512,24 @@ let occAt = 0, occT = -1, OCC = new Map();   // OCC: 건물 번호 → { in, wai
 function updOcc(force) {
   const now = performance.now(); if (!force && (now - occAt < 300 || occT === simT)) return;   // 0.3초에 한 번, 시각이 바뀌었을 때만
   occAt = now; occT = simT; OCC = occNow();
-  const top = [...OCC.entries()].sort((x, y) => (y[1].in + y[1].wait) - (x[1].in + x[1].wait));
+  const top = [...OCC.entries()].sort((x, y) => (y[1].pin + y[1].pwait) - (x[1].pin + x[1].pwait));
   // 지도 배지
   const L = MP.labels; for (const o of occLabels) { const i = L.indexOf(o); if (i >= 0) L.splice(i, 1); }
   occLabels.forEach((o, k) => {
     const e = occOn ? top[k] : null;
     if (!e || !MP.buildings[e[0]]) { o.el.classList.add('off'); o.bi = -1; return; }   // 건물 자료가 없으면(화면 없는 점검) 배지 없음
-    const [bi, v] = e, b = MP.buildings[bi], n = v.in + v.wait; let cx = 0, cz = 0; for (const p of b.p) { cx += p[0]; cz += p[1]; } cx /= b.p.length; cz /= b.p.length;
+    const [bi, v] = e, b = MP.buildings[bi], n = v.pin + v.pwait; let cx = 0, cz = 0; for (const p of b.p) { cx += p[0]; cz += p[1]; } cx /= b.p.length; cz /= b.p.length;
     const txt = `${OCC_ICON}${n}`;
     if (txt !== o.txt) { o.el.innerHTML = txt; o.txt = txt; o.w = 0; }
     o.el.className = 'lbl place occ ' + (n >= 30 ? 'o3' : n >= 10 ? 'o2' : 'o1');
-    o.el.title = `${bName(bi)}: 가게 안 ${v.in}명${v.wait ? ` · 기다림 ${v.wait}명` : ''}`;
+    o.el.title = `${bName(bi)}: 가게 안 ${v.pin}명${v.pwait ? ` · 기다림 ${v.pwait}명` : ''} (일행 포함, 결제 손님 ${v.in + v.wait}명)`;
     o.x = cx; o.z = cz; o.y = (b.b || 0) + b.h + 2; o.bi = bi; o.pri = 6 + Math.min(3, n / 20);
     L.push(o);
   });
   // 하루 재생 패널: 사람 많은 건물 다섯 곳
   const tb = $('sim-top');
-  if (tb) tb.innerHTML = top.length ? `<p class="sim-top-h">지금 사람 많은 건물 <span>가게 안 + 자리 기다림</span></p><ol>${top.slice(0, 5).map(([bi, v]) =>
-    `<li><button type="button" data-occb="${bi}"><span class="nm">${esc(bName(bi))}</span><b>${v.in + v.wait}명</b></button></li>`).join('')}</ol>` : '<p class="sim-top-h">지금 가게 안에 있는 사람이 없습니다</p>';
+  if (tb) tb.innerHTML = top.length ? `<p class="sim-top-h">지금 사람 많은 건물 <span>가게 안 + 자리 기다림, 일행 포함</span></p><ol>${top.slice(0, 5).map(([bi, v]) =>
+    `<li><button type="button" data-occb="${bi}"><span class="nm">${esc(bName(bi))}</span><b>${v.pin + v.pwait}명</b></button></li>`).join('')}</ol>` : '<p class="sim-top-h">지금 가게 안에 있는 사람이 없습니다</p>';
   renderOcc();
   need();
 }
@@ -1519,7 +1543,7 @@ let occBoxAt = 0;
 function renderOcc(force) {
   const box = document.getElementById('occ-box'), bi = MP.selected; if (!box || bi < 0) return;
   const now = performance.now(); if (!force && now - occBoxAt < 250) return; occBoxAt = now;
-  const shops = SHOPS_OF_B.get(bi) || [], v = OCC.get(bi) || { in: 0, wait: 0, ag: [] };
+  const shops = SHOPS_OF_B.get(bi) || [], v = OCC.get(bi) || { in: 0, wait: 0, pin: 0, pwait: 0, ag: [] };
   const per = new Map(); for (const a of v.ag) { const c = per.get(a.shop) || per.set(a.shop, [0, 0]).get(a.shop); c[a.st === 2 ? 0 : 1]++; }
   const today = shops.reduce((x, s) => x + (STATS.visits[s.i] || 0), 0), money = shops.reduce((x, s) => x + (STATS.spend[s.i] || 0), 0);
   const rowsH = shops.slice().sort((x, y) => (per.get(y.i) || [0])[0] - (per.get(x.i) || [0])[0] || (STATS.visits[y.i] || 0) - (STATS.visits[x.i] || 0)).map(s => {
@@ -1528,9 +1552,9 @@ function renderOcc(force) {
   const ag = v.ag.slice().sort((x, y) => x.st - y.st), MAXC = 40;
   const chips = ag.slice(0, MAXC).map(a => { const p = profOf(a.pi), k = A.indexOf(a);
     return `<button type="button" class="pa-chip${a.st === 3 ? ' wait' : ''}" data-ag="${k}" title="${esc(SHOPS[a.shop].n)}${a.st === 3 ? ' 앞에서 기다림' : ''}"><i style="background:${CFG.groups[a.g].col}"></i>${esc(p ? short(p, a) : (pidOf(a.pi) || CFG.groups[a.g].ko))}</button>`; }).join('');
-  box.innerHTML = `<p class="occ-h"><b>${hm(simT)}</b> 지금 이 건물 가게 안 <strong>${v.in}명</strong>${v.wait ? ` · 자리 기다림 ${v.wait}명` : ''}</p>
+  box.innerHTML = `<p class="occ-h"><b>${hm(simT)}</b> 지금 이 건물 가게 안 <strong>${v.pin}명</strong>${v.pwait ? ` · 자리 기다림 ${v.pwait}명` : ''} <span class="pa-dim">일행 포함 · 결제 손님 ${v.in + v.wait}명</span></p>
     <p class="occ-sub">오늘 05시부터 지금까지 손님 ${Math.round(today).toLocaleString('ko-KR')}명 · 매출 ${won(money)} (${scen === 'we' ? '주말' : '평일'}, 가상)</p>
-    <table class="occ-t"><tr><th>가게</th><th>지금<small>/자리</small></th><th>오늘</th></tr>${rowsH}</table>
+    <table class="occ-t"><tr><th>가게</th><th>지금<small>결제/자리</small></th><th>오늘</th></tr>${rowsH}</table>
     ${chips ? `<p class="exp-sub">안에 있는 사람 <span class="lg">누르면 페르소나</span></p><div class="pa-chips">${chips}${ag.length > MAXC ? `<span class="pa-dim">외 ${ag.length - MAXC}명</span>` : ''}</div>` : ''}`;
 }
 uiHooks.push(() => { updOcc(false); renderLive(false); });

@@ -46,6 +46,7 @@ v0.5.0은 검증을 모두 통과했지만, 생성된 사람을 들여다보고 
 |---|---|
 | `personas.csv` / `.json` / `.jsonl` | 다중 보정된 1:1 실규모 가상 시민 **23,983명** (`json`은 `{metadata, personas}` 구조) |
 | `web/data/okpo_personas.js` | 3D 웹 시뮬레이션(`web/sim.js`)이 전원을 1:1(국적별 메뉴 선호·결제 확률(천분율)·1인 지출 배수 포함)로 구동하는 경량 번들 |
+| `web/data/okpo_persona_party.js` | 가상 시민별 일행 수(본인 포함, 한 글자 = 한 명). 지도 위 '건물 안 사람 수'를 결제자 + 일행으로 셀 때만 씀(결제·매출 계산은 그대로). `tools/persona_profiles_web.py` 가 만듦 |
 | `generation_rules.json` | 버전(`0.6.1`)·seed·후보 풀·보정 목표·계절 가중치·근거 등급·남은 가정 |
 | `demographic_allocation.json` | 7개 구분별 페르소나 수, 평일 순인원·동시체류 인원, 성×연령·직업·동내 산업·거주지 분포 |
 | `validation.json` | 보정 적합도 14개 항목(`calibration_checks`) + 독립 검증 10개 항목(`independent_checks`) + 참고 R1 |
