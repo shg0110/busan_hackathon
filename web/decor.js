@@ -96,7 +96,7 @@ function nearRoad(x, z, extra, skip) {
 const inWater = (x, z) => D.water.some(w => inPoly(x, z, w.p));
 // 땅 높이(m): terrain.js(seohogyun-31)의 heightAt. 지형이 꺼져 있으면(TERRAIN_ON=false) 언제나 0이라 화면은 그대로다.
 // 이름표(M.labels)는 app.js placeLabels 가 땅 높이를 더하므로 여기서 더하지 않는다(땅 기준 y)
-const GH = (x, z) => (window.heightAt ? +window.heightAt(x, z) || 0 : 0);
+const GH = (x, z) => (window.heightAt ? Math.max(0, +window.heightAt(x, z) || 0) : 0);   // 0 아래(해안 바다 쪽 음수, 31 terrain_build)로는 내리지 않음: 물건이 물에 잠기지 않게
 const inside = (x, z, m) => Math.abs(x) < HX - m && Math.abs(z) < HZ - m;
 
 // ── 교차로 찾기: 한 점에서 뻗어 나가는 길 가닥(차가 다니는 길)이 3개 이상이면 교차로 ──────────
