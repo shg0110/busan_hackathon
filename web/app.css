@@ -274,20 +274,33 @@ table.floors .use { font-size: 14px; color: var(--g700); margin-bottom: 4px; }
 .seg button.on { background: #fff; color: var(--g900); font-weight: 700; box-shadow: 0 1px 3px rgba(0, 20, 60, .12); }
 #sim-fold { width: 44px; height: 44px; }
 #sim .seg button { min-width: 52px; padding: 0 12px; }
+/* 배속 칸(ea #94): 평일|주말 칸과 같은 문법 — 회색 바탕 위에 지금 값(숫자)만 흰 칸, −·+ 는 글자 단추. 높이 50px 로 옆 칸과 맞춤 */
+#sim #sim-speed.spd { display: inline-flex; flex: none; align-items: center; gap: 2px; background: var(--g100); border-radius: 12px; padding: 3px; }
+#sim #sim-speed .spd-btn { width: 44px; height: 44px; border: 0; border-radius: 10px; background: transparent; box-shadow: none; color: var(--g700); font-size: 22px; font-weight: 600; line-height: 1; cursor: pointer; }
+#sim #sim-speed .spd-btn:hover { background: var(--g200); color: var(--g900); }
+#sim #sim-speed .spd-btn:disabled { color: var(--g400); background: transparent; cursor: default; }
+#sim #sim-speed .spd-in { display: inline-flex; align-items: center; gap: 3px; padding: 0; }
+#sim #sim-speed .spd-in input { width: 52px; height: 44px; box-sizing: border-box; border: 0; border-radius: 10px; background: #fff; box-shadow: 0 1px 3px rgba(0, 20, 60, .12);
+  font: inherit; font-size: 16px; font-weight: 700; color: var(--g900); text-align: center; padding: 0 2px; font-variant-numeric: tabular-nums; -moz-appearance: textfield; appearance: textfield; }
+#sim #sim-speed .spd-in input::-webkit-outer-spin-button, #sim #sim-speed .spd-in input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+#sim #sim-speed .spd-in input:focus-visible { outline: 3px solid rgba(47, 111, 237, .45); outline-offset: 1px; }
+#sim #sim-speed .spd-in span { font-size: 14px; font-weight: 600; color: var(--g600); padding-right: 2px; white-space: nowrap; }
 /* 머리줄 [돌려 보기][시각][평일|주말][느리게|보통|빠르게][펼치기]가 한 줄에 안 들어가는 폭(폰·옆에 층 정보가 열린 노트북):
    첫 줄 [돌려 보기][시각][펼치기], 둘째 줄 [요일][속도]. 접혀 있으면 둘째 줄은 숨긴다(펼쳐서 고름) */
 @container (max-width: 610px) {
   .sim-head { flex-wrap: wrap; row-gap: 8px; }
   #sim-fold { order: 1; }
-  #sim-day, #sim-speed { order: 2; flex: 2 1 0; }
-  #sim-speed { flex-grow: 3; }
-  #sim-day button, #sim-speed button { flex: 1; }
-  #sim.folded #sim-day, #sim.folded #sim-speed { display: none; }
+  .sim-head::after { content: ''; order: 1; flex-basis: 100%; height: 0; }   /* 펼치기 단추 뒤에서 줄을 끊는다 */
+  #sim-day, #sim-speed { order: 2; }
+  #sim-day { flex: 1 1 auto; }
+  #sim-day button { flex: 1; }
+  #sim #sim-speed.spd { flex: none; }
+  #sim.folded #sim-day, #sim.folded #sim-speed, #sim.folded .sim-head::after { display: none; }
 }
 #sim-fold svg { transition: transform .2s; }
 #sim.folded #sim-fold svg { transform: rotate(180deg); }
 #sim.folded .sim-body { display: none; }
-body:has(#info:not([hidden])) #sim { left: calc(var(--side) + (100% - var(--side) - 392px) / 2); width: min(560px, calc(100% - var(--side) - 392px - 48px)); }
+body:has(#info:not([hidden])) #sim { left: calc(var(--side) + (100% - var(--side) - 392px - 60px) / 2); width: min(560px, calc(100% - var(--side) - 392px - 60px - 32px)); }   /* 정보창 왼쪽으로 비킨 카메라 단추(60px)와도 겹치지 않게 */
 #sim .sim-tour { display: none; }   /* 같은 동작(빈 1층 둘러보기)을 기록지 바닥 주 버튼이 맡는다 */
 /* 상권 전체: 기록지 바닥에 주 버튼 하나 고정, 위쪽은 흐리게 이어 '더 내려 볼 수 있음' */
 body:not(.street-mode) #tour-btn { position: fixed; left: 20px; width: calc(var(--side) - 40px); bottom: max(16px, env(safe-area-inset-bottom)); z-index: 8; margin: 0;
