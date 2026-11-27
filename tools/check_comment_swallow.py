@@ -2,7 +2,8 @@
 실행: python3 tools/check_comment_swallow.py [파일 ...]  (기본 web/*.js). 걸리면 줄 번호를 찍고 1로 끝난다."""
 import glob, re, sys
 
-CODE = re.compile(r'[A-Za-z_$][\w$]*(\.[\w$]+)+\([^)]*\)\s*;|\b[a-z_$][\w$]*\+\+;|\b(const|let|if|for|return)\b[^;]*;\s*\S')
+CODE = re.compile(r'[A-Za-z_$][\w$]*(\.[\w$]+)+\([^)]*\)\s*;|\b[a-z_$][\w$]*\+\+;|\b(const|let|if|for|return)\b[^;]*;\s*\S|\b[a-zA-Z_$][\w$.\[\]]*\s*[-+*/]?=\s*[^=;\s][^;]*;|\b[a-zA-Z_$][\w$]*\([^()]*\)\s*;')
+# 뒤 두 패턴(#flow 15분 조각 때 추가): 대입문 't = t1 + 1;' 과 점 없는 호출 'swapState(live);' 도 삼킨 코드로 본다
 bad = 0
 for f in sys.argv[1:] or sorted(glob.glob('web/*.js')):
     for n, line in enumerate(open(f, encoding='utf-8'), 1):
