@@ -287,9 +287,24 @@ for el in EL:
         w = max(w, float(t['lanes']) * 3.2) if 'lanes' in t and hw in ('trunk', 'primary', 'secondary', 'tertiary') else w
     except ValueError:
         pass
-    roads.append(dict(p=[list(p) for p in pts], w=round(w, 1), k=hw, n=ko_name(t),
+    ow = 1 if t.get('oneway') in ('yes', '1', 'true') else 0
+    try:
+        ln = int(str(t.get('lanes', '')).split(';')[0])
+    except ValueError:
+        ln = 0
+    roads.append(dict(p=[list(p) for p in pts], w=round(w, 1), k=hw, n=ko_name(t), ow=ow, ln=ln,
                       ped=hw in ('pedestrian', 'footway', 'path', 'steps', 'living_street'),
                       br=t.get('bridge') == 'yes'))
+
+# 주차장 면(amenity=parking, 지상) — 꾸밈(decor.js)이 바닥·칸을 그린다
+parking = []
+for el in EL:
+    t = el.get('tags', {})
+    if t.get('amenity') == 'parking' and t.get('parking', 'surface') in ('surface', '') and t.get('building') is None:
+        for r in polys_of(el):
+            pts = clean_ring(r)
+            if pts and area(pts) > 30:
+                parking.append(dict(p=[list(p) for p in pts], n=ko_name(t)))
 
 # 도로 이름표: 이름별로 가장 긴 구간 하나
 def plen(p):
@@ -363,7 +378,7 @@ out = dict(
               counts=dict(buildings=len(buildings), vworld=vw_n, osm=osm_n, overture=ov_added,
                           real_levels=sum(b['real'] for b in buildings), roads=len(roads), water=len(water),
                           greens=len(greens), places=len(places))),
-    buildings=buildings, roads=roads, water=water, greens=greens, road_labels=road_labels, places=places,
+    buildings=buildings, roads=roads, water=water, greens=greens, road_labels=road_labels, places=places, parking=parking,
     boundary=boundary, boundary_src='한국부동산원 R-ONE 상권구획도(그림 추적, 오차 약 ±14m)' if boundary else None,
 )
 os.makedirs(os.path.join(ROOT, 'web', 'data'), exist_ok=True)

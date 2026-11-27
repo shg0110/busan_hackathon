@@ -67,7 +67,8 @@ box.innerHTML = `<p class="fs-title">층별로 보면</p>
   <p class="fs-line">상권 안 상가 층 ${S.com_floors.toLocaleString('ko-KR')}개 중 <b>${S.empty_floors.toLocaleString('ko-KR')}개</b>에 가게가 없습니다
   <span class="fs-sub">상가정보(2026년 9월)에 가게가 없는 층 · 면적 ${S.empty_area_pct}%</span></p>
   <p class="fs-note">공실률과 같은 값이 아닙니다. 사무실·창고로 쓰거나 등록되지 않은 가게가 섞여 R-ONE 공실률보다 높게 나옵니다.</p>
-  <p class="src">출처: 국토교통부 건축물대장 층별개요 × 소상공인시장진흥공단 상가정보</p>`;
+  <p class="src">출처: 국토교통부 건축물대장 층별개요 × 소상공인시장진흥공단 상가정보</p>
+  <button class="tour" id="tour-btn">가게 없는 1층 둘러보기 <span id="tour-n"></span></button>`;
 const src = document.querySelector('#card-body .src');
 src.after(box);
 if (window.__syncCard) window.__syncCard();
@@ -92,6 +93,27 @@ M.infoExtra = (b, bi) => {
   return `<table class="floors">${rows}</table>${note}`;
 };
 
+// ── 가게 없는 1층 둘러보기: 상권 안, 넓은 순서로 하나씩 날아가 정보창(실험 포함)을 연다 ──
+const tour = Object.keys(F.b).map(Number).filter(bi => B[bi] && B[bi].i && F.b[bi].some(f => f.n === 1 && f.state === 'empty'))
+  .sort((a, c) => (F.b[c].find(f => f.n === 1).area || 0) - (F.b[a].find(f => f.n === 1).area || 0));
+let tourAt = -1;
+function flyTo(bi) {
+  const b = B[bi]; let x = 0, z = 0; for (const p of b.p) { x += p[0]; z += p[1]; } x /= b.p.length; z /= b.p.length;
+  const cam = M.camera, ctl = M.controls, t0 = performance.now(), dur = 700;
+  const fromC = cam.position.clone(), fromT = ctl.target.clone();
+  const toT = new THREE.Vector3(x, 0, z), toC = new THREE.Vector3(x + 70, 75 + b.h, z + 110);
+  function f(now) {
+    const k = Math.min(1, (now - t0) / dur), e = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+    cam.position.lerpVectors(fromC, toC, e); ctl.target.lerpVectors(fromT, toT, e); ctl.update(); need();
+    if (k < 1) requestAnimationFrame(f);
+  }
+  requestAnimationFrame(f);
+  M.select(bi);
+}
+function nextTour() { if (!tour.length) return; tourAt = (tourAt + 1) % tour.length; flyTo(tour[tourAt]);
+  document.getElementById('tour-n').textContent = `${tourAt + 1} / ${tour.length}`; }
+document.getElementById('tour-n').textContent = `${tour.length}곳`;
+document.getElementById('tour-btn').onclick = nextTour;
 need();
-window.__floors = { bands, mesh: bandMesh, rest: restMesh, stats: S };
+window.__floors = { bands, mesh: bandMesh, rest: restMesh, stats: S, tour, nextTour };
 })();

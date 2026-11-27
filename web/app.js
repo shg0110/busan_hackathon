@@ -286,10 +286,19 @@ scene.add(bMesh);
   lines.renderOrder = 11; scene.add(lines);
 }
 
+// 거리 집중: keep(건물 번호 Set) 밖 건물은 땅 색 쪽으로 흐리게. null 이면 원래대로
+let keepSet = null, estOn = false;
+function tint(keep) { keepSet = keep; paintEstimated(estOn); }
 // 층수 추정 건물 강조 켜고 끄기
 function paintEstimated(on) {
+  estOn = on;
   const arr = colAttr.array, est = new THREE.Color(C.est);
   arr.set(baseCol);
+  if (keepSet) {
+    const g = [0.93, 0.94, 0.95];
+    B.forEach((b, bi) => { if (keepSet.has(bi)) return; const [s0, e0] = bRange[bi];
+      for (let v = s0; v < e0; v++) for (let k = 0; k < 3; k++) arr[v * 3 + k] = arr[v * 3 + k] * 0.35 + g[k] * 0.65; });
+  }
   if (on) B.forEach((b, bi) => { if (!b.real) { const [s, e] = bRange[bi]; for (let v = s; v < e; v++) { arr[v * 3] = est.r; arr[v * 3 + 1] = est.g; arr[v * 3 + 2] = est.b; } } });
   colAttr.needsUpdate = true; need();
 }
@@ -499,7 +508,7 @@ requestAnimationFrame(() => requestAnimationFrame(() => {
 }));
 
 // 점검용(자동 시험이 읽음)
-window.__map = { select, buildings: B, camera, controls, HOME, labels, need, orbit, scene, renderer, R, esc,
+window.__map = { select, buildings: B, camera, controls, HOME, labels, need, orbit, scene, renderer, R, esc, tint,
   get selected() { return selIdx; }, infoExtra: null };
 document.dispatchEvent(new Event('map-ready'));
 })();

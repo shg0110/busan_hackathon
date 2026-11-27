@@ -6,7 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const OUT = process.argv[2] || 'web-check';
 const ONLY = (process.argv.find(a => a.startsWith('--only=')) || '').slice(7);
-const URL = 'file://' + path.resolve(__dirname, '..', 'web', 'index.html');
+const URL = 'file://' + path.resolve(__dirname, '..', 'web', 'index.html') + '?street=';   // 상권 전체 보기로 점검(거리 화면은 따로)
 const SIZES = [
   { name: 'phone', width: 390, height: 844, scale: 2, touch: true },
   { name: 'laptop', width: 1280, height: 800, scale: 2, touch: false },
@@ -35,7 +35,7 @@ fs.mkdirSync(OUT, { recursive: true });
 
     // 패널 겹침·화면 밖·글자 잘림
     const layout = await pg.evaluate(() => {
-      const ids = ['card', 'layers', 'nav', 'credit', 'hint', 'sim'];
+      const ids = ['card', 'layers', 'nav', 'credit', 'hint', 'sim', 'tabs', 'street'];
       const vis = ids.map(id => document.getElementById(id)).filter(e => e && getComputedStyle(e).display !== 'none' && !e.hidden);
       const rect = (e) => e.getBoundingClientRect();
       const W = innerWidth, H = innerHeight, out = [], overlap = [], clipped = [];
@@ -119,7 +119,7 @@ fs.mkdirSync(OUT, { recursive: true });
     await pg.waitForTimeout(400); await shot('close');
 
     // 프레임 시간: 같은 탭에서 6초 돌리기
-    await pg.goto(URL + '?bench=1');
+    await pg.goto(URL + (URL.includes('?') ? '&' : '?') + 'bench=1');
     await pg.waitForFunction('window.__bench', null, { timeout: 30000 }).catch(() => errs.push('bench 안 됨'));
     const bench = await pg.evaluate(() => window.__bench);
 

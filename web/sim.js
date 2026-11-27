@@ -32,11 +32,17 @@ const CFG0 = {
     life: { ko: '생활 서비스',  col: '#4a5568', price: 18000, seats: 3,  stay: 45,  open: 600, close: 1200 },
   },
   upperFloor: 0.7,   // 2층 이상 가게가 눈에 띄는 정도(1층 = 1). 가정
+  // 가격 민감도: 업종 기준가보다 비싸면 (기준가/가격)^탄력 만큼 덜 고른다. 가정
+  priceElastic: { worker: 0.9, foreign: 1.6, resident: 1.0, tourist: 0.5 },
   walk: 70,          // 걷는 속도 m/분. 가정
 };
 const CFG = window.PERSONA_CFG ? deepMerge(CFG0, window.PERSONA_CFG) : CFG0;
+// 규모 배율(tools/sim_calibrate.js → persona_cfg): 모든 부류 인원에 곱한다. ?noscale=1 이면 1(보정 계산용)
+const SCALE = new URLSearchParams(location.search).has('noscale') ? 1 : ((CFG.scale && CFG.scale.v) || 1);
+for (const g in CFG.groups) { CFG.groups[g].wd = Math.round((CFG.groups[g].wd || 0) * SCALE); CFG.groups[g].we = Math.round((CFG.groups[g].we || 0) * SCALE); }
 function deepMerge(a, b) { const o = Array.isArray(a) ? a.slice() : { ...a }; for (const k in b) o[k] = (b[k] && typeof b[k] === 'object' && !Array.isArray(b[k]) && a[k]) ? deepMerge(a[k], b[k]) : b[k]; return o; }
 const CATS = Object.keys(CFG.cats), GROUPS = Object.keys(CFG.groups);
+const FD = (CFG.foreignDaily && CFG.foreignDaily.v) || 15000;   // 외국인 근로자 하루 쓸 돈 기준
 const T0 = 300, T1 = 1560;   // 05:00 ~ 26:00(다음 날 02:00)
 
 // ── 난수(시드 고정) ─────────────────────────────────────
@@ -134,10 +140,10 @@ function makeDay(g, we, r) {
     if (!we) {
       out.push({ t: I(sh.in[0], sh.in[1]) - 30, from: home.node, stops: r() < 0.12 ? ['mart'] : [], to: gate.node, budget: 5000 });
       const v = r();
-      out.push({ t: I(sh.out[0] + 10, sh.out[1] + 30), from: gate.node, stops: v < 0.3 ? ['mart'] : v < 0.45 ? ['intl'] : v < 0.55 ? ['meal'] : v < 0.62 ? ['life'] : [], to: home.node, budget: I(9000, 20000) });
+      out.push({ t: I(sh.out[0] + 10, sh.out[1] + 30), from: gate.node, stops: v < 0.3 ? ['mart'] : v < 0.45 ? ['intl'] : v < 0.55 ? ['meal'] : v < 0.62 ? ['life'] : [], to: home.node, budget: I(FD * 0.5, FD * 1.1) });
     } else {
       const v = r();
-      out.push({ t: I(630, 1080), from: home.node, stops: v < 0.35 ? ['mart', 'intl'] : v < 0.55 ? ['intl'] : v < 0.7 ? ['life', 'mart'] : v < 0.82 ? ['meal'] : ['mart'], to: home.node, budget: I(15000, 40000) });
+      out.push({ t: I(630, 1080), from: home.node, stops: v < 0.35 ? ['mart', 'intl'] : v < 0.55 ? ['intl'] : v < 0.7 ? ['life', 'mart'] : v < 0.82 ? ['meal'] : ['mart'], to: home.node, budget: I(FD * 0.8, FD * 2.2) });
     }
     return { home, out };
   }
@@ -157,10 +163,11 @@ function makeDay(g, we, r) {
 // ── 하루 계산 ─────────────────────────────────────────────
 // 상태: 0 집/밖(안 보임) 1 걷는 중 2 가게 안 3 자리 기다림
 let A = [], SHOP_ST = null, STATS = null, W = 1, scen = 'wd', seedNow = 0;
+let FULL = false;   // true 면 사람 1:1(실험·순위 계산용). 재생 화면은 점 2,400개까지
 function populate(we, seed) {
   const r = rng(1234 + seed * 7919 + (we ? 99 : 0));
   const tot = GROUPS.reduce((s, g) => s + (CFG.groups[g][we ? 'we' : 'wd'] || 0), 0);
-  const n = Math.min(AGENTS_MAX, tot); W = tot / n;
+  const n = FULL ? tot : Math.min(AGENTS_MAX, tot); W = tot / n;
   A = [];
   for (const g of GROUPS) {
     const k = Math.round((CFG.groups[g][we ? 'we' : 'wd'] || 0) / W);
@@ -191,11 +198,11 @@ function chooseShop(a, cat, t, nodeFrom) {
     if (a.g === 'tourist' && s.c === 'meal' && /회|해물|해산물|생선/.test(s.cs || '')) return 1.8;
     return 1;
   };
-  const cand = [];
+  const cand = [], ref = CFG.cats[cat].price, el = CFG.priceElastic[a.g] ?? 1;
   for (const s of list) {
     if (!openAt(s, t + 5)) continue;
     const d = Math.hypot(s.x - fx, s.z - fz);
-    const w = s.attract * groupPref(s) * Math.exp(-d / lam);
+    const w = s.attract * groupPref(s) * Math.exp(-d / lam) * Math.pow(ref / s.price, el);
     if (w > 1e-4) cand.push([s, w]);
   }
   if (!cand.length) return null;
@@ -257,7 +264,7 @@ function enter(a, s, t) {
   const h = Math.floor(t / 60) % 24; (STATS.byHour[s.i] || (STATS.byHour[s.i] = new Float32Array(24)))[h] += W;
   (STATS.byGroup[s.i] || (STATS.byGroup[s.i] = {}))[a.g] = ((STATS.byGroup[s.i] || {})[a.g] || 0) + W;
 }
-function runDay(we, seed) { reset(we, seed); for (let t = T0; t <= T1; t++) step(t, false); return STATS; }
+function runDay(we, seed) { FULL = true; reset(we, seed); for (let t = T0; t <= T1; t++) step(t, false); FULL = false; return STATS; }
 
 // ── 그리기: 사람 = 화면 크기 고정 점 ─────────────────────────
 const geo = new THREE.BufferGeometry();
@@ -310,11 +317,28 @@ panel.innerHTML = `
     <div class="sim-legend" id="sim-legend"></div>
     <div class="sim-stats" id="sim-stats"></div>
     <p class="sim-note" id="sim-note"></p>
+    <details class="sim-src"><summary>자료와 가정 보기</summary><div id="sim-src"></div></details>
+    <button class="tour sim-tour" id="sim-tour">빈 층에 가게 열어 보기 →</button>
   </div>`;
 document.body.appendChild(panel);
 const $ = (id) => document.getElementById(id);
 $('sim-legend').innerHTML = GROUPS.map(g => `<span><i style="background:${CFG.groups[g].col}"></i>${CFG.groups[g].ko}</span>`).join('');
-const assumed = GROUPS.filter(g => CFG.groups[g].src === '가정').length;
+const assumed = GROUPS.filter(g => CFG.groups[g].src === '가정' || /가정/.test(CFG.groups[g].src || '')).length;
+{
+  const li = (k, v) => `<li><b>${k}</b> ${esc(String(v))}</li>`;
+  const sh = (t) => `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+  const ps = CFG.price_src || {};
+  $('sim-src').innerHTML = `<ul>
+    ${GROUPS.map(g => li(CFG.groups[g].ko + ` (평일 ${CFG.groups[g].wd.toLocaleString('ko-KR')}명·주말 ${CFG.groups[g].we.toLocaleString('ko-KR')}명)`, CFG.groups[g].src)).join('')}
+    ${CFG.scale ? li('규모 맞춤(모든 부류 × ' + CFG.scale.v + ')', CFG.scale.src) : ''}
+    ${li('교대 시간', `출근 ${sh(CFG.shift.in[0])}~${sh(CFG.shift.in[1])}, 퇴근 ${sh(CFG.shift.out[0])}~${sh(CFG.shift.out[1])} — ${CFG.shift_src || CFG.shift.src || '가정'}`)}
+    ${CFG.foreignDaily ? li('외국인 하루 쓸 돈', CFG.foreignDaily.src) : ''}
+    ${CATS.map(c => li(CFG.cats[c].ko + ' 1인 가격', ps[c] || `${CFG.cats[c].price.toLocaleString('ko-KR')}원 — 가정`)).join('')}
+    ${li('조선소 쪽 입구', 'OSM 조선소 서쪽 경계 차단기(34.88789, 128.69100), 문별 출퇴근 인원 미확인')}
+    ${li('가게', '소상공인시장진흥공단 상가정보 2026-09 영업 중 가게 중 식사·주점·카페·다국적·장보기·생활 서비스 업종')}
+    ${li('업종 고르는 비율·머무는 시간·자리 수·걷는 속도', '가정(근거 자료 없음)')}
+  </ul><p>근거: docs/okpo-persona-sources.md</p>`;
+}
 $('sim-note').textContent = `가상 인물 ${' '}점 1개 = 사람 약 ${'{W}'}명. ` + (assumed ? '사람 수·교대 시간은 아직 근거 확인 전 가정 값입니다.' : '');
 let simT = T0, playing = false, speed = 20, lastNow = 0;
 let drawDirty = true;   // 멈춰 있을 때도 시각을 옮기면 점을 다시 그려야 한다
@@ -337,6 +361,7 @@ panel.querySelectorAll('.seg button').forEach(b => b.onclick = () => {
 });
 $('sim-fold').onclick = () => { const f = panel.classList.toggle('folded'); $('sim-fold').setAttribute('aria-label', f ? '펴기' : '접기'); };
 if (Math.min(innerWidth, innerHeight) < 720) panel.classList.add('folded');
+$('sim-tour').onclick = () => { if (window.__floors) window.__floors.nextTour(); setTimeout(() => { const e = document.getElementById('exp'); if (e) e.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, 750); };
 
 function tick(now) {
   requestAnimationFrame(tick);
@@ -439,7 +464,11 @@ function renderExp(r, cat, price, ms, bi, floor) {
   const mix = (o) => GROUPS.filter(x => o[x] > 0.5).map(x => `<span><i style="background:${CFG.groups[x].col}"></i>${CFG.groups[x].ko} ${Math.round(100 * o[x] / tot(o))}%</span>`).join('') || '<span>손님 없음</span>';
   const hourMax = Math.max(1, ...r.wd.hour, ...r.we.hour);
   const bars = (hr, colr) => hr.map((v, h) => `<i style="height:${Math.round(100 * v / hourMax)}%;background:${colr}" title="${h}시 ${Math.round(v)}명"></i>`).join('');
-  const nbTxt = r.nbCount ? `반경 250m 같은 업종 ${r.nbCount}곳: 평일 손님 ${r.wd.nb >= 0 ? '+' : ''}${Math.round(r.wd.nb)}명` + (r.wd.nbSame ? ' (다섯 번 모두 같은 방향)' : ' (돌릴 때마다 방향이 바뀜 → 원인으로 보기 어려움)') : '반경 250m 안에 같은 업종 가게가 없습니다.';
+  // 주변 영향: 다섯 번 모두 같은 방향이고, 크기가 새 가게 손님의 30% 이상(최소 3명)일 때만 원인으로 말한다
+  const nbBig = Math.abs(r.wd.nb) >= Math.max(3, 0.3 * r.wd.v);
+  const nbTxt = !r.nbCount ? '반경 250m 안에 같은 업종 가게가 없습니다.' :
+    (r.wd.nbSame && nbBig) ? `반경 250m 같은 업종 ${r.nbCount}곳: 평일 손님 ${r.wd.nb >= 0 ? '+' : ''}${Math.round(r.wd.nb)}명 (다섯 번 모두 같은 방향)`
+    : `반경 250m 같은 업종 ${r.nbCount}곳: 변화가 작거나 돌릴 때마다 달라 판단하기 어렵습니다(${r.wd.nb >= 0 ? '+' : ''}${Math.round(r.wd.nb)}명).`;
   const same = HIST.filter(h => h.bi === bi && h.floor === floor);
   const cmp = same.length > 1 ? `<table class="exp-cmp"><tr><th>업종</th><th>가격</th><th>평일</th><th>주말</th><th>평일 매출</th></tr>${same.map(h => `<tr><td>${EXP_CATS.find(x => x[0] === h.cat)[1]}</td><td>${won(h.price)}</td><td>${Math.round(h.r.wd.v)}명</td><td>${Math.round(h.r.we.v)}명</td><td>${won(h.r.wd.won)}</td></tr>`).join('')}</table>` : '<p class="exp-tip">업종을 바꿔 한 번 더 돌리면 이 자리에서 업종끼리 비교표가 생깁니다.</p>';
   $('x-out').innerHTML = `
@@ -453,5 +482,45 @@ function renderExp(r, cat, price, ms, bi, floor) {
   need();
 }
 
-window.__sim = { runDay, experiment, seek, get A() { return A; }, get W() { return W; }, SHOPS, CFG, nodes: NN, get t() { return simT; } };
+// ── 거리 집중용 ─────────────────────────────────────────
+// 거리 선(polyline)에서 r m 안의 길 노드
+function nodesNear(poly, r) {
+  const set = new Set();
+  for (let i = 0; i < NN; i++) {
+    if (comp[i] !== bestC) continue;
+    for (let k = 0; k < poly.length - 1; k++) {
+      const [ax, az] = poly[k], [bx, bz] = poly[k + 1], dx = bx - ax, dz = bz - az, L2 = dx * dx + dz * dz || 1;
+      const t = Math.max(0, Math.min(1, ((NX[i] - ax) * dx + (NZ[i] - az) * dz) / L2));
+      if (Math.hypot(NX[i] - ax - dx * t, NZ[i] - az - dz * t) <= r) { set.add(i); break; }
+    }
+  }
+  return set;
+}
+// 하루 동안 이 노드들을 지나간 사람(가상): 길을 실제로 따라가며 센다. 시간대·부류별
+function flowDay(we, set, seed = 0) {
+  reset(we, seed);
+  const hour = new Float32Array(24), grp = {}; let tot = 0;
+  for (let t = T0; t <= T1; t++) {
+    step(t, true);
+    for (const a of A) {
+      if (a.st === 1 && a.t0 === t && a.path) {   // 이번 분에 출발한 길
+        if (a.path.some(n => set.has(n))) { const h = Math.floor(t / 60) % 24; hour[h] += W; grp[a.g] = (grp[a.g] || 0) + W; tot += W; }
+      }
+    }
+  }
+  return { tot, hour: Array.from(hour), grp };
+}
+// 빈 자리에 가게를 열었을 때 손님·매출만(비교 없이, 자리 순위용)
+function trySlot(bi, floor, cat, price, seats, runs = 3) {
+  const c = CFG.cats[cat];
+  const s = addVirtual(bi, floor, cat, price, seats, c.open, c.close);
+  const r = { wd: 0, we: 0, wdWon: 0, weWon: 0 };
+  for (const sc of ['wd', 'we']) for (let k = 0; k < runs; k++) {
+    const st = runDay(sc === 'we', k);
+    r[sc] += st.visits[s.i] / runs; r[sc + 'Won'] += st.spend[s.i] / runs;
+  }
+  removeVirtual(s);
+  return r;
+}
+window.__sim = { runDay, experiment, seek, nodesNear, flowDay, trySlot, restore: () => seek(simT), won, GROUPS, get A() { return A; }, get W() { return W; }, SHOPS, CFG, nodes: NN, get t() { return simT; } };
 })();
