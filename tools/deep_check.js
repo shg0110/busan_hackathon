@@ -82,10 +82,33 @@ const ok = (name, pass, detail) => { if (detail && detail.__err) pass = false; r
   const tb = await ev(pg, () => { if (!window.TERRAIN_ON) return { 지형: false }; const f = window.__flow.mesh; if (!f) return { 띠: 0 }; const p = f.geometry.attributes.position.array, H = window.terrainRaw; let deep = 0, n = 0;
     for (let i = 0; i < p.length; i += 3) { n++; if (p[i + 1] - Math.max(0, H(p[i], p[i + 2])) - 0.2 < -0.3) deep++; } return { 점: n, 묻힘: deep }; });
   ok('흐름 띠가 바닥 밑으로 묻히지 않음', !tb.묻힘, tb);
+  // 10) 바닥층(seohogyun-31): 지형 면·물 높이·실제 횡단보도·도로 폭 보정·꼭짓점 NaN
+  const gd = await ev(pg, () => {
+    const S = window.__map.scene, g = window.__ground || {}, get = n => S.children.find(o => o.name === 'ground-' + n);
+    let nan = 0; for (const o of S.children) if (o.name && o.name.startsWith('ground-')) { const a = o.geometry.attributes.position.array; for (let i = 0; i < a.length; i++) if (!(a[i] === a[i])) { nan++; break; } }
+    const w = get('water'); let wmax = -1e9, wmin = 1e9; if (w) { const a = w.geometry.attributes.position.array; for (let i = 1; i < a.length; i += 3) { if (a[i] > wmax) wmax = a[i]; if (a[i] < wmin) wmin = a[i]; } }
+    const D = window.MAP_DATA, C = window.ROADCAL, F = window.FACILITIES || {};
+    const calOk = !!C && Object.entries(C.roads).every(([i, v]) => D.roads[+i].w === v[0]);
+    return { 지형: !!g.terrain, 지형면: !!get('terrain'), NaN메시: nan, 물y: [+wmin.toFixed(2), +wmax.toFixed(2)], 횡단보도: g.crosswalks, 자료: (F.crosswalks || []).length,
+      보정: window.ROADCAL_N || 0, 보정값맞음: calOk, sw없는길: D.roads.filter(r => typeof r.sw !== 'boolean').length,
+      빛의거리높이: +window.heightAt(-95, -231).toFixed(1), 먼바다높이: +window.heightAt(600, 600).toFixed(2) };
+  });
+  ok('바닥: 지형 면 있음·꼭짓점 NaN 0', gd.지형 && gd.지형면 && gd.NaN메시 === 0, gd);
+  ok('바닥: 물은 높이 0(+0.2 안)', gd.물y && gd.물y[0] >= -0.01 && gd.물y[1] <= 0.3, gd.물y);
+  ok('바닥: 실제 횡단보도를 자료 수만큼', gd.횡단보도 > 0 && gd.횡단보도 === gd.자료, { 그림: gd.횡단보도, 자료: gd.자료 });
+  ok('바닥: 도로 폭 보정 적용·모든 길에 인도 표시', gd.보정 > 0 && gd.보정값맞음 && gd.sw없는길 === 0, { 보정: gd.보정, 맞음: gd.보정값맞음, sw없는길: gd.sw없는길 });
+  ok('바닥: 땅 높이(빛의 거리 5~25m, 먼바다 0)', gd.빛의거리높이 >= 5 && gd.빛의거리높이 <= 25 && gd.먼바다높이 === 0, { 빛의거리: gd.빛의거리높이, 먼바다: gd.먼바다높이 });
+  {   // 지형 끔(?terrain=0)·보정 끔(?roadcal=0)도 오류 없이 열리고 평면·원래 폭
+    const p4 = await br.newPage({ viewport: { width: 1440, height: 900 } }); const e4 = []; p4.on('pageerror', e => e4.push(e.message.slice(0, 120)));
+    await p4.goto(URL + '?street=&terrain=0&roadcal=0'); await p4.waitForFunction('window.__ready === true', null, { timeout: 60000 });
+    const off = await ev(p4, () => ({ 지형: window.TERRAIN_ON, 높이: window.heightAt(-95, -231), 보정: window.ROADCAL_ON, 옥포로폭: (window.MAP_DATA.roads.find(r => r.n === '옥포로' && r.k === 'tertiary') || {}).w }));
+    ok('바닥: 지형·보정 끔으로도 열림(평면·원래 폭)', off.지형 === false && off.높이 === 0 && off.보정 === false && off.옥포로폭 >= 12 && !e4.length, { ...off, 오류: e4 });
+    await p4.close();
+  }
   ok('점검 중 오류 0', errs.length === 0, errs);
   await pg.close();
 
-  // 10) 첫 화면 연출: 끝 신호, 프레임
+  // 11) 첫 화면 연출: 끝 신호, 프레임
   const p2 = await br.newPage({ viewport: { width: 1440, height: 900 } }); const e2 = []; p2.on('pageerror', e => e2.push(e.message.slice(0, 120)));
   await p2.goto(URL); await p2.waitForFunction('window.__ready === true', null, { timeout: 60000 });
   await ev(p2, () => { window.__ft = []; let l = performance.now(); (function f(n) { window.__ft.push(n - l); l = n; if (!window.__introDone) requestAnimationFrame(f); })(l); });
@@ -94,7 +117,7 @@ const ok = (name, pass, detail) => { if (detail && detail.__err) pass = false; r
   ok('첫 화면 연출 끝 신호·끊김 없음(최악 < 40ms)', done && ft.최악ms < 40 && !e2.length, { ...ft, 오류: e2 });
   await p2.close();
 
-  // 11) WebGL 을 못 얻으면 기록지는 채워지고 까닭을 남김
+  // 12) WebGL 을 못 얻으면 기록지는 채워지고 까닭을 남김
   const p3 = await br.newPage({ viewport: { width: 1440, height: 900 } }); const e3 = []; p3.on('pageerror', e => e3.push(e.message.slice(0, 120)));
   await p3.addInitScript(() => { const g = HTMLCanvasElement.prototype.getContext; HTMLCanvasElement.prototype.getContext = function (t, o) { if (this.id === 'c' && /webgl/.test(t)) return null; return g.call(this, t, o); }; });
   await p3.goto(URL); await p3.waitForTimeout(2000);
