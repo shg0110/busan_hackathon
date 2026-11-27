@@ -10,6 +10,7 @@
   if (!D) return;
   const MAJOR = new Set(['trunk', 'primary', 'secondary', 'tertiary']);
   for (const r of D.roads) r.sw = MAJOR.has(r.k) && !r.br;
+  if (C && C.surface) for (const [i, v] of Object.entries(C.surface)) if (D.roads[+i]) D.roads[+i].surf = v;   // 노면 재질(OSM surface, 아스팔트가 아닌 길만). 폭 보정을 꺼도 단다
   const off = /[?&]roadcal=0/.test(location.search);
   window.ROADCAL_ON = !!(C && !off);
   if (!window.ROADCAL_ON) return;

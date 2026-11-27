@@ -322,7 +322,7 @@ function faceUp(pos, uv) {
 const made = [];
 const NO_DENSIFY = new Set(['water']);
 const ZERO_BASE = new Set(['water', 'foam']);   // 바다는 높이 0 이라 잘게 나눌 필요 없음
-const ROADLIKE = new Set(['foot', 'service', 'minor-edge', 'minor', 'link', 'major-edge', 'major', 'walk', 'corner', 'alley-edge']);   // 길 띠는 8m 로(삼각형 수 줄이기)
+const ROADLIKE = new Set(['surf-concrete', 'surf-pavers', 'surf-dirt', 'foot', 'service', 'minor-edge', 'minor', 'link', 'major-edge', 'major', 'walk', 'corner', 'alley-edge']);   // 길 띠는 8m 로(삼각형 수 줄이기)
 function flat(pos, color, order, glow, name, tex) {
   if (!pos.length) return null;
   faceUp(pos);
@@ -497,8 +497,11 @@ const LANDUSE = {
 // ── 도로 포장: 등급마다 다른 회색. 큰길은 가장자리 0.6m 를 한 톤 어둡게(연석 쪽 그늘) ──
 {
   const foot = [], service = [], minorEdge = [], minor = [], link = [], majorEdge = [], major = [];
+  const concrete = [], pavers = [], dirt = [];   // OSM surface 가 아스팔트가 아닌 길(roadcal.js 가 단 r.surf): 콘크리트·보도블록·흙
+  const SURF = { concrete: concrete, 'concrete:plates': concrete, paving_stones: pavers, sett: pavers, dirt: dirt, ground: dirt, gravel: dirt, unpaved: dirt };
   for (const r of D.roads) {
     if (r.br || r.p.length < 2) continue;
+    if (r.surf && SURF[r.surf]) { ribbon(r.p, r.w, 0, SURF[r.surf], true); continue; }
     if (r.ped || FOOT.has(r.k)) { ribbon(r.p, r.w, 0, foot, true); continue; }
     if (r.k === 'service') { ribbon(r.p, r.w, 0, service, true); continue; }
     if (MAJOR.has(r.k)) { ribbon(r.p, r.w, 0, majorEdge, true); ribbon(r.p, r.w - 1.2, 0, major, true); continue; }
@@ -512,6 +515,10 @@ const LANDUSE = {
   flat(link, G.link, 7.45, null, 'link', TEX.asphalt);
   flat(majorEdge, G.majorEdge, 7.5, null, 'major-edge');
   flat(major, G.major, 7.6, null, 'major', TEX.asphalt);
+  flat(concrete, '#c9cacb', 7.25, null, 'surf-concrete', TEX.slab);
+  flat(pavers, G.foot, 7.25, null, 'surf-pavers', TEX.paver);
+  flat(dirt, '#cdbfa6', 7.25, null, 'surf-dirt', TEX.dirt);
+  stats.surfRoads = D.roads.filter(r => r.surf && SURF[r.surf]).length;
 }
 
 // ── 인도: 큰길 전체 폭 + 양쪽 2.5m 를 길 아래 순서로 깔면 길이 가운데를 덮어 양쪽 띠만 남는다 ──
@@ -824,7 +831,7 @@ window.__ground = {
   centerM: Math.round(stats.centerM), laneM: Math.round(stats.laneM), edgeM: Math.round(stats.edgeM), curbM: Math.round(stats.curbM || 0),
   crosswalks: stats.crosswalks || 0, tactile: stats.tactile || 0, rampCuts: [...cwOn.values()].flat().filter(c => c.ramp).length, onMajor: [...cwOn.values()].flat().length,
   parking: stats.parking, landuse: stats.landuse || 0, playgrounds: stats.playgrounds || 0, corners: stats.corners || 0,
-  wornMeshes: stats.wornMeshes || 0, waterCells: stats.waterCells || 0, coastM: stats.coastM || 0,
+  wornMeshes: stats.wornMeshes || 0, waterCells: stats.waterCells || 0, coastM: stats.coastM || 0, surfRoads: stats.surfRoads || 0,
   terrain: TON, groundTris: made.reduce((t, m) => t + (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3, 0) | 0,
 };
 })();
