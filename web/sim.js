@@ -539,8 +539,9 @@ function draw(t) {
 const hm = (t) => { const d = t >= 1440, m = Math.floor(t) % 1440; return (d ? '다음 날 ' : '') + String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
 const wonX = (v) => Math.round(v).toLocaleString('ko-KR') + '원';   // 메뉴·1인 지출은 원 단위 그대로
 function won(v) { if (v >= 1e8) return (v / 1e8).toFixed(v >= 1e9 ? 1 : 2) + '억 원'; if (v >= 1e4) return Math.round(v / 1e4).toLocaleString('ko-KR') + '만 원'; return Math.round(v).toLocaleString('ko-KR') + '원'; }
-// 재생 속도: 1초에 몇 분(느리게 = 하루 약 4분, 보통 = 약 1분 24초, 빠르게 = 약 28초)
-const SPEEDS = [[5, '느리게'], [15, '보통'], [45, '빠르게']];
+// 재생 속도: 배속을 직접 정함. 1배 = 1초에 15분(하루 약 1분 24초). 0.25배 ~ 10배, −·+ 단추는 자주 쓰는 배속으로 한 단계씩
+const BASE_MIN = 15, MULT_MIN = 0.25, MULT_MAX = 10, MULT_STEPS = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 6, 8, 10];
+const fmtMult = (m) => (Math.round(m * 100) / 100).toString();
 const panel = document.createElement('section'); panel.id = 'sim'; panel.setAttribute('aria-label', '가상 손님 하루');
 panel.innerHTML = `
   <div class="sim-head">
@@ -549,7 +550,11 @@ panel.innerHTML = `
     <div class="seg" id="sim-day" role="group" aria-label="요일">
       <button data-s="wd" class="on">평일</button><button data-s="we">주말</button>
     </div>
-    <div class="seg" id="sim-speed" role="group" aria-label="재생 속도">${SPEEDS.map(([v, k]) => `<button data-v="${v}"${v === 15 ? ' class="on"' : ''}>${k}</button>`).join('')}</div>
+    <div class="spd" id="sim-speed" role="group" aria-label="재생 속도(배속)">
+      <button type="button" class="spd-btn" data-d="-1" aria-label="더 느리게">−</button>
+      <label class="spd-in"><input id="sim-mult" type="number" inputmode="decimal" min="${MULT_MIN}" max="${MULT_MAX}" step="0.25" value="1" aria-label="배속"><span>배속</span></label>
+      <button type="button" class="spd-btn" data-d="1" aria-label="더 빠르게">+</button>
+    </div>
     <button id="sim-fold" class="icon-btn" aria-label="접기" title="접기"><svg viewBox="0 0 20 20"><path d="M5 8l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
   </div>
   <div class="sim-body">
@@ -640,7 +645,7 @@ function ui() {
     <div><b>${Math.round(wait * W).toLocaleString('ko-KR')}</b>명<span>자리 기다림</span></div>
     <div><b>${won(TOTAL_SPENT)}</b><span>지금까지 쓴 돈</span></div>`;
   if (PD) {
-    $('sim-sub').textContent = `1초에 ${speed}분`;   // 시각 아래는 재생 속도(속도 칸과 맞춤). 인원은 아래 sim-note 에
+    $('sim-sub').textContent = speed >= 1 ? `1초에 ${fmtMult(speed)}분` : `1초에 ${Math.round(speed * 60)}초`;   // 시각 아래는 재생 속도(배속 칸과 맞춤). 인원은 아래 sim-note 에
     $('sim-note').textContent = `점 1개 = 가상 시민 1명 (하루 유동 ${TOTAL_POP.toLocaleString('ko-KR')}명 전원 · 상권 이동 ${A.length.toLocaleString('ko-KR')}명).`;
   } else {
     $('sim-note').textContent = `점 1개 = 가상 인물 약 ${W.toFixed(1)}명. ` + (assumed ? '사람 수·교대 시간·업종 고르는 비율은 근거 확인 전 가정 값입니다.' : '');
@@ -654,9 +659,20 @@ $('sim-day').querySelectorAll('button').forEach(b => b.onclick = () => {
   $('sim-day').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); scen = b.dataset.s; seek(simT);
 });
 // 속도는 다음 프레임부터 바로 반영(재생 중이어도 멈추지 않음)
-$('sim-speed').querySelectorAll('button').forEach(b => b.onclick = () => {
-  speed = +b.dataset.v; $('sim-speed').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
-  $('sim-sub').textContent = `1초에 ${speed}분`;
+// 배속: 칸에 직접 쓰거나(0.25~10) −·+ 로 한 단계씩. 재생 중이어도 바로 반영
+function setMult(m) {
+  if (!isFinite(m) || m <= 0) m = 1;
+  m = Math.max(MULT_MIN, Math.min(MULT_MAX, m));
+  speed = BASE_MIN * m; $('sim-mult').value = fmtMult(m);
+  const per = speed >= 1 ? `${fmtMult(speed)}분` : `${Math.round(speed * 60)}초`;
+  $('sim-sub').textContent = `1초에 ${per}`;
+}
+$('sim-mult').addEventListener('change', (e) => setMult(parseFloat(e.target.value)));
+$('sim-mult').addEventListener('keydown', (e) => { if (e.key === 'Enter') { setMult(parseFloat(e.target.value)); e.target.blur(); } });
+$('sim-speed').querySelectorAll('.spd-btn').forEach(b => b.onclick = () => {
+  const m = speed / BASE_MIN, d = +b.dataset.d;
+  const next = d > 0 ? (MULT_STEPS.find(v => v > m + 1e-6) ?? MULT_MAX) : ([...MULT_STEPS].reverse().find(v => v < m - 1e-6) ?? MULT_MIN);
+  setMult(next);
 });
 $('sim-fold').onclick = () => { const f = panel.classList.toggle('folded'); $('sim-fold').setAttribute('aria-label', f ? '펴기' : '접기'); };
 panel.classList.add('folded'); $('sim-fold').setAttribute('aria-label', '펴기');   // 처음엔 접어 둠(지도 가운데 아래를 가리지 않게). 주 버튼은 기록지에
