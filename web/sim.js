@@ -662,7 +662,7 @@ panel.innerHTML = `
     <p class="sim-note" id="sim-note"></p>
     <p class="ts-chip" id="ts-chip" hidden></p>
     <button type="button" class="btn-sub" id="ts-open">시간 정하기 <span>재생 범위 · 영업시간 · 외출 시각</span></button>
-    <details class="sim-src"><summary>자료와 가정 보기</summary><div id="sim-src"></div></details>
+    <details class="sim-src" id="sim-src-d"><summary>자료와 가정 보기</summary><div id="sim-src"></div></details>
     <button class="tour sim-tour btn-main" id="sim-tour">빈 층에 가게 열어 보기</button>
   </div>`;
 document.body.appendChild(panel);
@@ -680,7 +680,7 @@ const assumed = GROUPS.filter(g => CFG.groups[g].src === '가정' || /가정/.te
   $('sim-src').innerHTML = `<ul>
     ${PD ? li(`가상 시민 ${PD.n.toLocaleString('ko-KR')}명(1:1, v${PD.version})`, GROUPS.map(g => `${CFG.groups[g].ko} ${(pdG[g] || 0).toLocaleString('ko-KR')}명`).join(' · ') + ' — data/processed/personas (tools/build_personas.py). 주말 인원은 구분별 주말 배율로 늘고 줄어듦')
       : GROUPS.map(g => li(CFG.groups[g].ko + ` (평일 ${CFG.groups[g].wd.toLocaleString('ko-KR')}명·주말 ${CFG.groups[g].we.toLocaleString('ko-KR')}명)`, CFG.groups[g].src)).join('')}
-    ${CFG.scale ? li('규모 맞춤(모든 부류 × ' + CFG.scale.v + ')', CFG.scale.src) : li('규모 비교', '상권 안 하루 가게 방문(가상) 약 5,500건 ↔ 옥포1동 상권 카드 거래 환산 약 3,900건(경남빅데이터허브 2026년 9월, 카드 전체 추정 × 시뮬레이션 업종 비율). 같은 규모라 따로 맞추지 않음(행정동과 상권 경계가 달라서)')}
+    ${CFG.scale ? li('규모 맞춤(모든 부류 × ' + CFG.scale.v + ')', CFG.scale.src) : '<li><b>규모 비교(가상 ↔ 실제 카드)</b> <span id="scale-cmp">이 칸을 열 때 계산합니다.</span></li>'}
     ${li('교대 시간', `출근 ${sh(CFG.shift.in[0])}~${sh(CFG.shift.in[1])}, 퇴근 ${sh(CFG.shift.out[0])}~${sh(CFG.shift.out[1])} — ${CFG.shift_src || CFG.shift.src || '가정'}`)}
     ${CFG.foreignDaily ? li('외국인 하루 쓸 돈', CFG.foreignDaily.src) : ''}
     ${li('세부 업종별 1인 지출(대표 메뉴 × 1인 수량)', MENU.subs.map(x => `${x.ko} ${x.basket.toLocaleString('ko-KR')}원(근거 ${x.confirmed[0]}/${x.confirmed[1]})`).join(' · '))}
@@ -896,6 +896,19 @@ function applyTS(D) {
 }
 document.addEventListener('click', (e) => { if (e.target.id === 'ts-chip-reset') applyTS(tsDefault()); });
 
+// 규모 비교: 가상 하루(평일·주말, 지금 시간 설정 기준)와 옥포1동 카드 매출(경남빅데이터허브 주요상권, NH카드 점유율 보정 추정, 2026-09)
+$('sim-src-d').addEventListener('toggle', () => {
+  const el = $('scale-cmp'); if (!$('sim-src-d').open || !el) return;
+  const day = (we) => { const st = runDay(we, 0); let v = 0, w = 0; for (let i = 0; i < st.visits.length; i++) { v += st.visits[i]; w += st.spend[i]; } return [v, w]; };
+  const [wv, ww] = day(false), [ev, ew] = day(true); drawDirty = true; need();
+  const man = (x) => Math.round(x / 1e4).toLocaleString('ko-KR') + '만 원';
+  const per = wv / SHOPS.filter(x => !x.virtual).length;
+  el.innerHTML = `가상: 하루 가게 방문 평일 ${Math.round(wv).toLocaleString('ko-KR')}명·${man(ww)}, 주말 ${Math.round(ev).toLocaleString('ko-KR')}명·${man(ew)}. 지도 안 가게 ${SHOPS.filter(x => !x.virtual).length.toLocaleString('ko-KR')}곳이라 가게당 평일 약 ${per.toFixed(1)}명. ` +
+    `실제(경남빅데이터허브 소비동향, 카드 점유율 보정 추정, 2026-09): 옥포1동 52.66억·옥포2동 67.24억 원, 옥포1동은 약 17.7만 건(건당 약 3만 원). 하루로 나누면 두 동 약 4억 원, 건당 3만 원이면 약 1.3만 건. ` +
+    `가상 매출은 그 약 ${Math.round(100 * ww / 4e8)}% 입니다. 지도 범위·업종 범위(가상은 음식·생활 21개 세부 업종만)가 두 동 전체보다 좁고 카드 1건은 여럿이 낸 값일 수 있지만, 가상 손님 수가 실제보다 적게 나올 수 있습니다. ` +
+    `그래서 '가게 열어 보기'는 손님 수 자체보다 같은 업종 기존 가게들 가운데 순위로 보세요.`;
+});
+
 function tick(now) {
   requestAnimationFrame(tick);
   if (!lastNow) lastNow = now; const dt = Math.min(0.1, (now - lastNow) / 1000); lastNow = now;
@@ -933,12 +946,14 @@ function neighbors(s, R) { return SHOPS.filter(o => !o.virtual && o.c === s.c &&
 function experiment(bi, floor, sub, price, seats, hrs) {
   const s = addVirtual(bi, floor, sub, price, seats, hrs);
   const nb = neighbors(s, 250);
+  const same = SHOPS.filter(o => !o.virtual && o.sub === sub).map(o => o.i);   // 같은 세부 업종 기존 가게(견줄 기준)
   const res = {};
   for (const sc of ['wd', 'we']) {
-    const runs = [];
+    const runs = [], sameV = new Float64Array(same.length);
     for (let k = 0; k < RUNS; k++) {
       s.off = true; const base = runDay(sc === 'we', k); const nbBase = nb.reduce((a, i) => a + base.visits[i], 0);
       s.off = false; const st = runDay(sc === 'we', k); const nbNew = nb.reduce((a, i) => a + st.visits[i], 0);
+      same.forEach((i, j) => { sameV[j] += st.visits[i] / RUNS; });
       runs.push({ v: st.visits[s.i], won: st.spend[s.i], lost: st.lost[s.i], hour: st.byHour[s.i] ? Array.from(st.byHour[s.i]) : new Array(24).fill(0),
         grp: { ...(st.byGroup[s.i] || {}) }, nb: nbNew - nbBase });
     }
@@ -946,6 +961,9 @@ function experiment(bi, floor, sub, price, seats, hrs) {
     res[sc] = { v: avg(r => r.v), vMin: Math.min(...runs.map(r => r.v)), vMax: Math.max(...runs.map(r => r.v)), won: avg(r => r.won), lost: avg(r => r.lost),
       nb: avg(r => r.nb), nbSame: runs.every(r => r.nb < 0) || runs.every(r => r.nb > 0), hour: Array.from({ length: 24 }, (_, h) => avg(r => r.hour[h])),
       grp: Object.fromEntries(GROUPS.map(g => [g, avg(r => r.grp[g] || 0)])) };
+    // 같은 업종 기존 가게들 하루 손님(가상)의 중앙값·위 25% 와, 이 자리가 그중 몇 번째쯤인지 — 손님 수 절대값보다 '이 자리가 나은가'를 보게
+    const sv = Array.from(sameV).sort((a, b) => a - b), q = (f) => sv.length ? sv[Math.min(sv.length - 1, Math.floor(f * sv.length))] : 0;
+    res[sc].bench = { n: sv.length, med: q(0.5), p75: q(0.75), above: sv.filter(v => v > res[sc].v).length };
   }
   removeVirtual(s);
   res.nbCount = nb.length; res.nbSub = nb.filter(i => SHOPS[i].sub === sub).length;
@@ -1041,6 +1059,13 @@ function runExp() {
 }
 // 가장 붐비는 시각(손님이 가장 많은 시간대)
 function peakTxt(hr, lab) { let m = -1, h = 0; hr.forEach((v, i) => { if (v > m) { m = v; h = i; } }); return m >= 0.5 ? `${lab}엔 ${h}시대가 가장 붐빔(${Math.round(m)}명)` : `${lab} 손님 거의 없음`; }
+// 같은 세부 업종 기존 가게(가상)와 견주기: 이 자리 손님이 그중 몇 번째쯤인지
+function benchTxt(r, k) {
+  const b = r.wd.bench; if (!b || !b.n) return `옥포에 ${esc(k)} 가게가 없어 견줄 곳이 없습니다.`;
+  const rank = b.above + 1, top = Math.max(1, Math.round(100 * rank / (b.n + 1)));
+  return `기존 ${esc(k)} ${b.n}곳(가상, 평일): 하루 손님 중앙값 ${Math.round(b.med)}명, 위 25%는 ${Math.round(b.p75)}명 이상. ` +
+    `이 자리(${Math.round(r.wd.v)}명)는 ${b.n + 1}곳 중 위에서 ${rank}번째쯤(상위 ${top}%)입니다. 주말: ${b.n + 1}곳 중 ${r.we.bench.above + 1}번째쯤.`;
+}
 function renderExp(r, sub, price, ms, bi, floor, menus, hrs) {
   const k = SUB[sub].ko;
   const row = (sc, lab) => { const x = r[sc]; return `<tr><th>${lab}</th><td><b>${Math.round(x.v).toLocaleString('ko-KR')}명</b><span class="rng">${Math.round(x.vMin)}~${Math.round(x.vMax)}</span></td><td>${won(x.won)}</td></tr>`; };
@@ -1063,6 +1088,7 @@ function renderExp(r, sub, price, ms, bi, floor, menus, hrs) {
     <p class="exp-sub">시간대별 손님 <span class="lg"><i style="background:#2f6fed"></i>평일 <i style="background:#7048e8"></i>주말</span></p>
     <p class="exp-nb">${peakTxt(r.wd.hour, '평일')} · ${peakTxt(r.we.hour, '주말')}</p>
     <div class="exp-hours"><div>${bars(r.wd.hour, '#2f6fed')}</div><div>${bars(r.we.hour, '#7048e8')}</div><div class="ax"><span>0시</span><span>6시</span><span>12시</span><span>18시</span><span>23시</span></div></div>
+    <p class="exp-sub">같은 업종 기존 가게와 비교</p><p class="exp-nb">${benchTxt(r, k)}</p>
     <p class="exp-sub">주변 가게 영향</p><p class="exp-nb">${nbTxt}</p>
     ${cmp}
     <p class="exp-sub">1인 지출 ${wonX(price)}</p><p class="exp-nb">${bk}</p>
