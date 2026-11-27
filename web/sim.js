@@ -645,7 +645,7 @@ function ui() {
     <div><b>${Math.round(wait * W).toLocaleString('ko-KR')}</b>명<span>자리 기다림</span></div>
     <div><b>${won(TOTAL_SPENT)}</b><span>지금까지 쓴 돈</span></div>`;
   if (PD) {
-    $('sim-sub').textContent = speed >= 1 ? `1초에 ${fmtMult(speed)}분` : `1초에 ${Math.round(speed * 60)}초`;   // 시각 아래는 재생 속도(배속 칸과 맞춤). 인원은 아래 sim-note 에
+    $('sim-sub').textContent = perSec(speed);   // 시각 아래는 재생 속도(배속 칸과 맞춤). 인원은 아래 sim-note 에
     $('sim-note').textContent = `점 1개 = 가상 시민 1명 (하루 유동 ${TOTAL_POP.toLocaleString('ko-KR')}명 전원 · 상권 이동 ${A.length.toLocaleString('ko-KR')}명).`;
   } else {
     $('sim-note').textContent = `점 1개 = 가상 인물 약 ${W.toFixed(1)}명. ` + (assumed ? '사람 수·교대 시간·업종 고르는 비율은 근거 확인 전 가정 값입니다.' : '');
@@ -664,9 +664,13 @@ function setMult(m) {
   if (!isFinite(m) || m <= 0) m = 1;
   m = Math.max(MULT_MIN, Math.min(MULT_MAX, m));
   speed = BASE_MIN * m; $('sim-mult').value = fmtMult(m);
-  const per = speed >= 1 ? `${fmtMult(speed)}분` : `${Math.round(speed * 60)}초`;
-  $('sim-sub').textContent = `1초에 ${per}`;
+  $('sim-sub').textContent = perSec(speed);
+  // 끝에 닿으면 그쪽 단추를 잠가 회색으로(app.css .spd-btn:disabled)
+  $('sim-speed').querySelector('.spd-btn[data-d="-1"]').disabled = m <= MULT_MIN + 1e-6;
+  $('sim-speed').querySelector('.spd-btn[data-d="1"]').disabled = m >= MULT_MAX - 1e-6;
 }
+// '1초에 3분 45초'처럼 분·초로(소수 분 대신)
+function perSec(sp) { const tot = Math.round(sp * 60), mm = Math.floor(tot / 60), ss = tot % 60; return `1초에 ${mm ? mm + '분' : ''}${mm && ss ? ' ' : ''}${ss ? ss + '초' : ''}`; }
 $('sim-mult').addEventListener('change', (e) => setMult(parseFloat(e.target.value)));
 $('sim-mult').addEventListener('keydown', (e) => { if (e.key === 'Enter') { setMult(parseFloat(e.target.value)); e.target.blur(); } });
 $('sim-speed').querySelectorAll('.spd-btn').forEach(b => b.onclick = () => {
