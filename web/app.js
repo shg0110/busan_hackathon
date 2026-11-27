@@ -706,7 +706,8 @@ function placeLabels() {
   const W = canvas.clientWidth, H = canvas.clientHeight, taken = coverBoxes();
   const dist = camera.position.distanceTo(controls.target);
   for (const L of labels) {
-    const far = L.kind === 'road' ? (L.pri < 4 ? R * 0.9 : R * 3) : (L.pri <= 2 ? R * 0.5 : L.pri < 5 ? R * 0.9 : R * 3);
+    // 멀리(카메라 700m 넘게, 상권 전체 보기)서는 큰길(pri ≥ 4)·큰 지명(pri ≥ 8)과 ①②③·폐업·거리 이름표만 — 빈 층 주황이 이름표에 묻히지 않게(seohogyun-20 제안 C)
+    const far = L.kind === 'road' ? (L.pri < 4 ? 700 : R * 3) : (L.pri <= 2 ? R * 0.5 : L.pri < 8 ? 700 : R * 3);
     if (!show[L.kind] || dist > far) { L.el.classList.add('off'); continue; }
     _v.set(L.x, L.y + (L.abs ? 0 : Math.max(0, hAt(L.x, L.z))), L.z).project(camera);   // 바다 위 이름표는 물 높이 0 아래로 내리지 않음   // 땅 기준 이름표는 지형 높이를 더함(abs 는 이미 절대 높이)
     if (_v.z > 1 || _v.x < -1.1 || _v.x > 1.1 || _v.y < -1.1 || _v.y > 1.1) { L.el.classList.add('off'); continue; }
