@@ -476,6 +476,9 @@ const payOf = (a, s) => a.sm && a.sm !== 1 ? Math.max(500, Math.round(s.price * 
 function chooseShop(a, cat, t, nodeFrom) {
   // 직선거리로 고른다(빠름). 실제 이동 시간은 길 거리로 계산. 거리 무게가 1/400 아래(약 6λ 밖)면 건너뛴다
   // 가진 돈(이번 나들이 예산) 안의 가게만 고른다: 예산이 적은 사람은 싼 가게로 간다. 열린 가게가 있는데 모두 비싸면 NO_MONEY
+  // 업종 수요가 시작되기 전(CAT_WIN 앞)이면 갈 가게 없음 — 다중 방문 뒤쪽 가게는 앞 가게에서 일찍 나와 수요 시작 전에 닿기도 하는데,
+  // 그때 일찍 연 가게 하나(실험 가게의 내 영업시간 등)만 열려 있어 손님이 몰렸음. 기본 영업시간에선 그 시각에 연 같은 업종 가게가 없어 결과가 같다
+  { const w = CAT_WIN[cat]; if (w && t + 5 < w[0]) return null; }
   const list = BYCAT[cat], fx = NX[nodeFrom], fz = NZ[nodeFrom], lam = LAM[cat] || 300, far2 = (6 * lam) ** 2, g = a.wk;
   let n = 0, sum = 0, pricey = 0;
   const cw = CW.length >= list.length ? CW : (CW = new Float64Array(list.length * 2)), ci = CI.length >= list.length ? CI : (CI = new Int32Array(list.length * 2));
@@ -619,12 +622,14 @@ function placeOnPath(a, t) {
   if (!a.pd) { a.pd = new Float32Array(p.length); for (let i = 1; i < p.length; i++) a.pd[i] = a.pd[i - 1] + Math.hypot(NX[p[i]] - NX[p[i - 1]], NZ[p[i]] - NZ[p[i - 1]]); }
   const L = a.pd[p.length - 1], f = Math.min(1, Math.max(0, (t - a.t0) / (a.t1 - a.t0))), d = Math.min(L, Math.max(0, f * L + a.stg));
   let i = 1; while (i < p.length - 1 && a.pd[i] < d) i++;
+  a.pi = i;   // 지금 그린 마디(점검용: 꺾이는 곳에선 가장 가까운 마디가 실제 마디와 다름)
   const seg = a.pd[i] - a.pd[i - 1] || 1, u = (d - a.pd[i - 1]) / seg, p0 = p[i - 1], p1 = p[i];
   const dx = NX[p1] - NX[p0], dz = NZ[p1] - NZ[p0], l = Math.hypot(dx, dz) || 1;
   // 길 방향에 수직인 쪽(방향과 무관하게 늘 같은 쪽을 가리키게)으로 사람마다 정한 쪽 인도·가장자리를 걷는다
   let nx = -dz / l, nz = dx / l; if (nx + nz * 0.001 < 0) { nx = -nx; nz = -nz; }
   let sd = side; const mi = MDX[p0] || MDZ[p0] ? p0 : p1;   // 중앙분리 도로면 가운데 섬 반대쪽(바깥 인도)으로
-  if ((MDX[mi] || MDZ[mi]) && (nx * MDX[mi] + nz * MDZ[mi]) * sd > 0.3) sd = -sd;
+  // 문턱 0.1: 0.3 이던 때 비스듬한 마디(내적 0.17·0.26)에서 넓은 길(7~11m 옆)의 사람이 섬 쪽에 남았음. 그리기만 바뀌고 시뮬레이션 결과는 같다
+  if ((MDX[mi] || MDZ[mi]) && (nx * MDX[mi] + nz * MDZ[mi]) * sd > 0.1) sd = -sd;
   const off = sd * Math.max(0.3, sideOff(Math.min(NWD[p0], NWD[p1]), NSW[p0] && NSW[p1]) + lat);   // 두 끝이 다 인도 있는 길에 닿아야 인도
   a.x = NX[p0] + dx * u + nx * off; a.z = NZ[p0] + dz * u + nz * off;
 }

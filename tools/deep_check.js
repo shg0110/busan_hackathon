@@ -48,6 +48,7 @@ const ok = (name, pass, detail) => { if (detail && detail.__err) pass = false; r
     for (const a of A) { if (!isFinite(a.x) || !isFinite(a.z)) { nan++; continue; } if (a.st !== 1 || !a.path || a.path.length < 2) continue;
       const p = a.path; let best = 1e9, bi = -1, v = null;
       for (let i = 1; i < p.length; i++) { const ax = NX[p[i - 1]], az = NZ[p[i - 1]], dx = NX[p[i]] - ax, dz = NZ[p[i]] - az, L2 = dx * dx + dz * dz || 1, t = Math.max(0, Math.min(1, ((a.x - ax) * dx + (a.z - az) * dz) / L2)), px = ax + dx * t, pz = az + dz * t, d = Math.hypot(a.x - px, a.z - pz); if (d < best) { best = d; bi = i; v = [a.x - px, a.z - pz]; } }
+      if (a.pi > 0 && a.pi < p.length) { bi = a.pi; const ax = NX[p[bi - 1]], az = NZ[p[bi - 1]], dx = NX[p[bi]] - ax, dz = NZ[p[bi]] - az, L2 = dx * dx + dz * dz || 1, t = Math.max(0, Math.min(1, ((a.x - ax) * dx + (a.z - az) * dz) / L2)); v = [a.x - ax - dx * t, a.z - az - dz * t]; best = Math.hypot(v[0], v[1]); }   // 그리기가 쓴 마디로 판정(꺾이는 곳에선 가장 가까운 마디가 다른 마디)
       const p0 = p[bi - 1], p1 = p[bi]; if (NSW[p0] && NSW[p1]) sw.push(best - Math.min(NWD[p0], NWD[p1]) / 2);
       const mi = MDX[p0] || MDZ[p0] ? p0 : (MDX[p1] || MDZ[p1] ? p1 : -1); if (mi >= 0) { md++; if (v[0] * MDX[mi] + v[1] * MDZ[mi] > 0.5) inMed++; } }
     sw.sort((x, y) => x - y); return { 사람: A.length, nan, 인도길: sw.length, '차도 가장자리 넘어 중앙(m)': sw.length ? +sw[sw.length >> 1].toFixed(2) : null, '차도 안': sw.filter(x => x < 0.5).length, 분리도로: md, 분리대쪽: inMed }; });
