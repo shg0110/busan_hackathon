@@ -39,6 +39,15 @@ def sim_cat(big, mid, small, name):
     return None
 
 
+# R-ONE 상권 경계 안인지(규모 맞추기에 씀)
+BND = MAP.get('boundary') or []
+def inside(pt):
+    x, z = pt; c = False
+    for i in range(len(BND)):
+        x1, z1 = BND[i]; x2, z2 = BND[i - 1]
+        if (z1 > z) != (z2 > z) and x < (x2 - x1) * (z - z1) / (z2 - z1 + 1e-12) + x1:
+            c = not c
+    return c
 stores = list(csv.DictReader(open(os.path.join(ROOT, 'data', 'processed', f'{NAME}_stores.csv'), encoding='utf-8-sig')))
 # 가게 → 건물·층: tools/okpo_floors.py 결과에서 이름으로 찾는다(같은 판정 규칙을 두 번 쓰지 않게)
 shop_floor = {}
@@ -57,7 +66,7 @@ for r in stores:
     nm = r['상호명'] + (' ' + r['지점명'] if r['지점명'] else '')
     loc = shop_floor.get(nm, [])
     bi, fl = (loc[0] if loc else (-1, None))
-    shops.append(dict(n=nm, c=c, cs=r['상권업종소분류명'], x=x, z=z, b=bi, f=fl))
+    shops.append(dict(n=nm, c=c, cs=r['상권업종소분류명'], x=x, z=z, b=bi, f=fl, i=int(inside((x, z)))))
 
 # ── 집 ───────────────────────────────────────────────────
 homes = []
@@ -91,7 +100,9 @@ for e in osm['elements']:
         if abs(x) < HX and abs(z) < HZ and not any(math.dist((x, z), (s['x'], s['z'])) < 40 for s in stops):
             stops.append(dict(x=x, z=z, n=t.get('name', '')))
 
-out = dict(shops=shops, homes=homes, gates=gates, stops=stops,
+in_all = sum(1 for r in stores if inside(xz(float(r['위도']), float(r['경도']))))
+in_sim = sum(1 for s_ in shops if s_['i'])
+out = dict(shops=shops, homes=homes, gates=gates, stops=stops, inside=dict(stores_all=in_all, stores_sim=in_sim),
            counts=dict(shops=len(shops), by_cat=collections.Counter(s['c'] for s in shops), homes=len(homes),
                        home_area=round(sum(h['w'] for h in homes)), gates=len(gates), stops=len(stops)))
 dst = os.path.join(ROOT, 'web', 'data', f'{NAME}_sim.js')
