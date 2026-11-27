@@ -94,6 +94,9 @@ function nearRoad(x, z, extra, skip) {
   return false;
 }
 const inWater = (x, z) => D.water.some(w => inPoly(x, z, w.p));
+// 땅 높이(m): terrain.js(seohogyun-31)의 heightAt. 지형이 꺼져 있으면(TERRAIN_ON=false) 언제나 0이라 화면은 그대로다.
+// 이름표(M.labels)는 app.js placeLabels 가 땅 높이를 더하므로 여기서 더하지 않는다(땅 기준 y)
+const GH = (x, z) => (window.heightAt ? +window.heightAt(x, z) || 0 : 0);
 const inside = (x, z, m) => Math.abs(x) < HX - m && Math.abs(z) < HZ - m;
 
 // ── 교차로 찾기: 한 점에서 뻗어 나가는 길 가닥(차가 다니는 길)이 3개 이상이면 교차로 ──────────
@@ -309,7 +312,7 @@ function hideTreesNear(x, z, r) {
     const trunk = mk(trunkGeo, C.trunk, trees.length);
     trees.forEach(([x, z, h, rr, , shape], i) => {
       const th = shape === 'cone' ? h * 0.3 : h * 0.45, tw = shape === 'cone' ? 1.1 : 1;
-      pos.set(x, 0, z); scl.set(tw, th, tw); q.identity(); mtx.compose(pos, q, scl); trunk.setMatrixAt(i, mtx);
+      pos.set(x, GH(x, z), z); scl.set(tw, th, tw); q.identity(); mtx.compose(pos, q, scl); trunk.setMatrixAt(i, mtx);
       treeRefs[i].parts.push([trunk, i]);
     });
     meshes.push(trunk);
@@ -328,18 +331,18 @@ function hideTreesNear(x, z, r) {
     const pick = (A) => A[Math.floor(rand() * A.length)].clone();
     broad.forEach(([x, z, h, rr], i) => {
       const v = i % NV, leaf = leafs[v], b = at[v]++ * 3;
-      const r = h * rr, k = Math.floor(rand() * LEAF.length), green = LEAF[k].clone().lerp(LEAF[Math.min(LEAF.length - 1, k + 1)], rand() * 0.5);
+      const g0 = GH(x, z), r = h * rr, k = Math.floor(rand() * LEAF.length), green = LEAF[k].clone().lerp(LEAF[Math.min(LEAF.length - 1, k + 1)], rand() * 0.5);
       const u = rand();
       // 공원·숲: 초록 72% · 올리브 18% · 노랑 10%. 노랑은 초록빛 쪽으로 낮췄다(햇빛과 곱해지면 주황으로 보이고, '고른 거리' 노란 선과 섞였다)
       const base = u < 0.72 ? green : u < 0.9 ? pick(OLIVE) : pick(GINKGO);
       const turning = !base.equals(green);
       const sy = 0.82 + rand() * 0.22;
       q.setFromAxisAngle(up, rand() * Math.PI * 2);
-      pos.set(x, h - r * sy, z); scl.set(r, r * sy, r); mtx.compose(pos, q, scl); leaf.setMatrixAt(b, mtx); leaf.setColorAt(b, base);
+      pos.set(x, g0 + h - r * sy, z); scl.set(r, r * sy, r); mtx.compose(pos, q, scl); leaf.setMatrixAt(b, mtx); leaf.setColorAt(b, base);
       const a0 = rand() * Math.PI * 2;
       for (let s2 = 1; s2 <= 2; s2++) {
         const a = a0 + s2 * (2.2 + rand() * 0.6), r2 = r * (0.6 + rand() * 0.14), up2 = s2 === 1 ? 0.18 : -0.12;
-        pos.set(x + Math.cos(a) * r * 0.58, h - r * sy + r * up2, z + Math.sin(a) * r * 0.58); scl.set(r2, r2 * 0.9, r2);
+        pos.set(x + Math.cos(a) * r * 0.58, g0 + h - r * sy + r * up2, z + Math.sin(a) * r * 0.58); scl.set(r2, r2 * 0.9, r2);
         mtx.compose(pos, q, scl); leaf.setMatrixAt(b + s2, mtx);
         // 물드는 나무는 아래 덩이 하나를 덜 물든 색으로(한 그루 안에서도 바뀌는 중인 느낌)
         col.copy(base).multiplyScalar(s2 === 1 ? 1.06 : 0.92); if (turning && s2 === 2) col.lerp(green, 0.35);
@@ -356,8 +359,9 @@ function hideTreesNear(x, z, r) {
     cone.forEach(([x, z, h, rr], i) => {
       const r = h * rr, c = col.copy(CONE[0]).lerp(CONE[1], rand()).clone();
       q.setFromAxisAngle(up, rand() * Math.PI * 2);
-      pos.set(x, h * 0.22, z); scl.set(r, h * 0.55, r); mtx.compose(pos, q, scl); needle.setMatrixAt(i * 2, mtx); needle.setColorAt(i * 2, c);
-      pos.set(x, h * 0.5, z); scl.set(r * 0.72, h * 0.5, r * 0.72); mtx.compose(pos, q, scl); needle.setMatrixAt(i * 2 + 1, mtx); needle.setColorAt(i * 2 + 1, c);
+      const g0 = GH(x, z);
+      pos.set(x, g0 + h * 0.22, z); scl.set(r, h * 0.55, r); mtx.compose(pos, q, scl); needle.setMatrixAt(i * 2, mtx); needle.setColorAt(i * 2, c);
+      pos.set(x, g0 + h * 0.5, z); scl.set(r * 0.72, h * 0.5, r * 0.72); mtx.compose(pos, q, scl); needle.setMatrixAt(i * 2 + 1, mtx); needle.setColorAt(i * 2 + 1, c);
       treeRefs[coneIdx[i]].parts.push([needle, i * 2], [needle, i * 2 + 1]);
     });
     meshes.push(needle);
@@ -366,7 +370,7 @@ function hideTreesNear(x, z, r) {
     const bush = mk(mottle(shade(lumpy(new THREE.IcosahedronGeometry(1, 1), 0.16), 0.66, 1.06), 0.1), '#ffffff', shrubs.length, true);
     shrubs.forEach(([x, z, sz], i) => {
       q.setFromAxisAngle(up, rand() * Math.PI * 2);
-      pos.set(x, sz * 0.38, z); scl.set(sz * 0.6, sz * 0.45, sz * 0.6); mtx.compose(pos, q, scl); bush.setMatrixAt(i, mtx);
+      pos.set(x, GH(x, z) + sz * 0.38, z); scl.set(sz * 0.6, sz * 0.45, sz * 0.6); mtx.compose(pos, q, scl); bush.setMatrixAt(i, mtx);
       bush.setColorAt(i, col.copy(SHRUB[0]).lerp(SHRUB[1], rand()));
       treeRefs.push({ x, z, parts: [[bush, i]], shrub: true });   // 놀이기구·정류장 자리의 관목도 숨길 수 있게(소품 자리 다툼에는 안 셈)
     });
@@ -411,7 +415,8 @@ function addMerged(parts, name) {
 function busStops() {
   const S = window.SIM_DATA && window.SIM_DATA.stops; if (!S || !S.length || !THREE.BufferGeometryUtils) return;
   const parts = [];
-  const box = (...args) => boxPart(parts, ...args);
+  let gy = 0;
+  const box = (w, h, d, x, y, z, rot, cx, cz, col) => boxPart(parts, w, h, d, x, y + gy, z, rot, cx, cz, col);   // gy = 그 쉼터 자리 땅 높이
   for (const st of S) {
     // 가장 가까운 차도 선분의 방향으로 돌리고, 정류장 점이 있는 쪽 길 가장자리 바깥 1.2m 에 둔다
     let best = null, bd = Infinity;
@@ -432,6 +437,7 @@ function busStops() {
       rot = -Math.atan2(dz, dx);
       if (side < 0) rot += Math.PI;   // 쉼터 등판이 길 반대쪽(인도 안쪽)으로 가게
     }
+    gy = GH(cx, cz);
     stats.hiddenTrees = (stats.hiddenTrees || 0) + hideTreesNear(cx, cz, 4.5);
     spots.bus.push([+cx.toFixed(1), +cz.toFixed(1)]);   // 쉼터·표지 기둥과 겹치는 가로수는 숨긴다
     // 지붕·등판·기둥 2개·표지 기둥·표지판
@@ -498,7 +504,8 @@ function realSignals() {
     if (cw) { const ax = cw.cx - g.x, az = cw.cz - g.z, L = Math.hypot(ax, az) || 1; rot = Math.atan2(ax / L, az / L); toRoad = Math.min(L, 6.5); }
     else if (nr) { const ax = nr.px - g.x, az = nr.pz - g.z, L = Math.hypot(ax, az) || 1; rot = Math.atan2(ax / L, az / L); toRoad = Math.min(L, 6.5); }
     const lit = (k++ % 2 === 0);   // 기둥마다 번갈아(차량 초록·보행 빨강 / 차량 빨강·보행 초록)
-    const B = (w, h, d, x, y, z, col, arr = body) => { const geo = new THREE.BoxGeometry(w, h, d); geo.translate(x, y, z); geo.rotateY(rot); geo.translate(g.x, 0, g.z);
+    const gy = GH(g.x, g.z);
+    const B = (w, h, d, x, y, z, col, arr = body) => { const geo = new THREE.BoxGeometry(w, h, d); geo.translate(x, y + gy, z); geo.rotateY(rot); geo.translate(g.x, 0, g.z);
       const c = new THREE.Color(col), n = geo.attributes.position.count, cols = new Float32Array(n * 3); for (let i = 0; i < n; i++) cols.set([c.r, c.g, c.b], i * 3);
       geo.setAttribute('color', new THREE.BufferAttribute(cols, 3)); arr.push(geo.toNonIndexed()); };
     const H = hasCar ? 6.2 : 3.1;
