@@ -184,9 +184,12 @@ flatMesh(D.greens.filter(g => g.k === 'pitch').map(g => g.p), 0, C.pitch, 3);
 const waterMesh = flatMesh(D.water.map(w => w.p), 0, C.water, 4);
 waterMesh.receiveShadow = false;
 const MAJOR = new Set(['trunk', 'primary', 'secondary', 'tertiary', 'trunk_link', 'primary_link', 'secondary_link', 'tertiary_link']);
-ribbonMesh(D.roads.filter(r => r.ped), 0, C.ped, 5);
-ribbonMesh(D.roads.filter(r => !r.ped && !MAJOR.has(r.k)), 0, C.roadMinor, 6);
-ribbonMesh(D.roads.filter(r => MAJOR.has(r.k)), 0, C.road, 7);
+// 도로 3겹(보행로·골목·큰길). 다른 파일(바닥층 ground.js)이 길을 새로 그리면 __map.roads 를 숨긴다
+const roadMeshes = [ribbonMesh(D.roads.filter(r => r.ped), 0, C.ped, 5),
+  ribbonMesh(D.roads.filter(r => !r.ped && !MAJOR.has(r.k)), 0, C.roadMinor, 6),
+  ribbonMesh(D.roads.filter(r => MAJOR.has(r.k)), 0, C.road, 7)];
+// 위경도 → 지도 좌표(m). tools/map_build.py xz() 와 같은 식
+const xz = (lat, lon) => [(lon - D.meta.lon0) * D.meta.kx, -(lat - D.meta.lat0) * D.meta.kz];
 // R-ONE 상권 경계: 땅 위 굵은 선(닫힌 고리) + 이름표
 if (D.boundary) {
   const ring = D.boundary.concat([D.boundary[0]]);
@@ -593,6 +596,7 @@ requestAnimationFrame(() => requestAnimationFrame(() => {
 
 // 점검용(자동 시험이 읽음)
 window.__map = { select, buildings: B, signedArea, camera, controls, HOME, labels, need, orbit, scene, renderer, R, esc, tint, setRoofs,
+  roads: roadMeshes, ground, xz, meta: D.meta,
   get selected() { return selIdx; }, infoExtra: null };
 document.dispatchEvent(new Event('map-ready'));
 })();
