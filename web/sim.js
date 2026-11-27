@@ -499,7 +499,7 @@ const dot = (() => { const c = document.createElement('canvas'); c.width = c.hei
 const ptsMat = new THREE.PointsMaterial({ size: 8 * MP.renderer.getPixelRatio(), sizeAttenuation: false, vertexColors: true, map: dot, alphaTest: 0.5, transparent: false, depthTest: true });
 const points = new THREE.Points(geo, ptsMat); points.renderOrder = 20; points.frustumCulled = false; scene.add(points);
 // 2만 명 1:1이라 멀리서 8px 점이 길을 덮음 → 카메라 거리에 따라 크기(가까이 8 · 중간 5.5 · 멀리 3.5px)
-const dotPx = () => { const d = MP.camera.position.distanceTo(MP.controls.target); return d < 260 ? 8 : d < 620 ? 5.5 : 3.5; };
+const dotPx = () => { const d = MP.camera.position.distanceTo(MP.controls.target); return d < 260 ? 6.5 : d < 620 ? 4.5 : 3.2; };
 let dotNow = 0; function syncDot() { const v = dotPx(); if (v !== dotNow) { dotNow = v; ptsMat.size = v * MP.renderer.getPixelRatio(); need(); } }
 MP.controls.addEventListener('change', syncDot); syncDot();
 // 점은 화면에 서 있는 네모라 아래쪽 반이 앞의 연석(15cm)·낮은 물체에 가려 반달처럼 보임 → 깊이를 카메라 쪽으로 조금 당김(건물은 여전히 가림)
