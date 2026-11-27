@@ -10,9 +10,10 @@
 
 :root {
   --bg: #eef0f2;          /* 지도 땅 색과 같게 */
-  --g900: #191f28; --g800: #333d4b; --g700: #4e5968; --g600: #6b7684; --g400: #b0b8c1; --g300: #d1d6db; --g200: #e5e8eb; --g100: #f2f4f6; --g50: #f9fafb;
+  --g900: #191f28; --g800: #333d4b; --g700: #4e5968; --g600: #5f6b78; --g400: #b0b8c1; --g300: #d1d6db; --g200: #e5e8eb; --g100: #f2f4f6; --g50: #f9fafb;
   --primary: #2f6fed; --primary-dark: #1f57c9; --primary-soft: #edf3ff;
-  --vac: #e8590c;         /* 가게 없는 층 숫자(지도 주황 띠와 같은 뜻) */
+  --primary-ink: #1f5ad6;   /* 옅은 파랑 바탕 위 파랑 글자(대비 5.4). --primary 글자는 4.1로 기준(4.5) 미달 */
+  --vac: #c94a06;         /* 가게 없는 층 숫자(지도 주황 띠와 같은 뜻). 글자용이라 흰 바탕 대비 4.7(#e8590c 는 3.6으로 미달) */
   --side: 360px;          /* 기록지 너비 */
   --font: "Pretendard", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
   /* 다른 파일(menu.css 등)이 쓰던 이름 */
@@ -48,8 +49,8 @@ mark { background: none; color: inherit; }
 #tabs button::after { content: ''; width: 22px; height: 22px; }
 #tabs button:hover { background: var(--g50); }
 #tabs button[aria-pressed="true"] { background: var(--primary-soft); }
-#tabs button[aria-pressed="true"] span { color: var(--primary); font-weight: 700; }
-#tabs button[aria-pressed="true"] small { color: #4a6fb8; }
+#tabs button[aria-pressed="true"] span { color: var(--primary-ink); font-weight: 700; }
+#tabs button[aria-pressed="true"] small { color: #3a5ea8; }
 #tabs button[aria-pressed="true"]::after { background: center / 22px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 22 22'%3E%3Cpath d='M5.5 11.5l3.8 3.8 7.2-8' fill='none' stroke='%232f6fed' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
 
 /* 요약(상권 전체를 볼 때) */
@@ -60,7 +61,7 @@ body.street-mode #card { display: none; }
 .big { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; }
 .big-num { font-size: 44px; line-height: 1.1; font-weight: 800; letter-spacing: -.04em; font-variant-numeric: tabular-nums; color: var(--g900); }
 .big-unit { font-size: 24px; font-weight: 800; margin-left: -8px; align-self: flex-end; margin-bottom: 6px; }
-.badge { font-size: 13px; font-weight: 700; color: var(--primary); background: var(--primary-soft); border-radius: 6px; padding: 4px 8px; }
+.badge { font-size: 13px; font-weight: 700; color: var(--primary-ink); background: var(--primary-soft); border-radius: 6px; padding: 4px 8px; }
 .big-cap { margin: 10px 0 0; font-size: 18px; font-weight: 700; line-height: 1.45; letter-spacing: -.02em; }
 .big-cap small { display: block; margin-top: 4px; font-size: 13.5px; font-weight: 500; color: var(--g600); line-height: 1.55; letter-spacing: -.01em; }
 .kv-line { margin: 14px 0 0; padding: 14px 16px; background: var(--g50); border-radius: 12px; font-size: 14.5px; line-height: 1.65; color: var(--g700); }
