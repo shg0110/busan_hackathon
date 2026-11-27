@@ -64,28 +64,33 @@ const rngFrom = (a) => { const f = rng(0); f.s.a = a; return f; };
 function hash01(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0) / 4294967296; }
 
 // ── 길 그래프(도로 전부, 0.5m 로 이음, 20m 마다 쪼갬) ──────────────
-const NX = [], NZ = [], ADJ = [], KEY = new Map(), NWD = [];   // NWD: 노드에 닿은 길 중 가장 넓은 폭(m) — 사람이 길 가장자리·인도로 걷게
-function node(x, z) { const k = Math.round(x * 2) + ',' + Math.round(z * 2); let i = KEY.get(k);
-  if (i === undefined) { i = NX.length; KEY.set(k, i); NX.push(x); NZ.push(z); ADJ.push([]); NWD.push(0); } return i; }
+// 노드마다 그 노드를 지나는 길의 값을 만들 때 바로 붙인다(20m 마다 쪼갠 노드 포함 — 전엔 도로 꼭짓점에만 붙여 쪼갠 노드 위 사람이
+// 인도·분리대 판정을 못 받았음): NWD 가장 넓은 폭(m), NSWa 인도 있는 길이 지나나(r.sw), NRD 처음 지난 길 번호, NDX·NDZ 그 길 방향
+const NX = [], NZ = [], ADJ = [], KEY = new Map(), NWD = [], NSWa = [], NRD = [], NDX = [], NDZ = [];
+function node(x, z, r, ri, dx, dz) { const k = Math.round(x * 2) + ',' + Math.round(z * 2); let i = KEY.get(k);
+  if (i === undefined) { i = NX.length; KEY.set(k, i); NX.push(x); NZ.push(z); ADJ.push([]); NWD.push(0); NSWa.push(0); NRD.push(-1); NDX.push(0); NDZ.push(0); }
+  if (r) { NWD[i] = Math.max(NWD[i], r.w || 6); if (r.sw) NSWa[i] = 1; if (NRD[i] < 0) { NRD[i] = ri; NDX[i] = dx; NDZ[i] = dz; } }
+  return i; }
 function link(a, b) { if (a === b) return; const d = Math.hypot(NX[a] - NX[b], NZ[a] - NZ[b]); ADJ[a].push(b, d); ADJ[b].push(a, d); }
-for (const r of D.roads) {
+D.roads.forEach((r, ri) => {
   let prev = -1;
   for (let k = 0; k < r.p.length; k++) {
-    const [x, z] = r.p[k];
+    const [x, z] = r.p[k], q = r.p[k > 0 ? k - 1 : Math.min(1, r.p.length - 1)];
+    let dx = k > 0 ? x - q[0] : q[0] - x, dz = k > 0 ? z - q[1] : q[1] - z; const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
     if (k > 0) { const [px, pz] = r.p[k - 1], L = Math.hypot(x - px, z - pz), n = Math.ceil(L / 20);
-      for (let s = 1; s < n; s++) { const m = node(px + (x - px) * s / n, pz + (z - pz) * s / n); link(prev, m); prev = m; } }
-    const cur = node(x, z); if (prev >= 0) link(prev, cur); prev = cur;
+      for (let s = 1; s < n; s++) { const m = node(px + (x - px) * s / n, pz + (z - pz) * s / n, r, ri, dx, dz); link(prev, m); prev = m; } }
+    const cur = node(x, z, r, ri, dx, dz); if (prev >= 0) link(prev, cur); prev = cur;
   }
-}
-for (const r of D.roads) for (const [x, z] of r.p) { const i = KEY.get(Math.round(x * 2) + ',' + Math.round(z * 2)); if (i !== undefined) NWD[i] = Math.max(NWD[i], r.w || 6); }
+});
+const NSW = Uint8Array.from(NSWa);   // 노드를 지나는 길 중 인도 있는 길이 있나(r.sw)
 for (let i = 0; i < NWD.length; i++) if (!NWD[i]) { const A = ADJ[i]; let w = 0; for (let j = 0; j < A.length; j += 2) w = Math.max(w, NWD[A[j]]); NWD[i] = w || 6; }
 // 중앙분리 도로(같은 이름의 반대 방향 일방 도로 두 가닥이 나란히 — 예: 거제대로): 노드마다 '가운데 섬 쪽' 방향(MDX·MDZ)을 적어 두고
 // 그쪽으로는 걷지 않게 한다(바깥 인도 쪽으로만). 전엔 사람마다 아무 쪽이나 골라 절반이 두 가닥 사이 차도·분리대 위를 걸었음. 자료: OSM 도로(oneway·이름)
 const MDX = new Float32Array(NX.length), MDZ = new Float32Array(NX.length);
 { const OW = D.roads.filter(r => r.ow && r.n && r.p.length > 1);
-  for (const r of OW) for (let vi = 0; vi < r.p.length; vi++) {
-    const [x, z] = r.p[vi], i = KEY.get(Math.round(x * 2) + ',' + Math.round(z * 2)); if (i === undefined) continue;
-    const a = r.p[Math.max(0, vi - 1)], b = r.p[Math.min(r.p.length - 1, vi + 1)]; let dx = b[0] - a[0], dz = b[1] - a[1]; const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
+  for (let i = 0; i < NX.length; i++) {
+    const r = NRD[i] >= 0 ? D.roads[NRD[i]] : null; if (!r || !r.ow || !r.n || r.p.length < 2) continue;
+    const x = NX[i], z = NZ[i], dx = NDX[i], dz = NDZ[i];
     let best = 30, bx = 0, bz = 0;
     for (const r2 of OW) { if (r2 === r || r2.n !== r.n) continue;
       for (let k = 0; k < r2.p.length - 1; k++) { const p = r2.p[k], q = r2.p[k + 1], ex = q[0] - p[0], ez = q[1] - p[1], L2 = ex * ex + ez * ez; if (L2 < 0.01) continue;
@@ -95,7 +100,9 @@ const MDX = new Float32Array(NX.length), MDZ = new Float32Array(NX.length);
     if (best < 30) { MDX[i] = bx; MDZ[i] = bz; } } }
 // 길 가장자리 오프셋: 8m 이상 길은 인도의 빈 띠(가장자리 + 2.25m — 0.7 가로등·1.2 기둥·1.5 가로수 줄을 피해 건물 쪽, 바닥층 ground.js 기준),
 // 인도 없는 골목은 가장자리 안쪽 0.6m
-const sideOff = (w) => w >= 8 ? w / 2 + 2.25 : Math.max(0.6, w / 2 - 0.6);
+// 인도 있는 길(r.sw, seohogyun-31 roadcal.js — 바닥층이 인도·연석을 그리는 길과 같은 기준)이면 가장자리 + 2.25m 인도 위,
+// 없으면 가장자리 안쪽 0.6m. 전엔 폭 8m 이상을 인도로 봤는데 #117 로 옥포로가 7.5m(실측)가 되어 인도가 있는데도 차도 가장자리를 걸을 뻔했음
+const sideOff = (w, sw) => sw ? w / 2 + 2.25 : Math.max(0.6, w / 2 - 0.6);
 const NN = NX.length;
 // 가장 큰 연결 덩어리만 쓴다(떨어진 길 조각에 사람이 갇히지 않게)
 const comp = new Int32Array(NN).fill(-1); let bestC = 0, bestN = 0;
@@ -568,7 +575,7 @@ function pj(a) { if (a.jit == null) a.jit = (hash01(String(A.indexOf(a))) - 0.5)
 function placeOnPath(a, t) {
   pj(a); const side = a.jit >= 0 ? 1 : -1, lat = (Math.abs(a.jit) / 1.5 - 0.5) * 1.0;
   const p = a.path; if (!p || p.length < 2) {   // 출발지 = 도착지(길 없음): 도로 가운데가 아니라 그 쪽 인도에
-    const n = a.cur, o = side * (sideOff(NWD[n]) + lat); a.x = NX[n] + o * 0.7071; a.z = NZ[n] + o * 0.7071; return; }
+    const n = a.cur, o = side * (sideOff(NWD[n], NSW[n]) + lat); a.x = NX[n] + o * 0.7071; a.z = NZ[n] + o * 0.7071; return; }
   if (!a.pd) { a.pd = new Float32Array(p.length); for (let i = 1; i < p.length; i++) a.pd[i] = a.pd[i - 1] + Math.hypot(NX[p[i]] - NX[p[i - 1]], NZ[p[i]] - NZ[p[i - 1]]); }
   const L = a.pd[p.length - 1], f = Math.min(1, Math.max(0, (t - a.t0) / (a.t1 - a.t0))), d = Math.min(L, Math.max(0, f * L + a.stg));
   let i = 1; while (i < p.length - 1 && a.pd[i] < d) i++;
@@ -578,7 +585,7 @@ function placeOnPath(a, t) {
   let nx = -dz / l, nz = dx / l; if (nx + nz * 0.001 < 0) { nx = -nx; nz = -nz; }
   let sd = side; const mi = MDX[p0] || MDZ[p0] ? p0 : p1;   // 중앙분리 도로면 가운데 섬 반대쪽(바깥 인도)으로
   if ((MDX[mi] || MDZ[mi]) && (nx * MDX[mi] + nz * MDZ[mi]) * sd > 0.3) sd = -sd;
-  const off = sd * Math.max(0.3, sideOff(Math.min(NWD[p0], NWD[p1])) + lat);
+  const off = sd * Math.max(0.3, sideOff(Math.min(NWD[p0], NWD[p1]), NSW[p0] && NSW[p1]) + lat);   // 두 끝이 다 인도 있는 길에 닿아야 인도
   a.x = NX[p0] + dx * u + nx * off; a.z = NZ[p0] + dz * u + nz * off;
 }
 let waitK = new Uint16Array(SHOPS.length);   // 그릴 때 가게마다 기다리는 사람 순번(줄 세우기). 실험으로 가게가 늘면 다시 만듦
@@ -592,7 +599,7 @@ function draw(t) {
     // 자리 기다리는 사람은 가게 앞 고정 자리(예전엔 그릴 때마다 난수를 써서 점이 떨리고, 그 난수 때문에 재생 결과가 화면 속도에 따라 달라졌음)
     // 자리 기다리는 사람: 가게 쪽 인도(길 노드에서 가게 방향으로 길 가장자리 + 1.2m)
     // 기다리는 사람: 가게 쪽 인도에 길 방향으로 0.8m 간격 줄(가운데부터 양옆으로), 12명마다 한 줄 뒤로. 전엔 한 점 0.6m 안에 몰려 사람 모양이 겹쳤음
-    if (a.st === 1) placeOnPath(a, t); else { const s = SHOPS[a.shop], n = s.node, vx = s.x - NX[n], vz = s.z - NZ[n], vl = Math.hypot(vx, vz) || 1, o = sideOff(NWD[n]);
+    if (a.st === 1) placeOnPath(a, t); else { const s = SHOPS[a.shop], n = s.node, vx = s.x - NX[n], vz = s.z - NZ[n], vl = Math.hypot(vx, vz) || 1, o = sideOff(NWD[n], NSW[n]);
       const ux = vx / vl, uz = vz / vl, k = waitK[a.shop]++, kk = k % 12, along = ((kk + 1) >> 1) * (kk & 1 ? 0.8 : -0.8), back = o + Math.floor(k / 12) * 0.7;
       a.x = NX[n] + ux * back - uz * along; a.z = NZ[n] + uz * back + ux * along; }
     pos[n * 3] = a.x; pos[n * 3 + 1] = 1.2 + MP.hAt(a.x, a.z); pos[n * 3 + 2] = a.z;   // 어긋나게 하기는 placeOnPath(가로·앞뒤)와 기다리는 줄에서   // 같은 쪽 인도 안에서 사람끼리 조금씩 어긋나게
@@ -619,7 +626,8 @@ function drawFigures(n) {
   const sc = Math.max(1, Math.min(2.3, d / 60)); let k = 0;
   for (let i = 0; i < n && k < FIG_MAX; i++) {
     const x = pos[i * 3], z = pos[i * 3 + 2]; if (Math.abs(x - tx) > FIG_R || Math.abs(z - tz) > FIG_R) continue;
-    _fm.makeScale(sc, sc, sc).setPosition(x, pos[i * 3 + 1] - 1.2 + MP.GL * 0.8, z);   // 발이 바닥층(땅 위 0.2m) 위에 figMesh.setMatrixAt(k, _fm); figMesh.setColorAt(k, _fc.setRGB(col[i * 3], col[i * 3 + 1], col[i * 3 + 2])); k++;
+    _fm.makeScale(sc, sc, sc).setPosition(x, pos[i * 3 + 1] - 1.2 + MP.GL * 0.8, z);   // 발이 바닥층(땅 위 0.2m) 위에
+    figMesh.setMatrixAt(k, _fm); figMesh.setColorAt(k, _fc.setRGB(col[i * 3], col[i * 3 + 1], col[i * 3 + 2])); k++;
   }
   figMesh.count = k; figMesh.instanceMatrix.needsUpdate = true; if (figMesh.instanceColor) figMesh.instanceColor.needsUpdate = true;
 }
@@ -1137,6 +1145,6 @@ function trySlot(bi, floor, sub, price, seats, runs = 3, hrs) {
   removeVirtual(s);
   return r;
 }
-window.__sim = { get _fig() { return figMesh; }, get cfgVer() { return TS.ver; }, TS, applyTS, _catwin: CAT_WIN, hoursOf, fillHours, readHours, hoursTxt, _shops: () => SHOPS, _active: () => ACTIVE, _md: { MDX, MDZ, NX, NZ }, peakTxt, _ck: CK, runDay, experiment, seek, nodesNear, flowDay, trySlot, nodeFlow, nodeFlowAsync, restore: () => { drawDirty = true; need(); }, won, wonX, GROUPS, SUB, SUBS_OF, subOptions, NAT,
+window.__sim = { get _fig() { return figMesh; }, get cfgVer() { return TS.ver; }, TS, applyTS, _catwin: CAT_WIN, hoursOf, fillHours, readHours, hoursTxt, _shops: () => SHOPS, _active: () => ACTIVE, _md: { MDX, MDZ, NX, NZ, NSW, NWD }, peakTxt, _ck: CK, runDay, experiment, seek, nodesNear, flowDay, trySlot, nodeFlow, nodeFlowAsync, restore: () => { drawDirty = true; need(); }, won, wonX, GROUPS, SUB, SUBS_OF, subOptions, NAT,
   graph: { NX, NZ, ADJ, NN }, get scen() { return scen; }, get A() { return A; }, get W() { return W; }, SHOPS, CFG, nodes: NN, get t() { return simT; } };
 })();

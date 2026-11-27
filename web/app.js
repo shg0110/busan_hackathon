@@ -212,12 +212,13 @@ function drawBoundary(k) {
       if (carry >= (on ? DASH : GAP) - 1e-6) { carry = 0; on = !on; }
     }
   }
-  if (TON) for (let i = 0; i < pos.length; i += 3) pos[i + 1] += hAt(pos[i], pos[i + 2]) + GL;
+  if (TON) for (let i = 0; i < pos.length; i += 3) pos[i + 1] += Math.max(0, hAt(pos[i], pos[i + 2])) + GL;   // 바다 위(해안 옆 음수 높이)는 물 높이 0
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  bndMesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: '#3d434a', depthWrite: false, side: THREE.DoubleSide, transparent: true, opacity: 0.75 }));
+  bndMesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: '#3d434a', depthWrite: false, side: THREE.DoubleSide, transparent: true, opacity: k < 0.3 ? 0.5 : 0.75 }));
   bndMesh.renderOrder = 8.8; bndMesh.frustumCulled = false; scene.add(bndMesh); need && need();
 }
-function boundaryK() { const d = camera.position.distanceTo(controls.target); return d < 250 ? 0.35 : d < 550 ? 0.7 : 1.5; }
+// 아주 가까이(150m 안)서는 더 가늘게(0.4m) — 0.84m 폭 9m 조각이 길 위에 누운 통나무처럼 보였음
+function boundaryK() { const d = camera.position.distanceTo(controls.target); return d < 150 ? 0.17 : d < 250 ? 0.35 : d < 550 ? 0.7 : 1.5; }
 
 // ── 건물 ───────────────────────────────────────────────
 // 모든 건물을 한 덩어리로 합친다. triOwner[삼각형 번호] = 건물 번호 → 누른 건물 찾기.
@@ -692,7 +693,7 @@ function placeLabels() {
   for (const L of labels) {
     const far = L.kind === 'road' ? (L.pri < 4 ? R * 0.9 : R * 3) : (L.pri <= 2 ? R * 0.5 : L.pri < 5 ? R * 0.9 : R * 3);
     if (!show[L.kind] || dist > far) { L.el.classList.add('off'); continue; }
-    _v.set(L.x, L.y + (L.abs ? 0 : hAt(L.x, L.z)), L.z).project(camera);   // 땅 기준 이름표는 지형 높이를 더함(abs 는 이미 절대 높이)
+    _v.set(L.x, L.y + (L.abs ? 0 : Math.max(0, hAt(L.x, L.z))), L.z).project(camera);   // 바다 위 이름표는 물 높이 0 아래로 내리지 않음   // 땅 기준 이름표는 지형 높이를 더함(abs 는 이미 절대 높이)
     if (_v.z > 1 || _v.x < -1.1 || _v.x > 1.1 || _v.y < -1.1 || _v.y > 1.1) { L.el.classList.add('off'); continue; }
     if (!L.w) { L.el.classList.remove('off'); L.w = L.el.offsetWidth; L.h = L.el.offsetHeight; }
     const x = (_v.x + 1) / 2 * W - L.w / 2, y = (1 - _v.y) / 2 * H - L.h / 2;
