@@ -852,7 +852,7 @@ $('sim-speed').querySelectorAll('.spd-btn').forEach(b => b.onclick = () => {
 });
 $('sim-fold').onclick = () => { const f = panel.classList.toggle('folded'); $('sim-fold').setAttribute('aria-label', f ? '펴기' : '접기'); };
 panel.classList.add('folded'); $('sim-fold').setAttribute('aria-label', '펴기');   // 처음엔 접어 둠(지도 가운데 아래를 가리지 않게). 주 버튼은 기록지에
-$('sim-tour').onclick = () => { if (window.__floors) window.__floors.nextTour(); setTimeout(() => { const e = document.getElementById('exp'); if (e) e.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, 750); };
+$('sim-tour').onclick = () => { if (window.__street && window.__street.openList) { window.__street.openList(); return; } if (window.__floors) window.__floors.nextTour(); setTimeout(() => { const e = document.getElementById('exp'); if (e) e.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, 750); };
 
 // ── 시간 정하기 창 ─────────────────────────────────────────
 // 재생 범위(계산은 늘 05:00부터 — 범위 앞에 나온 사람도 그대로 있음), 세부 업종 영업시간, 가게마다 영업시간, 부류별 외출 시각·조선소 출퇴근 옮기기
