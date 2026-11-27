@@ -63,11 +63,11 @@ document.getElementById('L-open').onchange = (e) => { restMesh.visible = e.targe
 // ── 요약 카드에 층별 숫자 ─────────────────────────────
 const S = F.stats.inside && F.stats.inside.com_floors ? F.stats.inside : F.stats;
 const box = document.createElement('div'); box.className = 'floor-sum';
-box.innerHTML = `<p class="fs-title">층별로 보면</p>
+box.innerHTML = `<p class="fs-title">층마다 세어 보면</p>
   <p class="fs-line">상권 안 상가 층 ${S.com_floors.toLocaleString('ko-KR')}개 중 <b>${S.empty_floors.toLocaleString('ko-KR')}개</b>에 가게가 없습니다
-  <span class="fs-sub">상가정보(2026년 9월)에 가게가 없는 층 · 면적 ${S.empty_area_pct}%</span></p>
-  <p class="fs-note">공실률과 다른 값(사무실·미등록 가게가 섞임). 출처: 건축물대장 층별개요 × 상가정보</p>
-  <button class="tour" id="tour-btn">가게 없는 1층 둘러보기 <span id="tour-n"></span></button>`;
+  <span class="fs-sub">면적으로는 ${S.empty_area_pct}%입니다.</span></p>
+  <p class="fs-note">사무실이나 등록 안 된 가게도 “가게 없음”으로 잡혀서 공실률보다 높게 나옵니다. 건축물대장 층별개요와 2026년 9월 상가정보를 맞춰 셌습니다.</p>
+  <button class="tour btn-sub" id="tour-btn">가게 없는 1층 둘러보기 <span id="tour-n"></span></button>`;
 const src = document.querySelector('#card-body .src');
 src.after(box);
 if (window.__syncCard) window.__syncCard();

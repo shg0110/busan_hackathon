@@ -433,14 +433,33 @@ for (const r of D.road_labels) {
 }
 if (D.boundary) {
   const top = D.boundary.reduce((m, p) => p[1] < m[1] ? p : m, D.boundary[0]);
-  const el = document.createElement('div'); el.className = 'lbl place zone'; el.textContent = 'R-ONE 거제옥포 상권';
+  const el = document.createElement('div'); el.className = 'lbl place zone'; el.textContent = 'R-ONE이 정한 거제옥포 상권';
   labelBox.appendChild(el); labels.push({ el, x: top[0], y: 2, z: top[1] - 25, pri: 10, kind: 'place', w: 0, h: 0 });
 }
 labels.sort((a, b) => b.pri - a.pri);
 const show = { place: true, road: true };
 const _v = new THREE.Vector3(), _w = new THREE.Vector3();
+const COVER = ['#info', '#sim', '#nav', '#tabs', '#street', '#card', '#layers', '#rail', '#hint'];
+// 패널 자리는 그리기 루프 밖(0.4초마다, 화면이 다 그려진 뒤)에서 재 둔다 — 루프 안에서 재면 브라우저가 배치를 한 번 더 계산해 끊길 수 있다
+let coverCache = [];
+function measureCover() {
+  const W = canvas.clientWidth, H = canvas.clientHeight, cr = canvas.getBoundingClientRect(), out = [];
+  for (const sel of COVER) {
+    const el = document.querySelector(sel); if (!el || el.hidden) continue;   // position:fixed 는 offsetParent 가 없으므로 크기로 판단
+    const r = el.getBoundingClientRect(); if (!r.width || !r.height) continue;
+    const b = [r.left - cr.left, r.top - cr.top, r.right - cr.left, r.bottom - cr.top];
+    if (b[2] <= 0 || b[0] >= W || b[3] <= 0 || b[1] >= H) continue;
+    if ((b[2] - b[0]) * (b[3] - b[1]) > 0.8 * W * H) continue;   // 화면을 거의 다 덮는 것(폰 펼친 시트 등)은 무시
+    out.push(b);
+  }
+  const changed = JSON.stringify(out) !== JSON.stringify(coverCache);
+  coverCache = out;
+  if (changed) need();
+}
+setInterval(measureCover, 400);
+function coverBoxes() { return coverCache.map(b => b.slice()); }
 function placeLabels() {
-  const W = canvas.clientWidth, H = canvas.clientHeight, taken = [];
+  const W = canvas.clientWidth, H = canvas.clientHeight, taken = coverBoxes();
   const dist = camera.position.distanceTo(controls.target);
   for (const L of labels) {
     const far = L.kind === 'road' ? (L.pri < 4 ? R * 0.9 : R * 3) : (L.pri <= 2 ? R * 0.5 : L.pri < 5 ? R * 0.9 : R * 3);
@@ -450,6 +469,7 @@ function placeLabels() {
     if (!L.w) { L.el.classList.remove('off'); L.w = L.el.offsetWidth; L.h = L.el.offsetHeight; }
     const x = (_v.x + 1) / 2 * W - L.w / 2, y = (1 - _v.y) / 2 * H - L.h / 2;
     const box = [x - 4, y - 2, x + L.w + 4, y + L.h + 2];
+    if (box[0] < 0 || box[1] < 0 || box[2] > W || box[3] > H) { L.el.classList.add('off'); continue; }   // 화면 끝에 걸려 잘리는 이름표
     if (taken.some(t => box[0] < t[2] && box[2] > t[0] && box[1] < t[3] && box[3] > t[1])) { L.el.classList.add('off'); continue; }
     taken.push(box);
     L.el.classList.remove('off');
@@ -469,7 +489,7 @@ function fillCard() {
   $('s-label').textContent = ST.label;
   $('s-general').textContent = ST.general.toFixed(1);
   $('s-mini').textContent = `공실률 ${ST.general.toFixed(1)}% · ${ST.rank}위`;
-  $('s-rank').textContent = `${ST.scope.split('(')[0]} ${ST.of}개 상권 중 ${ST.rank}위`;
+  $('s-rank').textContent = `${(ST.scope.match(/\((.+)\)/) || [0, ST.scope])[1]} ${ST.of}개 상권 중 ${ST.rank}위`;
   $('s-quarter').textContent = ST.quarter;
   $('s-large').textContent = ST.large.toFixed(1) + '%';
   $('s-before').textContent = ST.series[0].v.toFixed(1) + '%';

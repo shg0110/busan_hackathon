@@ -356,7 +356,7 @@ function won(v) { if (v >= 1e8) return (v / 1e8).toFixed(v >= 1e9 ? 1 : 2) + '�
 const panel = document.createElement('section'); panel.id = 'sim'; panel.setAttribute('aria-label', '가상 손님 하루');
 panel.innerHTML = `
   <div class="sim-head">
-    <button id="sim-play" class="sim-play" aria-label="재생">▶</button>
+    <button id="sim-play" class="sim-play"><span class="ico">▶</span> 하루 돌려 보기</button>
     <div class="sim-time"><b id="sim-clock">05:00</b><span id="sim-sub">가상 손님 하루</span></div>
     <div class="seg" role="group" aria-label="요일">
       <button data-s="wd" class="on">평일</button><button data-s="we">주말</button>
@@ -370,7 +370,7 @@ panel.innerHTML = `
     <div class="sim-stats" id="sim-stats"></div>
     <p class="sim-note" id="sim-note"></p>
     <details class="sim-src"><summary>자료와 가정 보기</summary><div id="sim-src"></div></details>
-    <button class="tour sim-tour" id="sim-tour">빈 층에 가게 열어 보기 →</button>
+    <button class="tour sim-tour btn-main" id="sim-tour">빈 층에 가게 열어 보기</button>
   </div>`;
 document.body.appendChild(panel);
 const $ = (id) => document.getElementById(id);
@@ -411,7 +411,8 @@ function ui() {
   $('sim-note').textContent = `점 1개 = 가상 인물 약 ${W.toFixed(1)}명. ` + (assumed ? '사람 수·교대 시간·업종 고르는 비율은 근거 확인 전 가정 값입니다.' : '');
   need();
 }
-$('sim-play').onclick = () => { playing = !playing; $('sim-play').textContent = playing ? '❚❚' : '▶'; $('sim-play').setAttribute('aria-label', playing ? '멈춤' : '재생'); if (playing && simT >= T1) seek(T0); };
+function playBtn() { $('sim-play').innerHTML = playing ? '<span class="ico">❚❚</span> 멈추기' : '<span class="ico">▶</span> 하루 돌려 보기'; $('sim-play').classList.toggle('on', playing); }
+$('sim-play').onclick = () => { playing = !playing; playBtn(); if (playing && simT >= T1) seek(T0); };
 $('sim-range').oninput = (e) => seek(+e.target.value);
 panel.querySelectorAll('.seg button').forEach(b => b.onclick = () => {
   panel.querySelectorAll('.seg button').forEach(x => x.classList.toggle('on', x === b)); scen = b.dataset.s; seek(simT);
@@ -426,7 +427,7 @@ function tick(now) {
   if (playing) {
     const to = Math.min(T1, simT + speed * dt);
     for (let s = Math.floor(simT) + 1; s <= Math.floor(to); s++) step(s, true);
-    simT = to; if (simT >= T1) { playing = false; $('sim-play').textContent = '▶'; }
+    simT = to; if (simT >= T1) { playing = false; playBtn(); }
     ui();
   }
   if (playing || drawDirty) { const n = draw(simT); points.visible = n > 0; drawDirty = false; need(); }

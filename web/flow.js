@@ -31,13 +31,13 @@ function build(F, t) {
   mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide }));
   mesh.renderOrder = 9.5; mesh.visible = on; scene.add(mesh);
   const total = Math.round(sorted.reduce((a, b) => a + b, 0) / 1000) * 1000;
-  legend.querySelector('.fl-cap').textContent = `${String(h).padStart(2, '0')}시 앞뒤 2시간 · 가장 붐비는 길 약 ${Math.round(cap).toLocaleString('ko-KR')}명 지나감`;
+  legend.querySelector('.fl-cap').textContent = `${String(h).padStart(2, '0')}시 앞뒤 2시간 동안 가장 붐비는 길로 약 ${Math.round(cap).toLocaleString('ko-KR')}명이 지나갑니다`;
   need();
 }
 // 보기 설정에 켜고 끄기 + 범례
 const layers = document.getElementById('layers');
 const lab = document.createElement('label'); lab.className = 'tog';
-lab.innerHTML = '<input type="checkbox" id="L-flow" checked><span><i class="sw" style="background:#1c64f2"></i>유동인구(가상)</span>';
+lab.innerHTML = '<input type="checkbox" id="L-flow" checked><span><i class="sw" style="background:#1c64f2"></i>사람 흐름(가상)</span>';
 layers.prepend(lab);
 const legend = document.createElement('div'); legend.className = 'flow-legend';
 legend.innerHTML = `<div class="fl-bar">${RAMP.map(c => `<i style="background:#${c.getHexString()}"></i>`).join('')}</div><div class="fl-ax"><span>적음</span><span>많음</span></div><p class="fl-cap"></p>`;

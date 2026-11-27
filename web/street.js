@@ -7,15 +7,19 @@
 const ST = window.STREETS, M = window.__map, SIM = window.__sim;
 if (!ST || !ST.length || !M) return;
 const { buildings: B, scene, need, esc } = M;
-const COL = { open: '#4fa679', empty: '#f0783a', unknown: '#adb5bd', home: '#dee2e6', other: '#e9ecef', nodata: '#f1f3f5' };
+// 층 그림 색: 상가 층 3가지(영업·가게 없음·확인 불가)는 진하게, 상가가 아닌 층(주거·기타)은 서로 다른 옅은 색, 자료 없음은 흰 칸 + 테두리
+const COL = { open: '#4fa679', empty: '#f0783a', unknown: '#8d959e', home: '#c3d3e4', other: '#e3d7c1', nodata: '#ffffff' };
 const KO = { open: '영업 중', empty: '가게 없음', unknown: '확인 불가', home: '주거', other: '기타(주차·공공 등)', nodata: '층별 자료 없음' };
 
 // ── 탭 ───────────────────────────────────────────────
 const tabs = document.createElement('nav'); tabs.id = 'tabs'; tabs.setAttribute('aria-label', '보기 범위');
-tabs.innerHTML = `<button data-id="" aria-pressed="false">상권 전체</button>` + ST.map(s => `<button data-id="${s.id}" aria-pressed="false">${esc(s.ko.split(' (')[0])}</button>`).join('');
-document.body.appendChild(tabs);
+tabs.innerHTML = `<button data-id="" aria-pressed="false"><span>상권 전체</span><small>옥포1·2동 일대</small></button>` +
+  ST.map(s => `<button data-id="${s.id}" aria-pressed="false"><span>${esc(s.ko.split(' (')[0])}</span><small>${s.len.toLocaleString('ko-KR')}m, 건물 ${s.slots.length}채</small></button>`).join('');
+(document.getElementById('r-where') || document.body).appendChild(tabs);
 const panel = document.createElement('aside'); panel.id = 'street'; panel.hidden = true; panel.setAttribute('aria-live', 'polite');
-document.body.appendChild(panel);
+(document.getElementById('r-now') || document.body).appendChild(panel);
+// 구간 설명(맨 아래 '구간:' 줄). 빛의 거리는 거제시가 정한 공식 구간
+const FROM = { light: '거제시가 정한 「빛의 거리」 "옥포(국민은행~수협 일원)", 거제저널 2024-11-22, 오마이뉴스 2025-12-09' };
 
 // 거리 띠(땅 위 옅은 노란 길)
 let band = null;
@@ -114,7 +118,7 @@ function strip(s) {
       const f = byN[n], st = f ? f[1] : (n === 1 ? x.st : 'nodata');
       const y = side === 'L' ? mid - 8 - n * FH : mid + 8 + (n - 1) * FH;
       const tip = `${n}층 · ${KO[st] || ''}${f && f[3] ? ' · ' + f[3] : ''}${f && f[4].length ? ' · ' + f[4].join(', ') : ''}`;
-      r += `<rect x="${X(x.s0).toFixed(1)}" y="${y}" width="${w.toFixed(1)}" height="${FH - 0.8}" fill="${COL[st] || '#eee'}" data-b="${x.b}"><title>${esc(tip)}</title></rect>`;
+      r += `<rect x="${X(x.s0).toFixed(1)}" y="${y}" width="${w.toFixed(1)}" height="${FH - 0.8}" fill="${COL[st] || '#eee'}"${st === 'nodata' || !COL[st] ? ' stroke="#adb5bd" stroke-width="0.5"' : ''} data-b="${x.b}"><title>${esc(tip)}</title></rect>`;
     }
     return r;
   };
@@ -127,31 +131,32 @@ function strip(s) {
     ${s.slots.filter(x => x.side === 'R').map(x => cell(x, 'R')).join('')}
     <text x="2" y="${H - 2}" class="t">${lab('R')} 쪽 ↓ 위층</text></svg>`;
 }
+const nEmptyB = (s) => new Set(s.slots.filter(x => x.fl.some(f => f[1] === 'empty')).map(x => x.b)).size;
 function render(s) {
   const c = s.count, w = s.whole;
   panel.innerHTML = `
     <div class="st-head"><h2>${esc(s.ko)}</h2><button class="icon-btn" id="st-close" aria-label="상권 전체로" title="상권 전체로"><svg viewBox="0 0 20 20"><path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
-    <p class="st-note">${esc(s.note)}</p>
-    <div class="st-kpi">
-      <div><b>${s.len}m</b><span>길이</span></div>
-      <div><b>${s.slots.length}채</b><span>길가 건물</span></div>
-      <div><b class="em">${w.empty}개</b><span>가게 없는 상가 층</span></div>
-      <div><b class="em">${w.empty_area_pct ?? '–'}%</b><span>면적 기준</span></div>
-    </div>
-    <p class="st-sub">길 양쪽 건물, 층마다 <span class="lgd">${['open', 'empty', 'unknown', 'home', 'other', 'nodata'].map(k => `<i style="background:${COL[k]}"></i>${KO[k]}`).join(' ')}</span></p>
+    <p class="st-line"><b>${s.len.toLocaleString('ko-KR')}m</b> 거리에 길가 건물 <b>${s.slots.length}채</b>.<br>상가 층 ${w.floors}개 가운데 <mark>${w.empty}개</mark>에 가게가 없습니다.${w.empty_area_pct != null ? ` 면적으로는 ${w.empty_area_pct}%입니다.` : ''}</p>
+    <p class="st-sub">길 양쪽 건물을 층마다 <span class="lgd">${['open', 'empty', 'unknown', 'home', 'other', 'nodata'].map(k => `<i style="background:${COL[k]}${k === 'nodata' ? ';box-shadow:inset 0 0 0 1px #adb5bd' : ''}"></i>${KO[k]}`).join(' ')}</span></p>
     ${strip(s)}
-    <p class="st-tip">상가 층 ${w.floors}개 중 영업 ${w.open} · 가게 없음 ${w.empty} · 확인 불가 ${w.unknown}. 1층만 보면 가게 없음 ${c.empty}곳. 칸을 누르면 그 건물로 갑니다. 판정: 건축물대장 층별개요 × 상가정보(2026-09). 길 양쪽은 주소 건물번호 홀짝 기준(위치로 정한 좌우와 ${s.sideCheck.known}곳 중 ${s.sideCheck.agree}곳 일치${s.sideCheck.fixed ? `, 어긋난 ${s.sideCheck.fixed}곳은 주소를 따름` : ''}).</p>
+    <p class="st-tip">칸을 누르면 그 건물로 갑니다. ${c.empty < w.empty ? `1층만 보면 빈 곳은 ${c.empty}곳뿐이라, 위층까지 봐야 실제 모습이 보입니다.` : `1층만 보면 빈 곳은 ${c.empty}곳입니다.`}</p>
+    <details class="st-how"><summary>어떻게 셌나요</summary><p>건축물대장 층별개요로 층마다 쓰임을 알아내고, 2026년 9월 상가정보에 그 층 가게가 있는지 맞춰 봤습니다. 상가 층 ${w.floors}개 중 영업 ${w.open}, 가게 없음 ${w.empty}, 확인 불가 ${w.unknown}입니다. 길 왼쪽·오른쪽은 주소 건물번호 홀짝으로 나눴습니다(위치로 나눈 것과 ${s.sideCheck.known}곳 중 ${s.sideCheck.agree}곳 같음${s.sideCheck.fixed ? `, 다른 ${s.sideCheck.fixed}곳은 주소를 따름` : ''}).</p></details>
     <p class="st-sub">이 거리를 지나간 가상 손님 <span class="lgd" id="fl-lg"></span></p>
     <div id="st-flow"><p class="exp-wait">계산 중…</p></div>
-    <p class="st-sub">가게 없는 층 자리 순위</p>
+    <p class="st-sub">어느 빈 층에 열면 손님이 많을까</p>
     <div class="st-rank">
       <select id="rk-cat" aria-label="업종">${SIM.subOptions ? SIM.subOptions('viet') : ''}</select>
-      <button class="btn-primary" id="rk-run">${new Set(s.slots.filter(x => x.fl.some(f => f[1] === 'empty')).map(x => x.b)).size}개 건물에 열어 보기</button>
+      <button class="btn-primary btn-main" id="rk-run">빈 층이 있는 ${nEmptyB(s)}채에 가게 열어 보기</button>
     </div>
-    <div id="rk-out"></div>`;
+    <div id="rk-out"></div>
+    <p class="st-from">구간: ${esc(FROM[s.id] || s.note)}</p>`;
   document.getElementById('st-close').onclick = () => choose('');
   panel.querySelectorAll('rect[data-b]').forEach(r => { r.onclick = () => flyBuilding(+r.dataset.b); r.onkeydown = (e) => { if (e.key === 'Enter') flyBuilding(+r.dataset.b); }; });
   document.getElementById('rk-run').onclick = () => rank(s);
+  // 주 버튼에 고른 업종을 넣어 누르기 전에 무엇을 하는지 알 수 있게: '빈 층이 있는 7채에 베트남 음식점 열어 보기'
+  const sel = document.getElementById('rk-cat'), runLabel = () => { const sb = SIM && SIM.SUB[sel.value];
+    document.getElementById('rk-run').textContent = `빈 층이 있는 ${nEmptyB(s)}채에 ${sb ? sb.shop || sb.ko : '가게'} 열어 보기`; };
+  sel.addEventListener('change', runLabel); runLabel();
   if (!w.empty) document.getElementById('rk-run').disabled = true;
   setTimeout(() => flow(s), 60);
 }
@@ -226,7 +231,13 @@ function streetBands(s) {
   sBands = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true })); sBands.renderOrder = 11; scene.add(sBands);
 }
 function streetUI(on) {
-  for (const id of ['L-floors', 'L-open']) { const l = document.getElementById(id)?.closest('label'); if (l) l.title = on ? '거리 모드에서는 거리 건물의 층을 모두(영업 중·가게 없음) 보여 줍니다' : ''; }
+  // 거리 보기에서는 길가 건물 층을 늘 모두 보여 주므로 층 칩을 잠그고, 그 이유를 칩 안에 짧게 보이게 쓴다
+  for (const id of ['L-floors', 'L-open']) {
+    const l = document.getElementById(id)?.closest('label'); if (!l) continue;
+    let n = l.querySelector('.tog-note');
+    if (on && !n) { n = document.createElement('small'); n.className = 'tog-note'; n.textContent = '거리 보기에서는 늘 켜져 있습니다'; l.appendChild(n); }
+    if (!on && n) n.remove();
+  }
   const card = document.getElementById('card'), sim = document.getElementById('sim'), F = window.__floors;
   if (on && !saved) {
     saved = { card: card.classList.contains('collapsed'), sim: sim && sim.classList.contains('folded'), bands: F ? F.mesh.visible : true, rest: F ? F.rest.visible : false };

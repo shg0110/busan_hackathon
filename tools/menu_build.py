@@ -28,6 +28,8 @@ for r in rows:
     sid = SUB_KO.get(r['세부업종'])
     if not sid or not r['가격_원'] or not r['확인여부'].startswith('확인'):
         continue
+    if '건당' in r['확인여부'] or '건당' in r['메뉴']:   # 카드 결제 1건당 금액(여러 명 합계일 수 있음)은 메뉴 가격으로 쓰지 않음
+        continue
     key = (sid, r['메뉴'])
     rank = 0 if '옥포' in r['지역'] and r['확인여부'] == '확인' else 1 if r['확인여부'] == '확인' else 2
     if key not in best or rank < best[key][0]:
