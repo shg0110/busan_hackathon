@@ -354,13 +354,10 @@ body.street-mode #hint { display: none; }
 .lbl.vac::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #e03131; }
 /* 지도 밖 큰 곳 방향(조선소): 작은 회색 알약, 바깥쪽 화살 대신 '방향'이라는 말로 */
 .lbl.place.edge { font-size: 12.5px; color: var(--g700); background: rgba(255,255,255,.92); border-radius: 8px; padding: 3px 9px; text-shadow: none; box-shadow: 0 1px 3px rgba(0, 20, 60, .14); }
-/* 바다 이름: 넓게 띄운 차분한 바다색 글자 */
-.lbl.place.water { font-size: 16px; font-weight: 700; letter-spacing: .5em; color: #3f6f97; text-shadow: 0 0 3px rgba(255,255,255,.9), 0 0 8px rgba(255,255,255,.7); }
 /* 밤(app.js 가 body.night 를 붙임): 흰 테두리 글자가 어두운 지도에서 얼룩처럼 보이지 않게, 밝은 글자 + 어두운 테두리 */
 /* 흰 알약 이름표(폐업·몰린 곳·구역·거리 이름)는 .place 도 달고 있어 빼야 한다: 밤 테두리가 흰 바탕 글자를 번지게 함 */
 body.night .lbl.place:not(.vac):not(.hot):not(.zone):not(.street-name):not(.street-end):not(.edge) { color: #f1f3f5; text-shadow: 0 0 3px rgba(12,16,26,.95), 0 0 3px rgba(12,16,26,.95), 0 0 7px rgba(12,16,26,.8); }
 body.night .lbl.road { color: #c3cad3; text-shadow: 0 0 3px rgba(12,16,26,.95), 0 0 3px rgba(12,16,26,.9); }
-body.night .lbl.place.water { color: #9cc3e8; text-shadow: 0 0 4px rgba(12,16,26,.9), 0 0 9px rgba(12,16,26,.6); }
 .lbl.zone { color: var(--g700); font-size: 12.5px; font-weight: 700; background: rgba(255,255,255,.95); border-radius: 8px; padding: 3px 9px; text-shadow: none; box-shadow: 0 1px 3px rgba(0, 20, 60, .12); }
 #loading { position: fixed; inset: 0; display: grid; place-items: center; background: var(--bg); font-size: 15px; color: var(--g700); z-index: 20; transition: opacity .3s; }
 #loading.done { opacity: 0; pointer-events: none; }
