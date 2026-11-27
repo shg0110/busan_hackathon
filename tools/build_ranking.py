@@ -41,7 +41,7 @@ for s, d in vac.items():
         '상권': s,
         '일반': d.get(('일반', LATEST)), '중대형': d.get(('중대형', LATEST)),
         '소규모': d.get(('소규모', LATEST)), '1층': d.get(('일반_1층', LATEST)),
-        '중대형_2년전': d.get(('중대형', BASE)),
+        '일반_2년전': d.get(('일반', BASE)),
         '다시채움_1차': f['1차'] if f else 0, '다시채움_2차': f['2차'] if f else 0,
         '다시채움_상권': '·'.join(sorted(f['이름'])) if f else '',
         '맞춤': f['맞춤'] if f else '',
@@ -55,16 +55,17 @@ with open(os.path.join(ROOT, 'data/processed/busan_ranking.csv'), 'w', encoding=
 fmt = lambda v: '-' if v is None else f'{v:.1f}'
 def delta(a, b):
     return '-' if a is None or b is None else f'{b - a:+.1f}'
-print('| 순위 | 상권(R-ONE) | 일반 상가 | 중대형 | 소규모 | 1층 | 중대형 2년 변화 | 시 빈 점포 1차/2차 | 다시채움 상권(맞춤) |')
-print('|---:|---|---:|---:|---:|---:|---:|---:|---|')
+# 판단은 건물 전체(일반 상가) 공실률로 한다(사용자 지시 11-27: 1층만 보지 말 것). 1층 값은 CSV에만 남긴다.
+print('| 순위 | 상권(R-ONE) | 일반 상가(건물 전체) | 중대형 | 소규모 | 일반 상가 2년 변화 | 시 빈 점포 1차/2차 | 다시채움 상권(맞춤) |')
+print('|---:|---|---:|---:|---:|---:|---:|---|')
 for i, x in enumerate(rows, 1):
     rf = f"{x['다시채움_1차']} / {x['다시채움_2차']}" if x['다시채움_상권'] else ''
     nm = f"{x['다시채움_상권']}({x['맞춤']})" if x['다시채움_상권'] else ''
-    print(f"| {i} | {x['상권']} | **{fmt(x['일반'])}** | {fmt(x['중대형'])} | {fmt(x['소규모'])} | {fmt(x['1층'])} "
-          f"| {delta(x['중대형_2년전'], x['중대형'])} | {rf} | {nm} |")
+    print(f"| {i} | {x['상권']} | **{fmt(x['일반'])}** | {fmt(x['중대형'])} | {fmt(x['소규모'])} "
+          f"| {delta(x['일반_2년전'], x['일반'])} | {rf} | {nm} |")
 b = vac['부산']
 print(f"| | *부산 전체* | *{fmt(b.get(('일반', LATEST)))}* | *{fmt(b.get(('중대형', LATEST)))}* | *{fmt(b.get(('소규모', LATEST)))}* "
-      f"| *{fmt(b.get(('일반_1층', LATEST)))}* | *{delta(b.get(('중대형', BASE)), b.get(('중대형', LATEST)))}* | | |")
+      f"| *{delta(b.get(('일반', BASE)), b.get(('일반', LATEST)))}* | | |")
 sd = refill.get('서동미로시장')
 if sd:
     print(f"\n표에 없는 다시채움 상권: 서동미로시장(금정구) 1차 {sd['1차']} / 2차 {sd['2차']} — R-ONE에 해당 상권 없음")
