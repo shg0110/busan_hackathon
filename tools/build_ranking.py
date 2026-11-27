@@ -1,13 +1,16 @@
 """부산 상권 종합 순위표를 만든다: R-ONE 공실률(2026년 3분기) + 부산시 다시채움 빈 점포 수.
 
 입력: data/raw/reb/vacancy_busan.csv (tools/reb_fetch_busan.py), data/processed/refill_stores.csv
-출력: data/processed/busan_ranking.csv, 표준출력에 마크다운 표(docs/busan-ranking.md 에 붙여 씀)
-실행: python3 -I tools/build_ranking.py
+출력: data/processed/<이름>_ranking.csv, 표준출력에 마크다운 표(docs/*-ranking.md 에 붙여 씀)
+실행: python3 -I tools/build_ranking.py                       # 부산만 → busan_ranking.csv
+      python3 -I tools/build_ranking.py data/raw/reb/vacancy_dongnam.csv dongnam   # 부산·울산·경남
 """
-import csv, collections, os
+import csv, collections, os, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LATEST, BASE = '202603', '202403'
+SRC = sys.argv[1] if len(sys.argv) > 1 else 'data/raw/reb/vacancy_busan.csv'
+NAME = sys.argv[2] if len(sys.argv) > 2 else 'busan'
 
 # 다시채움 상권 → R-ONE 상권. '같음'은 이름·위치가 같은 곳, '인접'은 근처 상권이라 범위가 같은지 모름.
 REFILL_TO_RONE = {
@@ -21,12 +24,14 @@ REFILL_TO_RONE = {
 }
 
 vac = collections.defaultdict(dict)
-for r in csv.DictReader(open(os.path.join(ROOT, 'data/raw/reb/vacancy_busan.csv'), encoding='utf-8-sig')):
+for r in csv.DictReader(open(os.path.join(ROOT, SRC), encoding='utf-8-sig')):
     vac[r['상권']][(r['상가유형'], r['분기'])] = float(r['공실률_%'])
 
 refill = collections.defaultdict(lambda: {'1차': 0, '2차': 0, '이름': set(), '맞춤': ''})
 for r in csv.DictReader(open(os.path.join(ROOT, 'data/processed/refill_stores.csv'), encoding='utf-8-sig')):
     rone, how = REFILL_TO_RONE[r['상권']]
+    if rone and NAME != 'busan':
+        rone = '부산>' + rone   # 여러 시·도 파일은 상권 이름에 시·도가 붙어 있다
     key = rone or r['상권']
     refill[key][r['차수']] += 1
     refill[key]['이름'].add(r['상권'])
@@ -34,7 +39,7 @@ for r in csv.DictReader(open(os.path.join(ROOT, 'data/processed/refill_stores.cs
 
 rows = []
 for s, d in vac.items():
-    if s == '부산' or (('일반', LATEST) not in d):
+    if s in ('부산', '울산', '경남') or (('일반', LATEST) not in d):
         continue  # 부산 전체는 비교 기준 줄로 따로, 집합 상가만 있는 신도시 상권은 제외
     f = refill.get(s)
     rows.append({
@@ -48,7 +53,7 @@ for s, d in vac.items():
     })
 rows.sort(key=lambda x: -x['일반'])
 
-with open(os.path.join(ROOT, 'data/processed/busan_ranking.csv'), 'w', encoding='utf-8-sig', newline='') as fp:
+with open(os.path.join(ROOT, f'data/processed/{NAME}_ranking.csv'), 'w', encoding='utf-8-sig', newline='') as fp:
     w = csv.DictWriter(fp, fieldnames=list(rows[0].keys()))
     w.writeheader(); w.writerows(rows)
 
@@ -63,9 +68,10 @@ for i, x in enumerate(rows, 1):
     nm = f"{x['다시채움_상권']}({x['맞춤']})" if x['다시채움_상권'] else ''
     print(f"| {i} | {x['상권']} | **{fmt(x['일반'])}** | {fmt(x['중대형'])} | {fmt(x['소규모'])} "
           f"| {delta(x['일반_2년전'], x['일반'])} | {rf} | {nm} |")
-b = vac['부산']
-print(f"| | *부산 전체* | *{fmt(b.get(('일반', LATEST)))}* | *{fmt(b.get(('중대형', LATEST)))}* | *{fmt(b.get(('소규모', LATEST)))}* "
-      f"| *{delta(b.get(('일반', BASE)), b.get(('일반', LATEST)))}* | | |")
+for region in [x for x in ('부산', '울산', '경남') if x in vac]:
+    b = vac[region]
+    print(f"| | *{region} 전체* | *{fmt(b.get(('일반', LATEST)))}* | *{fmt(b.get(('중대형', LATEST)))}* | *{fmt(b.get(('소규모', LATEST)))}* "
+          f"| *{delta(b.get(('일반', BASE)), b.get(('일반', LATEST)))}* | | |")
 sd = refill.get('서동미로시장')
 if sd:
     print(f"\n표에 없는 다시채움 상권: 서동미로시장(금정구) 1차 {sd['1차']} / 2차 {sd['2차']} — R-ONE에 해당 상권 없음")

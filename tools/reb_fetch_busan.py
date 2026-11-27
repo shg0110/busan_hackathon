@@ -1,9 +1,10 @@
-"""한국부동산원 R-ONE Open API에서 상권별 공실률 표를 받아 부산 행만 CSV로 저장한다.
+"""한국부동산원 R-ONE Open API에서 상권별 공실률 표를 받아 지정한 시·도 행만 CSV로 저장한다(기본 부산).
 
 - 인증키(REB_API_KEY)가 꼭 필요하다. 키 없이 부르면 R-ONE이 견본 모드로 '첫 5건'만 주고 pIndex·pSize를 무시한다
   (R-ONE 개발가이드 문구, 2026-11-27 확인). 키는 .env 에 넣거나 환경변수로 준다.
 - 통계표 ID는 대구 드래프톤 때 확인한 것: 2026년 3분기부터 쓰는 표 5개 + 그 앞 분기(2024년 3분기~2026년 2분기) 중대형·일반·소규모·1층 표 4개.
-실행: python3 -I tools/reb_fetch_busan.py data/raw/reb/vacancy_busan.csv
+실행: python3 -I tools/reb_fetch_busan.py data/raw/reb/vacancy_busan.csv [시도,시도...]
+     예) 동남권: python3 -I tools/reb_fetch_busan.py data/raw/reb/vacancy_dongnam.csv 부산,울산,경남
 """
 import os, sys, json, csv, time, urllib.request
 
@@ -33,6 +34,7 @@ TABLES = {  # 통계표 ID: 상가 유형
     'T241833134686576': '소규모',   # 2024년 3분기~2026년 2분기 (추세용)
     'T268603140832693': '일반_1층', # 2024년 3분기~2026년 2분기 (추세용)
 }
+REGIONS = tuple(sys.argv[2].split(',')) if len(sys.argv) > 2 else ('부산',)
 rows = {}
 
 
@@ -55,8 +57,10 @@ for sid, kind in TABLES.items():
         if not got:
             break
         for r in got:
-            if r['CLS_FULLNM'].startswith('부산') and r['DTA_VAL'] is not None:
-                rows[(r['CLS_FULLNM'].replace('부산>', ''), kind, r['WRTTIME_IDTFR_ID'])] = (round(float(r['DTA_VAL']), 2), sid)
+            region = r['CLS_FULLNM'].split('>')[0]
+            if region in REGIONS and r['DTA_VAL'] is not None:
+                name = r['CLS_FULLNM'] if len(REGIONS) > 1 else r['CLS_FULLNM'].split('>', 1)[-1]
+                rows[(name, kind, r['WRTTIME_IDTFR_ID'])] = (round(float(r['DTA_VAL']), 2), sid)
         time.sleep(0.05)
 os.makedirs(os.path.dirname(sys.argv[1]) or '.', exist_ok=True)
 w = csv.writer(open(sys.argv[1], 'w', encoding='utf-8-sig', newline=''))
