@@ -418,7 +418,7 @@ function fillCard() {
   $('s-before').textContent = ST.series[0].v.toFixed(1) + '%';
   $('s-src').textContent = `${ST.source}, ${ST.quarter}`;
   // 꺾은선: 옥포(강조색) + 비교 둘(회색 계열)
-  const svg = $('s-chart'), W = 280, H = 96, pl = 26, pr = 34, pt = 8, pb = 18;
+  const svg = $('s-chart'), W = 280, H = 80, pl = 26, pr = 34, pt = 6, pb = 16;
   const all = [...ST.series.map(s => s.v), ...ST.compare.flatMap(c => c.series)].filter(v => v != null);
   const lo = Math.floor(Math.min(...all) / 5) * 5, hi = Math.ceil(Math.max(...all) / 5) * 5;
   const n = ST.series.length;

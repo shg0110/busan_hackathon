@@ -66,8 +66,7 @@ const box = document.createElement('div'); box.className = 'floor-sum';
 box.innerHTML = `<p class="fs-title">층별로 보면</p>
   <p class="fs-line">상권 안 상가 층 ${S.com_floors.toLocaleString('ko-KR')}개 중 <b>${S.empty_floors.toLocaleString('ko-KR')}개</b>에 가게가 없습니다
   <span class="fs-sub">상가정보(2026년 9월)에 가게가 없는 층 · 면적 ${S.empty_area_pct}%</span></p>
-  <p class="fs-note">공실률과 같은 값이 아닙니다. 사무실·창고로 쓰거나 등록되지 않은 가게가 섞여 R-ONE 공실률보다 높게 나옵니다.</p>
-  <p class="src">출처: 국토교통부 건축물대장 층별개요 × 소상공인시장진흥공단 상가정보</p>
+  <p class="fs-note">공실률과 다른 값(사무실·미등록 가게가 섞임). 출처: 건축물대장 층별개요 × 상가정보</p>
   <button class="tour" id="tour-btn">가게 없는 1층 둘러보기 <span id="tour-n"></span></button>`;
 const src = document.querySelector('#card-body .src');
 src.after(box);

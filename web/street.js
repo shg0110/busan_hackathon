@@ -40,8 +40,8 @@ function flyStreet(s) {
   const p = s.p, a = p[0], b = p[p.length - 1], mx = (a[0] + b[0]) / 2, mz = (a[1] + b[1]) / 2;
   const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1, nx = -dz / l, nz = dx / l;
   const side = nz > 0 ? 1 : -1;   // 남쪽에서 북쪽을 보게(화면 위가 북쪽 쪽)
-  const D = Math.max(220, s.len * 0.75);
-  fly(new THREE.Vector3(mx, 0, mz), new THREE.Vector3(mx + nx * side * D * 0.95, D * 0.62, mz + nz * side * D * 0.95));
+  const D = Math.max(200, s.len * 0.68);
+  fly(new THREE.Vector3(mx, 0, mz), new THREE.Vector3(mx + nx * side * D * 0.9, D * 0.72, mz + nz * side * D * 0.9));
 }
 function flyBuilding(bi) {
   const b = B[bi]; let x = 0, z = 0; for (const q of b.p) { x += q[0]; z += q[1]; } x /= b.p.length; z /= b.p.length;
@@ -149,10 +149,48 @@ function rank(s) {
   setTimeout(next, 30);
 }
 
+// 거리 모드: 거리 건물에만 층 띠(가게 없음 + 영업 중), 카드·재생 패널 접기, 도움말 숨김
+let sBands = null, saved = null;
+function streetBands(s) {
+  if (sBands) { scene.remove(sBands); sBands.geometry.dispose(); sBands = null; }
+  if (!s || !window.FLOORS) return;
+  const pos = [], nrm = [], col = [], C2 = { open: new THREE.Color(COL.open), empty: new THREE.Color(COL.empty), unknown: new THREE.Color(COL.unknown) };
+  for (const x of s.slots) {
+    const b = B[x.b]; if (!b || b.k === 'roof') continue;
+    let p = b.p.slice(); let a2 = 0; for (let i = 0; i < p.length; i++) { const u = p[i], v = p[(i + 1) % p.length]; a2 += u[0] * v[1] - v[0] * u[1]; } if (a2 > 0) p.reverse();
+    const fh = (b.h - 0.6) / b.lv, y00 = b.b || 0;
+    for (const f of x.fl) {
+      const c = C2[f[1]]; if (!c || f[0] > b.lv) continue;
+      const y0 = y00 + (f[0] - 1) * fh + 0.15, y1 = y00 + f[0] * fh - 0.15;
+      for (let i = 0; i < p.length; i++) {
+        const a = p[i], q = p[(i + 1) % p.length], dx = q[0] - a[0], dz = q[1] - a[1], l = Math.hypot(dx, dz); if (l < 0.3) continue;
+        const nx = -dz / l, nz = dx / l, o = 0.14, ax = a[0] + nx * o, az = a[1] + nz * o, bx = q[0] + nx * o, bz = q[1] + nz * o;
+        pos.push(ax, y0, az, bx, y0, bz, bx, y1, bz, ax, y0, az, bx, y1, bz, ax, y1, az);
+        for (let k = 0; k < 6; k++) { nrm.push(nx, 0, nz); col.push(c.r, c.g, c.b); }
+      }
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  sBands = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true })); sBands.renderOrder = 11; scene.add(sBands);
+}
+function streetUI(on) {
+  const card = document.getElementById('card'), sim = document.getElementById('sim'), F = window.__floors;
+  if (on && !saved) {
+    saved = { card: card.classList.contains('collapsed'), sim: sim && sim.classList.contains('folded'), bands: F ? F.mesh.visible : true, rest: F ? F.rest.visible : false };
+    card.classList.add('collapsed'); if (sim) sim.classList.add('folded'); if (F) { F.mesh.visible = false; F.rest.visible = false; }
+    if (window.__syncCard) window.__syncCard();
+  } else if (!on && saved) {
+    card.classList.toggle('collapsed', saved.card); if (sim) sim.classList.toggle('folded', !!saved.sim);
+    if (F) { F.mesh.visible = saved.bands; F.rest.visible = saved.rest; }
+    saved = null; if (window.__syncCard) window.__syncCard();
+  }
+}
 function choose(id) {
   const s = ST.find(x => x.id === id) || null; cur = s;
   tabs.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.id === (s ? s.id : ''))));
   document.body.classList.toggle('street-mode', !!s);
+  streetUI(!!s); streetBands(s);
   if (!s) {
     panel.hidden = true; drawBand(null); M.tint(null); M.select(-1);
     M.camera.position.copy(M.HOME.c); M.controls.target.copy(M.HOME.t); M.controls.update(); need(); return;
