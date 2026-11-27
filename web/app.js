@@ -621,8 +621,13 @@ function setHover(bi, ev) {
     need();
   }
   if (bi < 0 || !ev || bi === selIdx) { tip.hidden = true; return; }   // 이미 고른 건물은 정보창이 열려 있으니 말풍선 없음
-  const b = B[bi], nm = b.n || (b.jibun ? b.jibun.replace('거제시 ', '') : b.ko);
-  tip.innerHTML = `<strong>${esc(nm)}</strong><span>${floorSummary(bi)}</span><em>누르면 층별로 보기</em>`;
+  const b = B[bi], fl = FL && FL[String(bi)];
+  // 이름: 지도 이름 → 건축물대장 건물명 → 지번 → (대장에 없는 OSM 건물) 종류
+  const nm = b.n || b.dn || (b.jibun ? b.jibun.replace('거제시 ', '') : b.ko === '건물' ? '이름 없는 건물' : b.ko);
+  // 둘째 줄: 건축물대장 값만(주용도 · 층수 · 사용승인 연도). 대장에 없는 건물은 그렇다고 적는다(추정 층수는 보이지 않음)
+  const meta = b.jibun ? [b.use && b.use.replace(/^제[12]종/, ''), b.lvsrc && b.lv + '층', b.appr && b.appr.slice(0, 4) + '년 사용승인'].filter(Boolean).join(' · ')
+    : '건축물대장에서 찾지 못한 건물(지도 자료 OSM)';
+  tip.innerHTML = `<strong>${esc(nm)}</strong><span class="tm">${esc(meta)}</span>${fl ? `<span>${floorSummary(bi)}</span>` : ''}<em>${fl ? '누르면 층별로 보기' : '누르면 건물 정보 보기'}</em>`;
   tip.hidden = false;
   // 오른쪽 정보창(#info)이나 화면 끝에 걸리면 커서 왼쪽으로 뒤집어 띄움
   const tw = tip.offsetWidth, th = tip.offsetHeight, ir = info.hidden ? null : info.getBoundingClientRect();
