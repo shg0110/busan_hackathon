@@ -787,6 +787,9 @@ function afterLoad() {
     const [poles, wires] = tm('poles', utilityPoles); stats.poles = poles; stats.wires = wires;
     stats.school = tm('school', schoolZones); stats.areaLabels = tm('area', areaLabels);
   } catch (e) { console.warn('decor 소품', e); }
+  // 보이는 가로수 자리(정류장·신호등 등 때문에 숨긴 것 빼고): ground.js(seohogyun-31)가 load 다음 차례에 읽어 나무 보호판을 깐다
+  spots.streetTree = [];
+  trees.forEach((t, i) => { if (t[4] === 'street' && treeRefs[i] && treeRefs[i].parts.length) spots.streetTree.push([Math.round(t[0] * 10) / 10, Math.round(t[1] * 10) / 10]); });
   if (window.__decor) Object.assign(window.__decor, { lights: stats.lights || 0, signs: stats.signs || 0, poles: stats.poles || 0, wires: stats.wires || 0, schoolPosts: stats.school || 0, bollards: stats.bollards || 0, areaLabels: stats.areaLabels || 0, lightAt: stats.lightAt || [], signAt: stats.signAt || [], ms: Object.assign(ms, { all: Math.round(performance.now() - T0) }) });
   if (M.renderer) M.renderer.shadowMap.needsUpdate = true;
   M.need && M.need();
