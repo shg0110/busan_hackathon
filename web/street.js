@@ -241,7 +241,7 @@ function flow(s) {
     <div class="st-kpi two"><div><b>${Math.round(f.wd.tot).toLocaleString('ko-KR')}명</b><span>평일 하루</span></div><div><b>${Math.round(f.we.tot).toLocaleString('ko-KR')}명</b><span>주말 하루</span></div></div>
     <div class="exp-hours"><div>${bars(f.wd.hour, '#1c64f2')}</div><div>${bars(f.we.hour, '#7048e8')}</div><div class="ax"><span>0시</span><span>12시</span><span>23시</span></div></div>
     <div class="exp-mix"><b>평일</b> ${mix(f.wd.grp, f.wd.tot)}</div><div class="exp-mix"><b>주말</b> ${mix(f.we.grp, f.we.tot)}</div>
-    <p class="st-tip">가상 인물이 이 길(중심선 14m 안)을 지나간 횟수입니다. 실제 유동인구가 아닙니다. 사람 수·교대 시간은 '자료와 가정 보기'(아래 패널)를 따릅니다.</p>`;
+    <p class="st-tip">가상 인물이 이 길(중심선 14m 안)을 지나간 횟수입니다. 실제 유동인구가 아닙니다. 사람 수·교대 시간은 '자료와 가정 보기'(재생 막대를 펼치면 보입니다)를 따릅니다.</p>`;
 }
 function rank(s) {
   const sub = document.getElementById('rk-cat').value, cfg = SIM.SUB[sub];   // 세부 업종 기본값(대표 메뉴 1인 지출·자리)
@@ -255,7 +255,7 @@ function rank(s) {
     if (i >= slots.length) {
       SIM.restore(); btn.disabled = false;
       res.sort((a, b) => (b.r.wd + b.r.we) - (a.r.wd + a.r.we));
-      out.innerHTML = `<table class="exp-cmp rk"><tr><th>순위</th><th>자리</th><th>평일</th><th>주말</th><th>평일 매출</th></tr>${res.map((x, k) => `<tr data-b="${x.b}"><td>${k + 1}</td><td>${x.floor}층 · ${x.side === 'L' ? '왼쪽' : '오른쪽'} ${Math.round(x.s)}m${x.area ? ` · ${Math.round(x.area)}㎡` : ''}</td><td>${Math.round(x.r.wd)}명</td><td>${Math.round(x.r.we)}명</td><td>${SIM.won(x.r.wdWon)}</td></tr>`).join('')}</table>
+      out.innerHTML = `<table class="exp-cmp rk"><tr><th>순위</th><th>자리</th><th>평일</th><th>주말</th><th>평일 매출</th></tr>${res.map((x, k) => `<tr data-b="${x.b}"><td>${k + 1}</td><td>${x.floor}층 · ${x.side === 'L' ? '왼쪽' : '오른쪽'} ${Math.round(x.s)}m${x.area ? ` · <span class="nw">${Math.round(x.area)}㎡</span>` : ''}</td><td>${Math.round(x.r.wd)}명</td><td>${Math.round(x.r.we)}명</td><td>${SIM.won(x.r.wdWon)}</td></tr>`).join('')}</table>
         <p class="exp-foot">${esc(document.getElementById('rk-cat').selectedOptions[0].textContent)} · 1인 ${SIM.wonX(cfg.basket)}(대표 메뉴 기준) · 건물마다 가장 낮은 빈 층, 평일·주말 2번씩 평균(사람 1:1), 2층 이상은 눈에 덜 띄는 것(가정)을 반영 · 계산 ${((performance.now() - t0) / 1000).toFixed(1)}초. 행을 누르면 그 건물로 가서 자세히 실험할 수 있습니다. 가상 인물로 자리끼리 비교한 값입니다.</p>`;
       out.querySelectorAll('tr[data-b]').forEach(tr => tr.onclick = () => flyBuilding(+tr.dataset.b));
       need(); return;

@@ -564,17 +564,26 @@ let drawDirty = true;   // 멈춰 있을 때도 시각을 옮기면 점을 다�
 const CK = { key: null, m: new Map() };
 let liveKey = null;
 function cloneAgent(a) { return { ...a, visits: a.visits.slice(), r: rngFrom(a.r.s.a) }; }
-function snap() {
-  return { A: A.map(cloneAgent), SHOP_ST: SHOP_ST.map(o => ({ occ: o.occ.slice() })), W,
+// 저장점: 사람 전부(복사) + 지금 움직이는 사람 목록(ACTIVE) + 시각별 출발 목록(BUCKETS, 아직 안 지난 시각만)을 사람 번호로 저장
+function snap(t) {
+  for (let i = 0; i < A.length; i++) A[i]._k = i;
+  const from = Math.max(T0, Math.floor(t) + 1);
+  return { A: A.map(cloneAgent), act: ACTIVE.map(a => a._k), bFrom: from, bk: BUCKETS.slice(from).map(b => b.length ? b.map(a => a._k) : null),
+    TOTAL_POP, TOTAL_SPENT, SHOP_ST: SHOP_ST.map(o => ({ occ: o.occ.slice() })), W,
     STATS: { visits: STATS.visits.slice(), spend: STATS.spend.slice(), lost: STATS.lost.slice(), noMoney: STATS.noMoney,
       byHour: STATS.byHour.map(h => h && h.slice()), byGroup: STATS.byGroup.map(g => g && { ...g }) } };
 }
 function restoreSnap(k) {
-  A = k.A.map(cloneAgent); SHOP_ST = k.SHOP_ST.map(o => ({ occ: o.occ.slice() })); W = k.W;
+  A = k.A.map(cloneAgent); for (const a of A) a._ai = -1;
+  ACTIVE = k.act.map((i, j) => { const a = A[i]; a._ai = j; return a; });
+  BUCKETS = Array.from({ length: T1 + 2 }, () => []);
+  k.bk.forEach((l, j) => { if (l) BUCKETS[k.bFrom + j] = l.map(i => A[i]); });
+  TOTAL_POP = k.TOTAL_POP; TOTAL_SPENT = k.TOTAL_SPENT;
+  SHOP_ST = k.SHOP_ST.map(o => ({ occ: o.occ.slice() })); W = k.W;
   const S = k.STATS; STATS = { visits: S.visits.slice(), spend: S.spend.slice(), lost: S.lost.slice(), noMoney: S.noMoney,
     byHour: S.byHour.map(h => h && h.slice()), byGroup: S.byGroup.map(g => g && { ...g }) };
 }
-function keep(s) { if (s % 60 === 0 && CK.key === liveKey && !CK.m.has(s) && SHOP_ST.length === SHOPS.length) CK.m.set(s, snap()); }
+function keep(s) { if (s % 60 === 0 && CK.key === liveKey && !CK.m.has(s) && SHOP_ST.length === SHOPS.length) CK.m.set(s, snap(s)); }
 function seek(t) {
   const key = scen;
   if (CK.key !== key) { CK.key = key; CK.m.clear(); }
@@ -601,7 +610,7 @@ function ui() {
     <div><b>${Math.round(wait * W).toLocaleString('ko-KR')}</b>명<span>자리 기다림</span></div>
     <div><b>${won(TOTAL_SPENT)}</b><span>지금까지 쓴 돈</span></div>`;
   if (PD) {
-    $('sim-sub').textContent = `유동인구 ${TOTAL_POP.toLocaleString('ko-KR')}명 · 1:1`;
+    $('sim-sub').textContent = `1초에 ${speed}분`;   // 시각 아래는 재생 속도(속도 칸과 맞춤). 인원은 아래 sim-note 에
     $('sim-note').textContent = `점 1개 = 가상 시민 1명 (하루 유동 ${TOTAL_POP.toLocaleString('ko-KR')}명 전원 · 상권 이동 ${A.length.toLocaleString('ko-KR')}명).`;
   } else {
     $('sim-note').textContent = `점 1개 = 가상 인물 약 ${W.toFixed(1)}명. ` + (assumed ? '사람 수·교대 시간·업종 고르는 비율은 근거 확인 전 가정 값입니다.' : '');
