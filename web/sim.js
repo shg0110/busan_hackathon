@@ -418,7 +418,7 @@ panel.querySelectorAll('.seg button').forEach(b => b.onclick = () => {
   panel.querySelectorAll('.seg button').forEach(x => x.classList.toggle('on', x === b)); scen = b.dataset.s; seek(simT);
 });
 $('sim-fold').onclick = () => { const f = panel.classList.toggle('folded'); $('sim-fold').setAttribute('aria-label', f ? '펴기' : '접기'); };
-if (Math.min(innerWidth, innerHeight) < 720) panel.classList.add('folded');
+panel.classList.add('folded'); $('sim-fold').setAttribute('aria-label', '펴기');   // 처음엔 접어 둠(지도 가운데 아래를 가리지 않게). 주 버튼은 기록지에
 $('sim-tour').onclick = () => { if (window.__floors) window.__floors.nextTour(); setTimeout(() => { const e = document.getElementById('exp'); if (e) e.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, 750); };
 
 function tick(now) {
