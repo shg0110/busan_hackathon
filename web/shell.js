@@ -61,7 +61,7 @@ whenReady(() => {
       a.copy(controls.target).project(camera); b.copy(controls.target).addScaledVector(right, 100).project(camera);
       const px100 = Math.hypot((b.x - a.x) / 2 * canvas.clientWidth, (b.y - a.y) / 2 * canvas.clientHeight);
       if (px100 > 0) {
-        const want = 90 / px100 * 100, nice = [10, 20, 50, 100, 200, 500, 1000, 2000].find(m => m >= want * 0.6) || 2000, w = Math.round(px100 * nice / 100);
+        const want = 90 / px100 * 100, nice = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000].find(m => m >= want * 0.6) || 2000, w = Math.round(px100 * nice / 100);
         const key = nice + ':' + w; if (key !== last) { last = key; bar.style.width = w + 'px'; txt.textContent = nice >= 1000 ? (nice / 1000) + 'km' : nice + 'm'; }
       }
     }
