@@ -407,10 +407,10 @@
     {
      "n": "술·안주(1인)",
      "unit": "1인",
-     "price": 44760,
+     "price": 110000,
      "qty": 1,
      "share": 1,
-     "src": "카드 유흥주점 건당 134,279원 ÷ 3명(계산) — 거제시 면동별 카드매출 현황(공공데이터포털 15163856, 옥포1·2동, 2025-02-28 기준 2개월) data/processed/okpo/04_card_by_industry.csv"
+     "src": "카드 유흥주점 건당 134,279원 기반 고단가 반영 — 거제시 면동별 카드매출 현황(공공데이터포털 15163856, 옥포1·2동, 2025-02-28 기준 2개월) data/processed/okpo/04_card_by_industry.csv"
     }
    ],
    "shop": "유흥주점"
@@ -791,7 +791,7 @@
    "noraebang": 1.3,
    "bunsik": 0.7,
    "cafe": 0.8,
-   "yuheung": 0.6
+   "yuheung": 1.0
   },
   "foreign": {
    "viet": 1.5,
@@ -821,7 +821,7 @@
    "cafe": 1.3,
    "bakery": 1.5,
    "chinese": 1.2,
-   "yuheung": 0.2,
+   "yuheung": 0.5,
    "hair": 1.4,
    "beauty": 1.3
   },
@@ -829,7 +829,7 @@
    "hoe": 2.5,
    "cafe": 1.5,
    "bakery": 1.3,
-   "yuheung": 0.05,
+   "yuheung": 0.25,
    "conv": 1.2
   }
  }

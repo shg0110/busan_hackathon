@@ -199,50 +199,72 @@ function normSimMin(m, r) {
   if (t < 150) t += 1440; // 자정~02시 심야 방문은 24~26시 구간으로 매핑
   return Math.max(T0, Math.min(T1 - 45, t));
 }
-// 유료 방문 가게 목록: 첫 가게는 그 시각에 연 업종 중에서, 다중 방문 성향이면 두 번째 가게(약 45분 뒤 연 업종)
-function payStops(cw, cats, r, t, multi, multiP) {
+// 유료 방문 가게 목록: 평균 방문 가게 수(lam)만큼 뽑는다(예: 1.4 → 60% 1곳, 40% 2곳 / 0.6 → 40% 무소비, 60% 1곳).
+// 각 가게는 그 시각에 연 업종 중에서 고르되 직전 업종은 가급적 피한다. 구 번들(pay_mode 없음)은 기존 방식 유지.
+function payStops(cw, cats, r, t, lamOrMulti, multiP) {
+  if (PD && PD.pay_mode === 'avg_stops') {
+    const lam = lamOrMulti;
+    if (!(lam > 0)) return [];
+    const n = Math.min(12, Math.floor(lam) + (r() < (lam - Math.floor(lam)) ? 1 : 0));
+    if (n <= 0) return [];
+    const stops = [];
+    let prev = null;
+    for (let k = 0; k < n; k++) {
+      const tk = Math.min(T1 - 25, t + k * 20);
+      let c = pickCatFromWeights(cw, cats, r, prev, tk);
+      if (!c && prev) c = pickCatFromWeights(cw, cats, r, null, tk);
+      if (!c) break;
+      stops.push(c);
+      prev = c;
+    }
+    return stops;
+  }
   const c1 = pickCatFromWeights(cw, cats, r, null, t);
   if (!c1) return [];
-  if (multi && r() < multiP) { const c2 = pickCatFromWeights(cw, cats, r, c1, t + 45); if (c2) return [c1, c2]; }
+  if (lamOrMulti && r() < multiP) { const c2 = pickCatFromWeights(cw, cats, r, c1, t + 45); if (c2) return [c1, c2]; }
   return [c1];
 }
 // 1:1 페르소나 레코드 → 하루 외출 일정 변환 (현장 인터뷰 반영: 사내식당 점심 해결·저녁 외국인 무소비 산책·회식 축소)
-// rec: [0:gIdx, 1:segIdx, 2:wdArr, 3:weArr, 4:wdDwell, 5:weDwell, 6:budget, 7:maxWait, 8:wdProb, 9:weProb, 10:weScale, 11:flags, 12:cw, 13:wkIdx, 14:payProb(천분율), 15:1인 지출 배수(%)]
-// 하루 기대 결제 = 외출확률 × payProb × (1 + 두 번째 가게 확률) = 페르소나가 보정한 결제 수(현금 포함). 시뮬에만 있는 추가 결제는 두지 않는다
+// rec: [0:gIdx, 1:segIdx, 2:wdArr, 3:weArr, 4:wdDwell, 5:weDwell, 6:budget, 7:maxWait, 8:wdProb, 9:weProb, 10:weScale, 11:flags, 12:cw, 13:wkIdx, 14:평균방문가게수(천분율), 15:1인 지출 배수(%)]
+// 하루 기대 결제 = 외출확률 × (rec[14] / pay_unit) = 페르소나가 보정한 지도 범위 총 결제 수(카드·현금 구분 없음).
 function makeDayFromPersona(rec, we, r) {
   const g = PD.groups[rec[0]], flags = rec[11], cw = rec[12], cats = PD.cats;
-  const PU = PD.pay_unit || 100, payProb = rec[14] ?? 0.45 * PU, multiP = PD.multi_extra ?? 0.28;
+  const avgMode = PD && PD.pay_mode === 'avg_stops';
+  const PU = PD.pay_unit || 100, payVal = rec[14] ?? 0.45 * PU, multiP = PD.multi_extra ?? 0.28;
   const shipGate = (flags & 1) !== 0, housePref = (flags & 2) !== 0, extEntry = (flags & 4) !== 0, multi = (flags & 8) !== 0;
   const baseNode = extEntry ? ENTRIES[Math.floor(r() * ENTRIES.length)].node
     : (housePref ? pickHome('foreign', h => h.w * (h.k === 'house' ? 3 : 0.4), r)
       : (g === 'worker' ? pickHome('worker', h => h.w * (h.k === 'apt' ? 1.6 : 1), r) : pickHome('resident', h => h.w, r))).node;
   const visitProb = we ? rec[9] : rec[8];
   const out = [];
+  const drawStops = (t, allowMulti) => avgMode ? payStops(cw, cats, r, t, payVal / PU) : (r() * PU < payVal ? payStops(cw, cats, r, t, allowMulti && multi, multiP) : []);
 
   if (!we && shipGate) {
     const gate = GATES[Math.floor(r() * GATES.length)];
     const tin = Math.round(405 + r() * 75);
     const wdArr = rec[2];
     const visitToday = (r() * 100 < visitProb);
-    const willPay = visitToday && (r() * PU < payProb);
     const rTout = r();
     if (visitToday && wdArr < 600) {
       // 출근길 편의점·카페 방문 후 조선소 입문, 퇴근길은 곧장 귀가
       const t = Math.max(T0, tin - 25);
-      out.push({ t, from: baseNode, stops: willPay ? payStops(cw, cats, r, t, false, 0) : [], to: gate.node, budget: rec[6] });
+      const stops = drawStops(t, false);
+      out.push({ t, from: baseNode, stops, to: gate.node, budget: stops.length ? rec[6] : 0 });
       out.push({ t: Math.round(1025 + rTout * 95), from: gate.node, stops: [], to: baseNode, budget: 0 });
     } else if (visitToday && wdArr >= 660 && wdArr < 840) {
       // 극소수(2%) 점심 외출자(대부분은 한화오션 사내식당에서 식사)
       const t = normSimMin(wdArr, r);
+      const stops = drawStops(t, false);
       out.push({ t: Math.max(T0, tin - 20), from: baseNode, stops: [], to: gate.node, budget: 0 });
-      out.push({ t, from: gate.node, stops: willPay ? payStops(cw, cats, r, t, false, 0) : [], to: gate.node, budget: rec[6] });
+      out.push({ t, from: gate.node, stops, to: gate.node, budget: stops.length ? rec[6] : 0 });
       out.push({ t: Math.round(1030 + rTout * 90), from: gate.node, stops: [], to: baseNode, budget: 0 });
     } else {
       // 아침 출근 → 사내 근무·점심 사내식당 → 저녁 퇴근 후 상권 경유(유료 방문 또는 무소비 거리 이동)
       out.push({ t: Math.max(T0, tin - 20), from: baseNode, stops: [], to: gate.node, budget: 0 });
       if (visitToday) {
         const t = normSimMin(wdArr, r);
-        out.push({ t, from: gate.node, stops: willPay ? payStops(cw, cats, r, t, multi, multiP) : [], to: baseNode, budget: willPay ? rec[6] : 0 });
+        const stops = drawStops(t, true);
+        out.push({ t, from: gate.node, stops, to: baseNode, budget: stops.length ? rec[6] : 0 });
       } else {
         out.push({ t: Math.round(1025 + rTout * 95), from: gate.node, stops: [], to: baseNode, budget: 0 });
       }
@@ -251,12 +273,13 @@ function makeDayFromPersona(rec, we, r) {
   }
 
   if (r() * 100 >= visitProb) return null;
-  const willPay = r() * PU < payProb;
   const rSpot = r();
   const arr = normSimMin(we ? rec[3] : rec[2], r);
-  const stops = willPay ? payStops(cw, cats, r, arr, multi, multiP) : [];
+  const stops = drawStops(arr, true);
   if (stops.length) {
-    out.push({ t: arr, from: baseNode, stops, to: baseNode, budget: rec[6] });
+    // 다중 방문(2곳 이상)은 첫 가게 출발을 약간 앞당겨 전체 결제의 중심 시각이 목표 시각(arr)에 맞도록 조정
+    const tStart = avgMode && stops.length > 1 ? Math.max(T0, arr - Math.min(18, (stops.length - 1) * 6)) : arr;
+    out.push({ t: tStart, from: baseNode, stops, to: baseNode, budget: rec[6] });
   } else {
     // 무소비 거리 유동(아이쇼핑·만남·산책 — 특히 저녁 외국인 유입층이 거리에 많아도 매출로 이어지지 않는 현상 재현)
     const hub = SHOPS.length ? SHOPS[Math.floor(rSpot * SHOPS.length)].node : GATES[0].node;
@@ -422,7 +445,8 @@ function chooseShop(a, cat, t, nodeFrom) {
     if (s.off || !openAt(s, t + 5)) continue;
     const dx = s.x - fx, dz = s.z - fz, d2 = dx * dx + dz * dz;
     if (d2 > far2) continue;
-    if (payOf(a, s) > a.wallet) { pricey++; continue; }
+    const cap = s.sub === 'yuheung' ? Math.max(a.wallet * 3.5, s.ref * 1.3) : a.wallet;
+    if (payOf(a, s) > cap) { pricey++; continue; }
     const w = (s.wg[g] ?? s.wg[a.g]) * Math.exp(-Math.sqrt(d2) / lam);
     if (w > 1e-4) { sum += w; cw[n] = sum; ci[n] = i; n++; }
   }
@@ -442,6 +466,7 @@ function nextStop(a, t, render) {
   const o = a.out[a.oi];
   while (a.si < a.stops.length) {
     const cat = a.stops[a.si++];
+    if (PD && PD.pay_mode === 'avg_stops') a.wallet = o.budget;   // 다중 방문 시 가게마다 1회 예산 한도 적용
     const s = chooseShop(a, cat, t, a.cur);
     if (!s) { STATS.noShop += W; continue; }
     if (s === NO_MONEY) { STATS.noMoney += W; continue; }   // 돈 안에서 갈 가게가 없으면 기다리지 않고 다음으로
@@ -491,7 +516,9 @@ function step(t, render) {
 }
 function enter(a, s, t) {
   const baseStay = a.dwell ? (a.dwell * 0.45 + s.stay * 0.55) : s.stay;
-  const stay = Math.max(5, baseStay * (0.75 + 0.5 * a.r()));
+  // 다중 방문(n곳)일 때는 한 번 외출의 체류 시간을 가게 수로 나눠 써서 뒤쪽 결제가 다음 시간대로 과도하게 밀리지 않게 한다
+  const nStops = (PD && PD.pay_mode === 'avg_stops' && a.stops && a.stops.length > 1) ? a.stops.length : 1;
+  const stay = Math.max(4, (baseStay / nStops) * (0.75 + 0.5 * a.r()));
   a.st = 2; a.until = t + stay; SHOP_ST[s.i].occ.push(a.until);
   const pay = payOf(a, s);
   a.wallet -= pay; a.spent += pay; TOTAL_SPENT += pay * W; a.visits.push([s.i, t]);
