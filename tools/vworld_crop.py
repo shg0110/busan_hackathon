@@ -3,7 +3,7 @@
 
 - zip 을 풀지 않고 안에서 바로 읽는다(경남 파일은 풀면 3.2GB). shp 는 처음부터 한 번, dbf 는 고른 레코드만 번호 순서대로.
 - 경남 zip 에는 shp 가 두 벌(이름, 이름(2)) 들어 있어 둘 다 읽는다.
-- 좌표계 EPSG:5186(GRS80 중부원점 TM) → 위경도. 변환식은 대구 dongseongno-3d/tools/vworld_buildings.py 에서 가져옴(상가정보 주소 861곳 대조 오차 중앙값 6.5m로 검증).
+- 좌표계 EPSG:5186(GRS80 중부원점 TM) → 위경도. 변환식은 상가정보 주소 861곳과 대조해 오차 중앙값 6.5m로 검증했다.
 실행: python3 -I tools/vworld_crop.py okpo ~/Downloads/download-2/AL_D010_48_20261109.zip
 
 항목(국토부 AL_D010 정의):

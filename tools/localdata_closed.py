@@ -1,5 +1,5 @@
 """상권 경계 안의 인허가 폐업 기록으로 빈 점포 후보를 뽑고 등급을 매긴다(지역은 인자로 정한다).
-대구 동성로 작업(extract_closed.py + merge_candidates.py)을 옮겼다. 기본값은 부산 중구 남포동이다.
+폐업 기록 추출과 빈 점포 후보 합치기를 한 번에 한다. 기본값은 부산 중구 남포동이다.
 
 입력
   - 행정안전부 지방행정 인허가 CSV 여러 개(일반음식점·휴게음식점 등). 전국 파일이든 지역 파일이든 된다.
@@ -10,7 +10,7 @@
 출력: --out (기본 data/processed/nampo_closed_candidates.csv)
 실행: python3 -I tools/localdata_closed.py data/raw/localdata/*.csv [--gu ...] [--boundary ...] [--since 2024-01-01] [--shops 파일] [--out 파일]
 
-등급(대구와 같은 기준)
+등급
   A_빈점포가능성높음 : 같은 주소에 지금 영업 중인 가게가 하나도 없다
   B_불확실           : 같은 건물에 영업 가게가 있으나 층을 모른다
   C_다시채워짐       : 같은 주소·같은 층에 영업 가게가 있다
