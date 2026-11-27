@@ -7,8 +7,8 @@ const F = window.FLOORS, M = window.__map;
 if (!F || !M) return;
 const { buildings: B, scene, need, esc } = M;
 const STATE = {
-  empty:   { ko: '가게 없는 층',  col: '#f76707', cls: 'st-empty' },
-  open:    { ko: '영업 중인 층',  col: '#40a372', cls: 'st-open' },
+  empty:   { ko: '가게 없는 층',  col: '#f0783a', cls: 'st-empty' },
+  open:    { ko: '영업 중인 층',  col: '#4fa679', cls: 'st-open' },
   unknown: { ko: '확인 불가',     col: '#adb5bd', cls: 'st-unk' },
 };
 const CAT_KO = { food: '음식', shop: '소매', svc: '수리·개인', stay: '숙박', edu: '교육', leisure: '예술·스포츠', med: '의료', office: '사무·서비스', etc: '기타' };
