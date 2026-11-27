@@ -515,7 +515,7 @@ const LANDUSE = {
 // ── 인도: 큰길 전체 폭 + 양쪽 2.5m 를 길 아래 순서로 깔면 길이 가운데를 덮어 양쪽 띠만 남는다 ──
 {
   const pos = [];
-  for (const m of majors) if (!m.r.br) ribbon(m.r.p, m.r.w + WALK_W * 2, 0, pos, true);
+  for (const m of majors) if (!m.r.br && m.r.sw !== false) ribbon(m.r.p, m.r.w + WALK_W * 2, 0, pos, true);   // r.sw: roadcal.js 가 단 인도 있음 표시(사람 걷는 자리와 같은 기준)
   flat(pos, G.walk, 3.5, null, 'walk', TEX.paver);   // 녹지(1~3) 위, 물(4)·길 아래
 }
 
@@ -645,6 +645,8 @@ if (D.parking && D.parking.length) {
     out.push(A[0], yy, A[1], B[0], yy, B[1], C[0], yy, C[1], A[0], yy, A[1], C[0], yy, C[1], D[0], yy, D[1]);
   };
   for (const c of CW) {
+    // 건너는 길이는 지금 그려진 차도 폭(roadcal.js 가 바꿨으면 그 폭). seohogyun-20 보행 신호등도 c.span 을 쓰므로 여기서 맞춰 둔다
+    if (D.roads[c.ri] && D.roads[c.ri].w) c.span = D.roads[c.ri].w;
     const ax = c.dx, az = c.dz, nx = -az, nz = ax, half = (c.span || 12) / 2 - 0.3, hl = (c.w || 4) / 2;
     for (let o = -half + 0.25; o <= half - 0.25 + 1e-6; o += 1.0) rect(c.x + nx * o, c.z + nz * o, ax, az, nx, nz, hl, 0.25, y, pos);
     if (c.tactile) for (const sg of [1, -1]) { const o = sg * ((c.span || 12) / 2 + 0.65); rect(c.x + nx * o, c.z + nz * o, ax, az, nx, nz, hl, 0.3, 0.028, tac); }
