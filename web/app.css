@@ -200,15 +200,9 @@ body.street-mode .tog:has(#L-floors)::after, body.street-mode .tog:has(#L-open):
 .key li i.roof { background: #f0783a; box-shadow: inset 0 0 0 2px #f6a77c; }
 .key li i.num { width: 14px; height: 14px; border-radius: 50%; background: #c94a06; color: #fff; font-size: 9.5px; font-weight: 700; line-height: 14px; font-style: normal; text-align: center; transform: none; align-self: center; }
 .key li i.dash { width: 14px; height: 0; border-radius: 0; border-top: 2px dashed #6b7280; align-self: center; transform: none; }
-.key li i.sig { width: 8px; height: 14px; border-radius: 2px; background: #24282e; box-shadow: inset 0 3px 0 -1px #ff4d4f, inset 0 -3px 0 -1px #38d27a; align-self: center; transform: none; }
 .key li i.kbd { width: 14px; height: 14px; font-size: 12px; font-style: normal; line-height: 14px; color: var(--g600); background: none; transform: none; }
-.key li i.cctv { width: 8px; height: 14px; border-radius: 2px; background: #b8bec6; box-shadow: inset 0 -6px 0 0 #f2c200; }
-.key li i.furn { width: 10px; height: 12px; border-radius: 3px 3px 2px 2px; background: #b8292a; }
-.key li i.cctv, .key li i.furn { align-self: flex-start; margin-top: 4px; transform: none; }
-.key li i.kid { width: 14px; height: 10px; border-radius: 3px; background: #ffe066; align-self: center; transform: none; }
 /* 여러 줄 항목에서도 아이콘이 첫 줄 옆에 붙게(가운데에 뜨지 않게) */
-.key li i.num, .key li i.sig, .key li i.kid { align-self: flex-start; margin-top: 4px; }
-.key li i.cw { background: repeating-linear-gradient(90deg, #fff 0 2px, #767c86 2px 4px); box-shadow: inset 0 0 0 1px #767c86; align-self: flex-start; margin-top: 4px; }   /* 횡단보도(자료 한계 줄) */
+.key li i.num { align-self: flex-start; margin-top: 4px; }
 .key li i.dash { align-self: flex-start; margin-top: 10px; }
 .key li i.kbd { align-self: flex-start; margin-top: 3px; font-size: 13px; color: var(--g700); }
 .key li i.dot { border-radius: 50%; width: 8px; height: 8px; background: #1c64f2; box-shadow: 10px 0 0 #7048e8; margin-right: 10px; }
