@@ -198,11 +198,16 @@ const AGENTS_MAX = PD ? Math.max(36000, Math.ceil(PD.n * 1.25)) : 2400;
 const SUB_DEF = {}; for (const x of MENU.subs) SUB_DEF[x.id] = [x.open, x.close];
 const TS = { p0: T0, p1: T1, sub: {}, shop: {}, seg: {}, ship: 0, ver: 0 };
 function hoursOf(sub, cat) { return (sub && (TS.sub[sub] || SUB_DEF[sub])) || [CFG.cats[cat].open, CFG.cats[cat].close]; }
+// 업종 수요가 있는 시간(CAT_WIN): 그 업종에 있는 세부 업종들의 '보통 영업시간'(시간 정하기의 업종 값 포함)을 합친 것.
+// 가게 하나의 영업시간(가게마다 바꾼 값·실험 가게의 내 시간)으로는 넓히지 않는다 — 호프 하나가 11시에 연다고 낮 술손님이 생기지 않음.
+// (예전엔 실험 가게 시간으로 넓혀, 11시에 여는 호프에 점심 손님이 몰려 하루 3명 → 161명이 됐음.) 기본 상태에서는 전과 같은 값
 function catWindows() { for (const k in CAT_WIN) delete CAT_WIN[k];
-  for (const s of SHOPS) { const w = CAT_WIN[s.c] || (CAT_WIN[s.c] = [Infinity, -Infinity]); w[0] = Math.min(w[0], s.open); w[1] = Math.max(w[1], s.close); } }
+  const seen = new Set();
+  for (const s of SHOPS) { const key = s.sub || '#' + s.c; if (seen.has(key)) continue; seen.add(key);
+    const h = hoursOf(s.sub, s.c), w = CAT_WIN[s.c] || (CAT_WIN[s.c] = [Infinity, -Infinity]); w[0] = Math.min(w[0], h[0]); w[1] = Math.max(w[1], h[1]); } }
 function applyHours() { for (const s of SHOPS) { const h = TS.shop[s.i] || hoursOf(s.sub, s.c); s.open = h[0]; s.close = h[1]; } catWindows(); }
 const CAT_WIN = {};
-for (const s of SHOPS) { const w = CAT_WIN[s.c] || (CAT_WIN[s.c] = [Infinity, -Infinity]); w[0] = Math.min(w[0], s.open); w[1] = Math.max(w[1], s.close); }
+catWindows();
 const catOpen = (c, t) => { const w = CAT_WIN[c]; return !!w && t + 5 >= w[0] && t + 5 < w[1] - 10; };
 function pickCatFromWeights(cw, cats, r, forbid, t) {
   let s = 0;
@@ -786,9 +791,12 @@ const tsDefault = () => ({ p0: T0, p1: T1, sub: {}, shop: {}, seg: {}, ship: 0 }
 const tsClone = (o) => ({ p0: o.p0, p1: o.p1, sub: { ...o.sub }, shop: { ...o.shop }, seg: { ...o.seg }, ship: o.ship });
 function tsChanged(o) { return o.p0 !== T0 || o.p1 !== T1 || o.ship || Object.keys(o.sub).length || Object.keys(o.shop).length || Object.values(o.seg).some(v => v); }
 function ticks() {   // 눈금을 실제 시각 자리에(같은 간격으로 늘어놓으면 05·12·18·24·02시가 제자리에 오지 않음)
-  const el = $('sim-ticks'), span = TS.p1 - TS.p0, step = span > 720 ? 240 : span > 360 ? 120 : 60; let h = '';
-  for (let m = Math.ceil(TS.p0 / step) * step; m <= TS.p1; m += step) { const f = (m - TS.p0) / span, x = f < 0.04 ? '0' : f > 0.96 ? '-100%' : '-50%';
-    h += `<span style="position:absolute;left:${(f * 100).toFixed(2)}%;transform:translateX(${x})">${String(Math.floor((m % 1440) / 60)).padStart(2, '0')}시</span>`; }
+  const el = $('sim-ticks'), span = TS.p1 - TS.p0, step = span > 720 ? 240 : span > 360 ? 120 : 60;
+  const lab = (m) => { const hh = String(Math.floor((m % 1440) / 60)).padStart(2, '0'), mm = m % 60; return mm ? `${hh}:${String(mm).padStart(2, '0')}` : `${hh}시`; };
+  // 양 끝(범위 처음·끝)은 늘 보이게, 가운데는 정각 눈금(끝과 너무 가까우면 뺌) — seohogyun-20 제안
+  let h = `<span style="position:absolute;left:0">${lab(TS.p0)}</span><span style="position:absolute;right:0">${lab(TS.p1)}</span>`;
+  for (let m = Math.ceil(TS.p0 / step) * step; m <= TS.p1; m += step) { const f = (m - TS.p0) / span; if (f < 0.08 || f > 0.92) continue;
+    h += `<span style="position:absolute;left:${(f * 100).toFixed(2)}%;transform:translateX(-50%)">${lab(m)}</span>`; }
   el.style.position = 'relative'; el.style.height = '16px'; el.innerHTML = h;
 }
 ticks();
@@ -836,7 +844,7 @@ function tsShops() {
     return `<li data-shop="${x.i}" class="${ch ? 'ch' : ''}"><div><b>${esc(x.n)}</b><span>${esc(SUB[x.sub] ? SUB[x.sub].ko : CFG.cats[x.c].ko)}${x.f ? ' · ' + x.f + '층' : ''}</span></div>
       <select data-k="o" aria-label="여는 시각">${tOpts(0, 1380, h[0])}</select><select data-k="c" aria-label="닫는 시각">${tOpts(360, T1, h[1])}</select>
       ${ch ? '<button type="button" class="ts-undo" data-undo-shop="' + x.i + '">기본값</button>' : '<span class="ts-undo-sp"></span>'}</li>`; }).join('')
-    : `<li class="ts-empty">${q ? '찾는 가게가 없습니다' : '바꾼 가게가 없습니다. 위 칸에 이름을 넣으세요'}</li>`;
+    : `<li class="ts-empty">${q ? '찾는 가게가 없습니다.' : '바꾼 가게가 없습니다. 위 칸에 이름을 넣으세요.'}</li>`;
 }
 function tsOpen() { tsDraft = tsClone(TS); tsRender(); dlg.showModal(); }
 $('ts-open').onclick = tsOpen;
@@ -902,20 +910,20 @@ const RUNS = 5;
 // 실험 업종 목록: 큰 업종(기획 비교 순서: 다국적 → 주점 → 식사 → 카페 → 장보기 → 생활) 아래 세부 업종
 const EXP_ORDER = ['intl', 'pub', 'meal', 'cafe', 'mart', 'life'].filter(c => SUBS_OF[c] && SUBS_OF[c].length);
 const subOptions = (sel) => EXP_ORDER.map(c => `<optgroup label="${esc(CFG.cats[c].ko)}">${SUBS_OF[c].map(x => `<option value="${x.id}"${x.id === sel ? ' selected' : ''}>${esc(x.ko)}${SD.counts && SD.counts.by_sub && !SD.counts.by_sub[x.id] ? ' (옥포에 없음)' : ''}</option>`).join('')}</optgroup>`).join('');
-function addVirtual(bi, floor, sub, price, seats) {
-  const sb = SUB[sub], cat = sb.cat;
+// hrs = [여는 분, 닫는 분(다음 날이면 1440 넘음)] — 사용자가 정한 '내 가게' 영업시간. 없으면 업종 값
+function addVirtual(bi, floor, sub, price, seats, hrs) {
+  const sb = SUB[sub], cat = sb.cat, H = hrs || hoursOf(sub, cat);
   const b = MP.buildings[bi]; let cx = 0, cz = 0; for (const p of b.p) { cx += p[0]; cz += p[1]; } cx /= b.p.length; cz /= b.p.length;
   const s = { i: SHOPS.length, n: '새 가게(실험)', c: cat, sub, cs: '', x: cx, z: cz, b: bi, f: floor, node: nearest(cx, cz), ref: sb.basket,
-    price, seats, open: hoursOf(sub, cat)[0], close: hoursOf(sub, cat)[1], stay: sb.stay, attract: 1.0 * (floor >= 2 ? CFG.upperFloor : 1), virtual: true };
+    price, seats, open: H[0], close: H[1], stay: sb.stay, attract: 1.0 * (floor >= 2 ? CFG.upperFloor : 1), virtual: true };
   staticWeights(s); SHOPS.push(s); BYCAT[cat].push(s); SHOPNODE = null;
-  s._win = CAT_WIN[cat] ? CAT_WIN[cat].slice() : null;   // 새 가게 영업시간만큼 업종 문 여는 시간을 넓혔다가 지울 때 되돌림
-  CAT_WIN[cat] = [Math.min(s._win ? s._win[0] : Infinity, s.open), Math.max(s._win ? s._win[1] : -Infinity, s.close)];
+  catWindows();   // 새 세부 업종이면 그 업종 보통 영업시간만큼 수요 시간이 생김(내 가게 시간으로는 넓히지 않음)
   return s;
 }
-function removeVirtual(s) { SHOPS.pop(); BYCAT[s.c].splice(BYCAT[s.c].indexOf(s), 1); SHOPNODE = null; if (s._win) CAT_WIN[s.c] = s._win; else delete CAT_WIN[s.c]; }
+function removeVirtual(s) { SHOPS.pop(); BYCAT[s.c].splice(BYCAT[s.c].indexOf(s), 1); SHOPNODE = null; catWindows(); }
 function neighbors(s, R) { return SHOPS.filter(o => !o.virtual && o.c === s.c && Math.hypot(o.x - s.x, o.z - s.z) <= R).map(o => o.i); }
-function experiment(bi, floor, sub, price, seats) {
-  const s = addVirtual(bi, floor, sub, price, seats);
+function experiment(bi, floor, sub, price, seats, hrs) {
+  const s = addVirtual(bi, floor, sub, price, seats, hrs);
   const nb = neighbors(s, 250);
   const res = {};
   for (const sc of ['wd', 'we']) {
@@ -950,7 +958,10 @@ MP.infoExtra = (b, bi) => {
       <label>층<select id="x-floor">${opts}</select></label>
       <label>업종<select id="x-cat">${subOptions(lastSub)}</select></label>
       <label>자리<input id="x-seats" type="number" min="2" max="200" step="1"></label>
+      <label>여는 시각<select id="x-open"></select></label>
+      <label>닫는 시각<select id="x-close"></select></label>
     </div>
+    <p class="x-hours-note" id="x-hours-note"></p>
     <div class="x-menu" id="x-menu"></div>
     <button id="x-run" class="btn-primary">이 가게 손님 세어 보기 <span>평일·주말 각 ${RUNS}번</span></button>
     <div id="x-out" aria-live="polite"></div>
@@ -963,13 +974,21 @@ document.addEventListener('click', (e) => {
 });
 document.addEventListener('change', (e) => { if (e.target.id === 'x-cat') { lastSub = e.target.value; fillDefaults(); } });
 document.addEventListener('input', (e) => { if (e.target.closest && e.target.closest('#x-menu')) updateBasket(); });
+document.addEventListener('change', (e) => { if (e.target.id === 'x-open' || e.target.id === 'x-close') hoursNote(); });
 const obs = new MutationObserver(() => { if ($('x-cat') && !$('x-menu').childElementCount) fillDefaults(); });
 obs.observe($('i-body'), { childList: true });
 // 대표 메뉴 표: 메뉴마다 가격·1인 수량(= 1인 주문량 × 주문 비율)을 고칠 수 있다. 근거가 있는 가격은 '확인', 없는 것은 '가정'
 const fmtQ = (q) => (Math.round(q * 100) / 100).toString();
+// 내 가게 영업시간 칸: 업종을 바꾸면 그 업종 값(시간 정하기에서 바꾼 값 포함)으로 채움
+function fillHours(oSel, cSel, sub) { const h = hoursOf(sub, SUB[sub].cat); oSel.innerHTML = tOpts(0, 1380, h[0]); cSel.innerHTML = tOpts(360, T1, h[1]); }
+function readHours(oSel, cSel) { const o = +oSel.value; let c = +cSel.value; if (c <= o) c += 1440; return [o, Math.min(c, T1)]; }
+const hoursTxt = (h) => `${tLabel(h[0])}~${tLabel(h[1])}`;
+function hoursNote() { const el = $('x-hours-note'); if (!el) return; const sub = $('x-cat').value, d = hoursOf(sub, SUB[sub].cat), h = readHours($('x-open'), $('x-close'));
+  el.textContent = (h[0] === d[0] && h[1] === d[1] ? `${SUB[sub].ko} 보통 영업시간(가정)입니다. 내 가게 시간으로 바꿔 보세요.` : `${SUB[sub].ko} 보통(${hoursTxt(d)})과 다르게 ${hoursTxt(h)}로 셉니다.`) + ' 하루는 05:00~다음 날 02:00만 셉니다.'; }
 function fillDefaults() {
   const sb = SUB[$('x-cat').value]; if (!sb) return;
   $('x-seats').value = sb.seats;
+  fillHours($('x-open'), $('x-close'), $('x-cat').value); hoursNote();
   $('x-menu').innerHTML = `<p class="x-menu-h">대표 메뉴 <span>가격 × 1인 수량</span></p>${sb.menus.map((m, i) => `
     <div class="m-row" data-i="${i}" title="${esc(m.src || '')}">
       <div class="m-name"><b>${esc(m.n)}</b><span class="u">${esc(m.unit)}</span><span class="src ${m.lvl || (m.ok ? 'okpo' : 'guess')}">${esc(m.badge || (m.ok ? '확인' : '가정'))}</span></div>
@@ -1001,19 +1020,20 @@ function runExp() {
   const bi = MP.selected; if (bi < 0) return;
   const sub = $('x-cat').value, sb = SUB[sub], menus = readMenus();
   const floor = +$('x-floor').value, price = Math.max(500, basketOf(menus) || sb.basket), seats = Math.max(2, +$('x-seats').value || sb.seats);
+  const hrs = readHours($('x-open'), $('x-close'));
   $('x-out').innerHTML = '<p class="exp-wait">계산 중…</p>';
   setTimeout(() => {
     const t0 = performance.now();
-    const r = experiment(bi, floor, sub, price, seats);
+    const r = experiment(bi, floor, sub, price, seats, hrs);
     const ms = performance.now() - t0;
-    HIST.unshift({ bi, floor, sub, price, seats, menus, r });
+    HIST.unshift({ bi, floor, sub, price, seats, menus, r, hrs });
     while (HIST.length > 6) HIST.pop();
-    renderExp(r, sub, price, ms, bi, floor, menus);
+    renderExp(r, sub, price, ms, bi, floor, menus, hrs);
   }, 30);
 }
 // 가장 붐비는 시각(손님이 가장 많은 시간대)
 function peakTxt(hr, lab) { let m = -1, h = 0; hr.forEach((v, i) => { if (v > m) { m = v; h = i; } }); return m >= 0.5 ? `${lab}엔 ${h}시대가 가장 붐빔(${Math.round(m)}명)` : `${lab} 손님 거의 없음`; }
-function renderExp(r, sub, price, ms, bi, floor, menus) {
+function renderExp(r, sub, price, ms, bi, floor, menus, hrs) {
   const k = SUB[sub].ko;
   const row = (sc, lab) => { const x = r[sc]; return `<tr><th>${lab}</th><td><b>${Math.round(x.v).toLocaleString('ko-KR')}명</b><span class="rng">${Math.round(x.vMin)}~${Math.round(x.vMax)}</span></td><td>${won(x.won)}</td></tr>`; };
   const g = r.wd.grp, gw = r.we.grp, tot = (o) => Object.values(o).reduce((a, b) => a + b, 0) || 1;
@@ -1028,7 +1048,7 @@ function renderExp(r, sub, price, ms, bi, floor, menus) {
     : `${nbN}: 변화가 작거나 돌릴 때마다 달라 판단하기 어렵습니다(${r.wd.nb >= 0 ? '+' : ''}${Math.round(r.wd.nb)}명).`;
   const bk = menus.filter(m => m.qty > 0 && m.price > 0).map(m => `${esc(m.n)} ${wonX(m.price)} × ${fmtQ(m.qty)}`).join(' + ');
   const same = HIST.filter(h => h.bi === bi && h.floor === floor);
-  const cmp = same.length > 1 ? `<table class="exp-cmp"><tr><th>업종</th><th>1인</th><th>평일</th><th>주말</th><th>평일 매출</th></tr>${same.map(h => `<tr><td>${esc(SUB[h.sub].ko)}</td><td>${wonX(h.price)}</td><td>${Math.round(h.r.wd.v)}명</td><td>${Math.round(h.r.we.v)}명</td><td>${won(h.r.wd.won)}</td></tr>`).join('')}</table>` : '<p class="exp-tip">업종을 바꿔 한 번 더 돌리면 이 자리에서 업종끼리 비교표가 생깁니다.</p>';
+  const cmp = same.length > 1 ? `<table class="exp-cmp"><tr><th>업종</th><th>1인</th><th>평일</th><th>주말</th><th>평일 매출</th></tr>${same.map(h => `<tr><td>${esc(SUB[h.sub].ko)}${h.hrs ? `<span class="cmp-h">${hoursTxt(h.hrs)}</span>` : ''}</td><td>${wonX(h.price)}</td><td>${Math.round(h.r.wd.v)}명</td><td>${Math.round(h.r.we.v)}명</td><td>${won(h.r.wd.won)}</td></tr>`).join('')}</table>` : '<p class="exp-tip">업종이나 영업시간을 바꿔 한 번 더 돌리면 이 자리에서 비교표가 생깁니다.</p>';
   $('x-out').innerHTML = `
     <table class="exp-res"><tr><th></th><th>하루 손님(평균·범위)</th><th>하루 매출</th></tr>${row('wd', '평일')}${row('we', '주말')}</table>
     <p class="exp-sub">평일 손님 구성</p><div class="exp-mix">${mix(g)}</div>
@@ -1038,7 +1058,7 @@ function renderExp(r, sub, price, ms, bi, floor, menus) {
     <p class="exp-sub">주변 가게 영향</p><p class="exp-nb">${nbTxt}</p>
     ${cmp}
     <p class="exp-sub">1인 지출 ${wonX(price)}</p><p class="exp-nb">${bk}</p>
-    <p class="exp-foot">${esc(k)} · ${floor}층 · 계산 ${(ms / 1000).toFixed(1)}초. 하루 매출 = 손님 × 1인 지출. 가상 인물로 조건끼리 비교한 값이며 실제 매출 예측이 아닙니다.</p>`;
+    <p class="exp-foot">${esc(k)} · ${floor}층 · 영업 ${hoursTxt(hrs)} · 계산 ${(ms / 1000).toFixed(1)}초. 하루 매출 = 손님 × 1인 지출. 가상 인물로 조건끼리 비교한 값이며 실제 매출 예측이 아닙니다.</p>`;
   need();
 }
 
@@ -1107,8 +1127,8 @@ function nodeFlowAsync(we) {
   }));
 }
 // 빈 자리에 가게를 열었을 때 손님·매출만(비교 없이, 자리 순위용)
-function trySlot(bi, floor, sub, price, seats, runs = 3) {
-  const s = addVirtual(bi, floor, sub, price, seats);
+function trySlot(bi, floor, sub, price, seats, runs = 3, hrs) {
+  const s = addVirtual(bi, floor, sub, price, seats, hrs);
   const r = { wd: 0, we: 0, wdWon: 0, weWon: 0 };
   for (const sc of ['wd', 'we']) for (let k = 0; k < runs; k++) {
     const st = runDay(sc === 'we', k);
@@ -1117,6 +1137,6 @@ function trySlot(bi, floor, sub, price, seats, runs = 3) {
   removeVirtual(s);
   return r;
 }
-window.__sim = { get _fig() { return figMesh; }, get cfgVer() { return TS.ver; }, TS, applyTS, _shops: () => SHOPS, _active: () => ACTIVE, _md: { MDX, MDZ, NX, NZ }, peakTxt, _ck: CK, runDay, experiment, seek, nodesNear, flowDay, trySlot, nodeFlow, nodeFlowAsync, restore: () => { drawDirty = true; need(); }, won, wonX, GROUPS, SUB, SUBS_OF, subOptions, NAT,
+window.__sim = { get _fig() { return figMesh; }, get cfgVer() { return TS.ver; }, TS, applyTS, _catwin: CAT_WIN, hoursOf, fillHours, readHours, hoursTxt, _shops: () => SHOPS, _active: () => ACTIVE, _md: { MDX, MDZ, NX, NZ }, peakTxt, _ck: CK, runDay, experiment, seek, nodesNear, flowDay, trySlot, nodeFlow, nodeFlowAsync, restore: () => { drawDirty = true; need(); }, won, wonX, GROUPS, SUB, SUBS_OF, subOptions, NAT,
   graph: { NX, NZ, ADJ, NN }, get scen() { return scen; }, get A() { return A; }, get W() { return W; }, SHOPS, CFG, nodes: NN, get t() { return simT; } };
 })();
