@@ -239,7 +239,8 @@ function flow(s) {
   document.getElementById('fl-lg').innerHTML = '<i style="background:#1c64f2"></i>평일 <i style="background:#7048e8"></i>주말';
   document.getElementById('st-flow').innerHTML = `
     <div class="st-kpi two"><div><b>${Math.round(f.wd.tot).toLocaleString('ko-KR')}명</b><span>평일 하루</span></div><div><b>${Math.round(f.we.tot).toLocaleString('ko-KR')}명</b><span>주말 하루</span></div></div>
-    <div class="exp-hours"><div>${bars(f.wd.hour, '#1c64f2')}</div><div>${bars(f.we.hour, '#7048e8')}</div><div class="ax"><span>0시</span><span>12시</span><span>23시</span></div></div>
+    <div class="exp-hours"><div>${bars(f.wd.hour, '#1c64f2')}</div><div>${bars(f.we.hour, '#7048e8')}</div><div class="ax"><span>0시</span><span>6시</span><span>12시</span><span>18시</span><span>23시</span></div></div>
+    <p class="exp-nb">${SIM.peakTxt ? SIM.peakTxt(f.wd.hour, '평일') + ' · ' + SIM.peakTxt(f.we.hour, '주말') : ''}</p>
     <div class="exp-mix"><b>평일</b> ${mix(f.wd.grp, f.wd.tot)}</div><div class="exp-mix"><b>주말</b> ${mix(f.we.grp, f.we.tot)}</div>
     <p class="st-tip">가상 인물이 이 길(중심선 14m 안)을 지나간 횟수입니다. 실제 유동인구가 아닙니다. 사람 수·교대 시간은 '자료와 가정 보기'(재생 막대를 펼치면 보입니다)를 따릅니다.</p>`;
 }

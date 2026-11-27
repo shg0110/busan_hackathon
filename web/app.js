@@ -796,6 +796,8 @@ requestAnimationFrame(() => requestAnimationFrame(() => {
 window.__map = { select, buildings: B, signedArea, camera, controls, HOME, labels, need, orbit, scene, renderer, R, esc, tint, setRoofs,
   roads: roadMeshes, ground, greens: greenMeshes, water: waterMesh, xz, meta: D.meta, dayLight, edgeFade, get night() { return Math.max(0, nightNow); },
   get selected() { return selIdx; }, infoExtra: null };
+function syncFog() { if (!scene.fog) return; const h = camera.position.y, k = 1 + Math.max(0, Math.min(1, (420 - h) / 380)) * 0.9; scene.fog.near = R * 1.15 * k; scene.fog.far = R * 2.6 * k; }
+controls.addEventListener('change', syncFog); syncFog();
 bndK = boundaryK(); drawBoundary(bndK);
 controls.addEventListener('change', () => { const k = boundaryK(); if (k !== bndK) { bndK = k; drawBoundary(k); } });
 document.dispatchEvent(new Event('map-ready'));
