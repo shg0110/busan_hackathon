@@ -1,8 +1,9 @@
 /* 가상 손님 하루 — 옥포 상권 시뮬레이션.
    가상 인물이며 실제 사람·실제 구매가 아니다. 결과는 조건끼리 비교하는 용도(예측 아님).
    자료: window.SIM_DATA(tools/okpo_sim_data.py: 가게·집·입구), window.MAP_DATA(도로), window.PERSONA_CFG(있으면 근거 값).
-   하루 = 05:00 ~ 다음 날 02:00(분 단위). 처리 방식:
-   - 시각이 24시에서 멈추지 않음(주점 손님까지 02시까지 계산)
+   하루 = 05:00 ~ 다음 날 05:00(24시간, 분 단위). 처리 방식:
+   - 시각이 24시에서 멈추지 않음(심야 주점·편의점 손님까지 다음 날 05시까지 계산)
+   - 예전엔 02시에서 끊어 02~05시 도착(카드 결제의 약 0.6%)이 05시로 밀렸다(2026-11-27 고침)
    - 05시 전 도착자를 한꺼번에 처리하지 않음(모든 일정은 05시 이후 분 단위로)
    - 돈이 모자라면 자리를 기다리지 않고 바로 다른 곳·집으로
    - 금액 표기는 크기에 맞춰 원·만 원·억 원 */
@@ -54,7 +55,9 @@ const basketOf = (menus) => Math.round(menus.reduce((a, m) => a + m.price * m.qt
 const NAT = [['vn', 0.274, '베트남'], ['halal', 0.08, '인도네시아·우즈베키스탄 등'], ['etc', 0.646, '그 밖']];
 // 가게 무게를 미리 계산할 부류(+국적) 키: 페르소나 번들이 있으면 그 키 전부(선주 감독관 'foreign.expat' 포함)
 const WKEYS = [...new Set([...GROUPS.flatMap(g => g === 'foreign' ? NAT.map(n => 'foreign.' + n[0]) : [g]), ...((window.PERSONAS && window.PERSONAS.wkeys) || [])])];
-const T0 = 300, T1 = 1560;   // 05:00 ~ 26:00(다음 날 02:00)
+const T0 = 300, T1 = 1740;   // 05:00 ~ 29:00(다음 날 05:00) — 24시간
+// 라스트 오더: 마감 30분 전까지만 새 손님을 받는다. 이미 들어온 손님은 마감 시각까지 머문다(enter). tools/build_personas.py 의 LAST_ORDER_MIN 과 같게
+const LAST_ORDER = 30;
 
 // ── 난수(시드 고정) ─────────────────────────────────────
 // 난수 상태를 f.s 에 두어 복사할 수 있게(재생 중간 저장·되돌리기용). 수열은 예전과 같음
@@ -215,7 +218,7 @@ function catWindows() { for (const k in CAT_WIN) delete CAT_WIN[k];
 function applyHours() { for (const s of SHOPS) { const h = TS.shop[s.i] || hoursOf(s.sub, s.c); s.open = h[0]; s.close = h[1]; } catWindows(); }
 const CAT_WIN = {};
 catWindows();
-const catOpen = (c, t) => { const w = CAT_WIN[c]; return !!w && t + 5 >= w[0] && t + 5 < w[1] - 10; };
+const catOpen = (c, t) => { const w = CAT_WIN[c]; return !!w && t + 5 >= w[0] && t + 5 < w[1] - LAST_ORDER; };
 function pickCatFromWeights(cw, cats, r, forbid, t) {
   let s = 0;
   const ok = (i) => cats[i] !== forbid && (t === undefined || catOpen(cats[i], t));
@@ -231,7 +234,7 @@ function pickCatFromWeights(cw, cats, r, forbid, t) {
 function normSimMin(m, r) {
   const j = Math.round((r() - 0.5) * 18);
   let t = m + j;
-  if (t < 150) t += 1440; // 자정~02시 심야 방문은 24~26시 구간으로 매핑
+  if (t < T0) t += 1440; // 자정~05시 심야 방문은 24~29시(다음 날) 구간으로
   return Math.max(T0, Math.min(T1 - 45, t));
 }
 // 유료 방문 가게 목록: 평균 방문 가게 수(lam)만큼 뽑는다(예: 1.4 → 60% 1곳, 40% 2곳 / 0.6 → 40% 무소비, 60% 1곳).
@@ -451,7 +454,7 @@ function reset(we, seed) {
 }
 const live = (s) => !s.off;
 function seatFree(si, t) { const o = SHOP_ST[si].occ; let n = 0; for (let k = o.length - 1; k >= 0; k--) { if (o[k] > t) n++; else o.splice(k, 1); } return n < SHOPS[si].seats; }
-function openAt(s, t) { return t >= s.open && t < s.close - 10; }
+function openAt(s, t) { return t >= s.open && t < s.close - LAST_ORDER; }   // 새 손님을 받는 시간(라스트 오더까지)
 // 가게마다 부류(+국적)별로 바뀌지 않는 무게를 미리 한 번만 계산(고를 때마다 거듭제곱을 하지 않게)
 // 무게 = 매력 × 세부 업종 선호(MENU.prefs, 가정) × 업종 안 가격대(세부 업종 1인 지출이 큰 업종 기준가보다 비싸면 덜, 0.25~1.6배)
 //        × 같은 세부 업종 안 가격(이 가게 1인 지출이 그 세부 업종 보통보다 비싸면 덜). 탄력은 부류별 priceElastic(가정)
@@ -543,7 +546,8 @@ function step(t, render) {
     }
     if (a.st === 3) {
       const s = SHOPS[a.shop];
-      if (seatFree(s.i, t)) enter(a, s, t);
+      if (!openAt(s, t)) { STATS.lost[s.i] += W; nextStop(a, t, render); }   // 기다리는 사이 라스트 오더(마감 30분 전)가 지나면 다음 곳으로
+      else if (seatFree(s.i, t)) enter(a, s, t);
       else if (t >= a.waitEnd) { STATS.lost[s.i] += W; nextStop(a, t, render); }
       continue;
     }
@@ -554,7 +558,8 @@ function enter(a, s, t) {
   const baseStay = a.dwell ? (a.dwell * 0.45 + s.stay * 0.55) : s.stay;
   // 다중 방문(n곳)일 때는 한 번 외출의 체류 시간을 가게 수로 나눠 써서 뒤쪽 결제가 다음 시간대로 과도하게 밀리지 않게 한다
   const nStops = (PD && PD.pay_mode === 'avg_stops' && a.stops && a.stops.length > 1) ? a.stops.length : 1;
-  const stay = Math.max(4, (baseStay / nStops) * (0.75 + 0.5 * a.r()));
+  // 마감 시각을 넘겨 머물지 않게 자른다(예전엔 02시 마감 호프에 03시대까지 손님이 남았다). 라스트 오더 전에 들어오므로 마감까지 30분 넘게 남아 있다
+  const stay = Math.min(s.close - t, Math.max(4, (baseStay / nStops) * (0.75 + 0.5 * a.r())));
   a.st = 2; a.until = t + stay; SHOP_ST[s.i].occ.push(a.until);
   const pay = payOf(a, s);
   a.wallet -= pay; a.spent += pay; TOTAL_SPENT += pay * W; a.visits.push([s.i, t]);
@@ -835,7 +840,7 @@ const shOpts = (sel) => { let o = ''; for (let m = -180; m <= 180; m += 30) o +=
 const tsDefault = () => ({ p0: T0, p1: T1, sub: {}, shop: {}, seg: {}, ship: 0 });
 const tsClone = (o) => ({ p0: o.p0, p1: o.p1, sub: { ...o.sub }, shop: { ...o.shop }, seg: { ...o.seg }, ship: o.ship });
 function tsChanged(o) { return o.p0 !== T0 || o.p1 !== T1 || o.ship || Object.keys(o.sub).length || Object.keys(o.shop).length || Object.values(o.seg).some(v => v); }
-function ticks() {   // 눈금을 실제 시각 자리에(같은 간격으로 늘어놓으면 05·12·18·24·02시가 제자리에 오지 않음)
+function ticks() {   // 눈금을 실제 시각 자리에(같은 간격으로 늘어놓으면 05·12·18·24·05시가 제자리에 오지 않음)
   const el = $('sim-ticks'), span = TS.p1 - TS.p0, step = span > 720 ? 240 : span > 360 ? 120 : 60;
   const lab = (m) => { const hh = String(Math.floor((m % 1440) / 60)).padStart(2, '0'), mm = m % 60; return mm ? `${hh}:${String(mm).padStart(2, '0')}` : `${hh}시`; };
   // 양 끝(범위 처음·끝)은 늘 보이게, 가운데는 정각 눈금(끝과 너무 가까우면 뺌) — seohogyun-20 제안
@@ -855,7 +860,7 @@ function tsRender() {
     <header class="ts-hd"><h2>시간 정하기</h2><button type="button" class="ts-x" id="ts-close" aria-label="닫기">×</button></header>
     <div class="ts-body">
     <section><h3>하루 재생 범위</h3>
-      <p class="ts-note">재생 막대가 이 사이만 움직입니다. 계산은 늘 05:00부터라 범위 앞에 나온 사람도 그대로 있습니다. 하루 합계는 05:00~다음 날 02:00 전체입니다.</p>
+      <p class="ts-note">재생 막대가 이 사이만 움직입니다. 계산은 늘 05:00부터라 범위 앞에 나온 사람도 그대로 있습니다. 하루 합계는 05:00~다음 날 05:00, 24시간 전체입니다.</p>
       <div class="ts-row"><label>시작 <select id="ts-p0">${tOpts(T0, 1200, D.p0)}</select></label><span class="ts-dash">~</span><label>끝 <select id="ts-p1">${tOpts(720, T1, D.p1)}</select></label></div></section>
     <section><h3>업종별 영업시간</h3>
       <p class="ts-note">기본값은 업종마다 흔한 영업시간을 가정한 값입니다(상가정보에 영업시간 자료가 없음). 바꾸면 그 업종 가게 전부에 적용됩니다.</p>
@@ -1048,7 +1053,7 @@ function fillHours(oSel, cSel, sub) { const h = hoursOf(sub, SUB[sub].cat); oSel
 function readHours(oSel, cSel) { const o = +oSel.value; let c = +cSel.value; if (c <= o) c += 1440; return [o, Math.min(c, T1)]; }
 const hoursTxt = (h) => `${tLabel(h[0])}~${tLabel(h[1])}`;
 function hoursNote() { const el = $('x-hours-note'); if (!el) return; const sub = $('x-cat').value, d = hoursOf(sub, SUB[sub].cat), h = readHours($('x-open'), $('x-close'));
-  el.textContent = (h[0] === d[0] && h[1] === d[1] ? `${SUB[sub].ko} 보통 영업시간(가정)입니다. 내 가게 시간으로 바꿔 보세요.` : `${SUB[sub].ko} 보통(${hoursTxt(d)})과 다르게 ${hoursTxt(h)}로 셉니다.`) + ' 하루는 05:00~다음 날 02:00만 셉니다.'; }
+  el.textContent = (h[0] === d[0] && h[1] === d[1] ? `${SUB[sub].ko} 보통 영업시간(가정)입니다. 내 가게 시간으로 바꿔 보세요.` : `${SUB[sub].ko} 보통(${hoursTxt(d)})과 다르게 ${hoursTxt(h)}로 셉니다.`) + ' 새 손님은 마감 30분 전(라스트 오더)까지 받습니다. 하루는 05:00~다음 날 05:00(24시간)을 셉니다.'; }
 function fillDefaults() {
   const sb = SUB[$('x-cat').value]; if (!sb) return;
   $('x-seats').value = sb.seats;
@@ -1420,7 +1425,7 @@ function updOcc(force) {
   const L = MP.labels; for (const o of occLabels) { const i = L.indexOf(o); if (i >= 0) L.splice(i, 1); }
   occLabels.forEach((o, k) => {
     const e = occOn ? top[k] : null;
-    if (!e) { o.el.classList.add('off'); o.bi = -1; return; }
+    if (!e || !MP.buildings[e[0]]) { o.el.classList.add('off'); o.bi = -1; return; }   // 건물 자료가 없으면(화면 없는 점검) 배지 없음
     const [bi, v] = e, b = MP.buildings[bi], n = v.in + v.wait; let cx = 0, cz = 0; for (const p of b.p) { cx += p[0]; cz += p[1]; } cx /= b.p.length; cz /= b.p.length;
     const txt = `${OCC_ICON}${n}`;
     if (txt !== o.txt) { o.el.innerHTML = txt; o.txt = txt; o.w = 0; }

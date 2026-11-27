@@ -39,7 +39,7 @@ const ok = (name, pass, detail) => { if (detail && detail.__err) pass = false; r
 
   // 2) 재생 되돌리기 = 처음부터 계산
   const ck = await ev(pg, () => { const S = window.__sim, sig = () => { let x = 0, act = 0; S.A.forEach((a, i) => { x += (a.st * 7 + a.spent * 1e-3 + (a.cur || 0) * 1e-4 + (a.t1 || 0) * 1e-2 + a.shop * 1e-3 + a.oi) * (1 + (i % 13)); if (a.st) act++; }); return x.toFixed(3) + '/' + act; };
-    const o = []; for (const t of [1100, 1380]) { S._ck.m.clear(); S._ck.key = null; S.seek(t); const f = sig(); S.seek(Math.min(1560, t + 120)); S.seek(t); o.push(f === sig()); } S.seek(1110); return o; });
+    const o = []; for (const t of [1100, 1380]) { S._ck.m.clear(); S._ck.key = null; S.seek(t); const f = sig(); S.seek(Math.min(1740, t + 120)); S.seek(t); o.push(f === sig()); } S.seek(1110); return o; });
   ok('재생 되돌리기 = 처음부터', ck.every(Boolean), ck);
 
   // 3) 사람 자리: NaN, 인도 있는 길이면 인도 위, 중앙분리 도로면 분리대 쪽 아님
@@ -84,7 +84,7 @@ const ok = (name, pass, detail) => { if (detail && detail.__err) pass = false; r
 
   // 8) 시간 정하기: 바꾸면 결과가 바뀌고, 기본값으로 되돌리면 처음과 같음
   const ts = await ev(pg, () => { const S = window.__sim, day = () => { const st = S.runDay(false, 0); let v = 0, w = 0; for (let i = 0; i < st.visits.length; i++) { v += st.visits[i]; w += st.spend[i]; } return Math.round(v) + '/' + Math.round(w); };
-    const base = day(); S.applyTS({ p0: 300, p1: 1560, sub: { hof: [1020, 1380] }, shop: {}, seg: { 4: 60 }, ship: 60 }); const ch = day(); S.applyTS({ p0: 300, p1: 1560, sub: {}, shop: {}, seg: {}, ship: 0 }); const back = day(); S.restore(); return { base, ch, back }; });
+    const base = day(); S.applyTS({ p0: 300, p1: 1740, sub: { hof: [1020, 1380] }, shop: {}, seg: { 4: 60 }, ship: 60 }); const ch = day(); S.applyTS({ p0: 300, p1: 1740, sub: {}, shop: {}, seg: {}, ship: 0 }); const back = day(); S.restore(); return { base, ch, back }; });
   ok('시간 정하기 바꾸면 달라지고 기본값이면 같음', ts.ch !== ts.base && ts.back === ts.base, ts);
 
   // 9) 지형: 흐름 띠가 바닥층(땅 + 0.2m) 밑으로 30cm 넘게 묻히지 않음

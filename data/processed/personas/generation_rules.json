@@ -2,7 +2,7 @@
  "version": "0.6.1",
  "generated": "2026-11-27",
  "seed": 20261127,
- "n": 38823,
+ "n": 38865,
  "candidate_pool": 90000,
  "script": "tools/build_personas.py",
  "population_scope": "거제시 옥포1동(R-ONE 「거제옥포」 상권 중심)에 하루 동안 머물거나 방문하는 10세 이상 인구(내·외국인 주민, 동내 사업체 근무자, 시외 숙소형·통근형 유입, 거제 타동 방문객, 관광객)",
@@ -11,58 +11,58 @@
   "resident": {
    "ko": "옥포1동 주민",
    "sim_group": "resident",
-   "count": 14151,
-   "share_of_personas": 0.3645,
-   "weekday_unique_persons": 14179,
-   "weekday_simultaneous_persons": 10832.4
+   "count": 14150,
+   "share_of_personas": 0.3641,
+   "weekday_unique_persons": 14174,
+   "weekday_simultaneous_persons": 10853.9
   },
   "foreign_resident": {
    "ko": "옥포 거주 외국인",
    "sim_group": "foreign",
    "count": 1439,
-   "share_of_personas": 0.0371,
+   "share_of_personas": 0.037,
    "weekday_unique_persons": 1441,
-   "weekday_simultaneous_persons": 1133.9
+   "weekday_simultaneous_persons": 1133.8
   },
   "okpo1_worker": {
    "ko": "옥포1동 상권·사업체 근무자",
    "sim_group": "worker",
-   "count": 1348,
-   "share_of_personas": 0.0347,
-   "weekday_unique_persons": 1220,
-   "weekday_simultaneous_persons": 453.7
+   "count": 1315,
+   "share_of_personas": 0.0338,
+   "weekday_unique_persons": 1223,
+   "weekday_simultaneous_persons": 453.3
   },
   "stayer": {
    "ko": "시외 체류·숙소형 유입",
    "sim_group": "worker",
    "count": 3438,
-   "share_of_personas": 0.0886,
-   "weekday_unique_persons": 3414,
-   "weekday_simultaneous_persons": 2865.3
+   "share_of_personas": 0.0885,
+   "weekday_unique_persons": 3427,
+   "weekday_simultaneous_persons": 2859.3
   },
   "commuter": {
    "ko": "시외 주간 유입(통근·출장)",
    "sim_group": "worker",
-   "count": 6256,
-   "share_of_personas": 0.1611,
-   "weekday_unique_persons": 6196,
-   "weekday_simultaneous_persons": 2200.8
+   "count": 6254,
+   "share_of_personas": 0.1609,
+   "weekday_unique_persons": 6182,
+   "weekday_simultaneous_persons": 2202.4
   },
   "geoje_visitor": {
    "ko": "거제 타동 방문객",
    "sim_group": "resident",
-   "count": 10662,
-   "share_of_personas": 0.2746,
-   "weekday_unique_persons": 9848,
-   "weekday_simultaneous_persons": 361.2
+   "count": 10740,
+   "share_of_personas": 0.2763,
+   "weekday_unique_persons": 9264,
+   "weekday_simultaneous_persons": 341.4
   },
   "tourist": {
    "ko": "관광객",
    "sim_group": "tourist",
    "count": 1529,
-   "share_of_personas": 0.0394,
+   "share_of_personas": 0.0393,
    "weekday_unique_persons": 1526,
-   "weekday_simultaneous_persons": 115.3
+   "weekday_simultaneous_persons": 118.3
   }
  },
  "categories": {
@@ -163,8 +163,8 @@
   "method": "후보 50,000명 생성 → 다중 주변합 반복 비례 맞춤(raking) → 도출된 하루 순유동 인원 N = round(Σw) 전원 1:1 체계 추출(PPS) → 미세 보정",
   "primary_target_simultaneous": 17962.422685166664,
   "primary_target_src": "경남빅데이터허브 옥포1동 동 생활인구(시각 평균 인원, 2026년 1~9월, 10세 이상·등록외국인 포함)",
-  "emergent_daily_unique_weekday": 37824,
-  "persona_count_1to1": 38823,
+  "emergent_daily_unique_weekday": 37236,
+  "persona_count_1to1": 38865,
   "emergent_daily_unique_benchmark": "29,067명(거제시 2026-10 월보) · 29,264명(소상공인365 2026-08)",
   "weekend_multipliers_by_segment": {
    "resident": 1.0,
