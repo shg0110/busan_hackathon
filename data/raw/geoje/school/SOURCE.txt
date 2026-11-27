@@ -1,2 +1,2 @@
-출처: NEIS 교육정보 개방포털 (https://open.neis.go.kr) 학교기본정보·학사일정·시간표 API, 인증키 없이 호출
+출처: NEIS 교육정보 개방포털 (https://open.neis.go.kr) 학교기본정보·학사일정·시간표 API
 받은 날짜: 2026-11-27
