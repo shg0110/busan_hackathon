@@ -63,9 +63,9 @@ const rngFrom = (a) => { const f = rng(0); f.s.a = a; return f; };
 function hash01(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0) / 4294967296; }
 
 // ── 길 그래프(도로 전부, 0.5m 로 이음, 20m 마다 쪼갬) ──────────────
-const NX = [], NZ = [], ADJ = [], KEY = new Map();
+const NX = [], NZ = [], ADJ = [], KEY = new Map(), NWD = [];   // NWD: 노드에 닿은 길 중 가장 넓은 폭(m) — 사람이 길 가장자리·인도로 걷게
 function node(x, z) { const k = Math.round(x * 2) + ',' + Math.round(z * 2); let i = KEY.get(k);
-  if (i === undefined) { i = NX.length; KEY.set(k, i); NX.push(x); NZ.push(z); ADJ.push([]); } return i; }
+  if (i === undefined) { i = NX.length; KEY.set(k, i); NX.push(x); NZ.push(z); ADJ.push([]); NWD.push(0); } return i; }
 function link(a, b) { if (a === b) return; const d = Math.hypot(NX[a] - NX[b], NZ[a] - NZ[b]); ADJ[a].push(b, d); ADJ[b].push(a, d); }
 for (const r of D.roads) {
   let prev = -1;
@@ -76,6 +76,10 @@ for (const r of D.roads) {
     const cur = node(x, z); if (prev >= 0) link(prev, cur); prev = cur;
   }
 }
+for (const r of D.roads) for (const [x, z] of r.p) { const i = KEY.get(Math.round(x * 2) + ',' + Math.round(z * 2)); if (i !== undefined) NWD[i] = Math.max(NWD[i], r.w || 6); }
+for (let i = 0; i < NWD.length; i++) if (!NWD[i]) { const A = ADJ[i]; let w = 0; for (let j = 0; j < A.length; j += 2) w = Math.max(w, NWD[A[j]]); NWD[i] = w || 6; }
+// 길 가장자리 오프셋: 8m 이상 길은 인도(가장자리 + 1.2m), 좁은 골목은 가장자리 안쪽 0.6m
+const sideOff = (w) => w >= 8 ? w / 2 + 1.2 : Math.max(0.6, w / 2 - 0.6);
 const NN = NX.length;
 // 가장 큰 연결 덩어리만 쓴다(떨어진 길 조각에 사람이 갇히지 않게)
 const comp = new Int32Array(NN).fill(-1); let bestC = 0, bestN = 0;
@@ -505,8 +509,12 @@ function placeOnPath(a, t) {
   if (!a.pd) { a.pd = new Float32Array(p.length); for (let i = 1; i < p.length; i++) a.pd[i] = a.pd[i - 1] + Math.hypot(NX[p[i]] - NX[p[i - 1]], NZ[p[i]] - NZ[p[i - 1]]); }
   const L = a.pd[p.length - 1], f = Math.min(1, Math.max(0, (t - a.t0) / (a.t1 - a.t0))), d = f * L;
   let i = 1; while (i < p.length - 1 && a.pd[i] < d) i++;
-  const seg = a.pd[i] - a.pd[i - 1] || 1, u = (d - a.pd[i - 1]) / seg;
-  a.x = NX[p[i - 1]] + (NX[p[i]] - NX[p[i - 1]]) * u; a.z = NZ[p[i - 1]] + (NZ[p[i]] - NZ[p[i - 1]]) * u;
+  const seg = a.pd[i] - a.pd[i - 1] || 1, u = (d - a.pd[i - 1]) / seg, p0 = p[i - 1], p1 = p[i];
+  const dx = NX[p1] - NX[p0], dz = NZ[p1] - NZ[p0], l = Math.hypot(dx, dz) || 1;
+  // 길 방향에 수직인 쪽(방향과 무관하게 늘 같은 쪽을 가리키게)으로 사람마다 정한 쪽 인도·가장자리를 걷는다
+  let nx = -dz / l, nz = dx / l; if (nx + nz * 0.001 < 0) { nx = -nx; nz = -nz; }
+  const off = (a.jit >= 0 ? 1 : -1) * sideOff(Math.min(NWD[p0], NWD[p1]));
+  a.x = NX[p0] + dx * u + nx * off; a.z = NZ[p0] + dz * u + nz * off;
 }
 function draw(t) {
   let n = 0;
@@ -516,8 +524,10 @@ function draw(t) {
     // 같은 길 위 사람이 한 줄로 겹치지 않게 사람마다 조금 옆으로(사람마다 고정된 값)
     const j = (a.jit ?? (a.jit = (hash01(String(A.indexOf(a))) - 0.5) * 3));
     // 자리 기다리는 사람은 가게 앞 고정 자리(예전엔 그릴 때마다 난수를 써서 점이 떨리고, 그 난수 때문에 재생 결과가 화면 속도에 따라 달라졌음)
-    if (a.st === 1) placeOnPath(a, t); else { const s = SHOPS[a.shop]; a.x = s.x + j * 0.5; a.z = s.z + (hash01('w' + j) - 0.5) * 1.5; }
-    pos[n * 3] = a.x + j; pos[n * 3 + 1] = 1.2; pos[n * 3 + 2] = a.z - j * 0.6;
+    // 자리 기다리는 사람: 가게 쪽 인도(길 노드에서 가게 방향으로 길 가장자리 + 1.2m)
+    if (a.st === 1) placeOnPath(a, t); else { const s = SHOPS[a.shop], n = s.node, vx = s.x - NX[n], vz = s.z - NZ[n], vl = Math.hypot(vx, vz) || 1, o = sideOff(NWD[n]);
+      a.x = NX[n] + vx / vl * o + j * 0.4; a.z = NZ[n] + vz / vl * o + (hash01('w' + j) - 0.5) * 1.2; }
+    pos[n * 3] = a.x + j * 0.25; pos[n * 3 + 1] = 1.2; pos[n * 3 + 2] = a.z - j * 0.15;   // 같은 쪽 인도 안에서 사람끼리 조금씩 어긋나게
     const c = GCOL[a.g]; col[n * 3] = c.r; col[n * 3 + 1] = c.g; col[n * 3 + 2] = c.b; n++;
   }
   geo.setDrawRange(0, n); geo.attributes.position.needsUpdate = true; geo.attributes.color.needsUpdate = true;
