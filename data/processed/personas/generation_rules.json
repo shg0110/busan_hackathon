@@ -1,8 +1,8 @@
 {
- "version": "0.4.0",
+ "version": "0.5.0",
  "generated": "2026-11-27",
  "seed": 20261127,
- "n": 28027,
+ "n": 24336,
  "candidate_pool": 50000,
  "script": "tools/build_personas.py",
  "population_scope": "거제시 옥포1동(R-ONE 「거제옥포」 상권 중심)에 하루 동안 머물거나 방문하는 10세 이상 인구(내·외국인 주민, 동내 사업체 근무자, 시외 숙소형·통근형 유입, 거제 타동 방문객, 관광객)",
@@ -11,58 +11,58 @@
   "resident": {
    "ko": "옥포1동 주민",
    "sim_group": "resident",
-   "count": 5122,
-   "share_of_personas": 0.1828,
+   "count": 5121,
+   "share_of_personas": 0.2104,
    "weekday_unique_persons": 5122,
-   "weekday_simultaneous_persons": 3661.5
+   "weekday_simultaneous_persons": 3746.9
   },
   "foreign_resident": {
    "ko": "옥포 거주 외국인",
    "sim_group": "foreign",
-   "count": 922,
-   "share_of_personas": 0.0329,
-   "weekday_unique_persons": 922,
-   "weekday_simultaneous_persons": 638.0
+   "count": 964,
+   "share_of_personas": 0.0396,
+   "weekday_unique_persons": 963,
+   "weekday_simultaneous_persons": 676.0
   },
   "okpo1_worker": {
    "ko": "옥포1동 상권·사업체 근무자",
    "sim_group": "worker",
-   "count": 1926,
-   "share_of_personas": 0.0687,
-   "weekday_unique_persons": 1958,
-   "weekday_simultaneous_persons": 700.6
+   "count": 2056,
+   "share_of_personas": 0.0845,
+   "weekday_unique_persons": 2037,
+   "weekday_simultaneous_persons": 734.9
   },
   "stayer": {
    "ko": "시외 체류·숙소형 유입",
    "sim_group": "worker",
-   "count": 2570,
-   "share_of_personas": 0.0917,
-   "weekday_unique_persons": 2567,
-   "weekday_simultaneous_persons": 1916.4
+   "count": 2591,
+   "share_of_personas": 0.1065,
+   "weekday_unique_persons": 2594,
+   "weekday_simultaneous_persons": 1921.5
   },
   "commuter": {
    "ko": "시외 당일 통근·업무 유입",
    "sim_group": "worker",
-   "count": 4623,
-   "share_of_personas": 0.1649,
-   "weekday_unique_persons": 4598,
-   "weekday_simultaneous_persons": 1457.4
+   "count": 4636,
+   "share_of_personas": 0.1905,
+   "weekday_unique_persons": 4661,
+   "weekday_simultaneous_persons": 1461.0
   },
   "geoje_visitor": {
    "ko": "거제 타동 방문객",
    "sim_group": "resident",
-   "count": 12552,
-   "share_of_personas": 0.4479,
-   "weekday_unique_persons": 12391,
-   "weekday_simultaneous_persons": 475.9
+   "count": 8655,
+   "share_of_personas": 0.3556,
+   "weekday_unique_persons": 8533,
+   "weekday_simultaneous_persons": 319.6
   },
   "tourist": {
    "ko": "관광객",
    "sim_group": "tourist",
-   "count": 312,
-   "share_of_personas": 0.0111,
+   "count": 313,
+   "share_of_personas": 0.0129,
    "weekday_unique_persons": 312,
-   "weekday_simultaneous_persons": 43.7
+   "weekday_simultaneous_persons": 34.0
   }
  },
  "categories": {
@@ -163,8 +163,8 @@
   "method": "후보 50,000명 생성 → 다중 주변합 반복 비례 맞춤(raking) → 도출된 하루 순유동 인원 N = round(Σw) 전원 1:1 체계 추출(PPS) → 미세 보정",
   "primary_target_simultaneous": 8893.666666666666,
   "primary_target_src": "경남빅데이터허브 옥포1동 동 생활인구(시각 평균 인원, 2026년 1~9월, 10세 이상·등록외국인 포함)",
-  "emergent_daily_unique_weekday": 27870,
-  "persona_count_1to1": 28027,
+  "emergent_daily_unique_weekday": 24222,
+  "persona_count_1to1": 24336,
   "emergent_daily_unique_benchmark": "29,067명(거제시 2026-10 월보) · 29,264명(소상공인365 2026-08)",
   "weekend_multipliers_by_segment": {
    "resident": 1.0,
@@ -492,7 +492,25 @@
    49
   ],
   "okpo1_resident_in_dong_job_share": 0.22,
-  "foreign_active_daily_share": 0.9,
+  "foreign_active_daily_share": 0.94,
+  "shipyard_weekday_arrival_mode": {
+   "morning": 0.16,
+   "lunch": 0.02,
+   "after": 0.7,
+   "shift": 0.12
+  },
+  "design_tech_street_out_prob": 0.25,
+  "design_tech_lunch_boost": 0.18,
+  "foreign_pub_pref_scale": 0.2,
+  "foreign_mart_pref_scale": 1.45,
+  "foreign_intl_meal_split": 0.34,
+  "subcontract_pub_pref_scale": 0.72,
+  "foreign_paid_tx_factor": 1.0,
+  "foreign_budget_scale": {
+   "E-9·E-8·H-2": 0.5,
+   "조선소(E-7 등)": 0.64,
+   "그 외": 0.75
+  },
   "school_start_min": 530,
   "lesson_min": {
    "초": 40,
@@ -550,6 +568,29 @@
    "대기": 0.12,
    "분위기": 0.1
   }
+ },
+ "assumed_field_sources": {
+  "child_escort_age": "assumption",
+  "okpo1_resident_in_dong_job_share": "assumption",
+  "foreign_active_daily_share": "assumption",
+  "shipyard_weekday_arrival_mode": "interview",
+  "design_tech_street_out_prob": "interview+data",
+  "design_tech_lunch_boost": "interview+data",
+  "foreign_pub_pref_scale": "interview",
+  "foreign_mart_pref_scale": "assumption",
+  "foreign_intl_meal_split": "assumption",
+  "subcontract_pub_pref_scale": "interview",
+  "foreign_paid_tx_factor": "interview",
+  "foreign_budget_scale": "survey",
+  "school_start_min": "assumption",
+  "lesson_min": "assumption",
+  "break_min": "assumption",
+  "lunch_min": "assumption",
+  "student_budget": "assumption",
+  "street_extra_min": "assumption",
+  "dwell_min_by_cat": "assumption",
+  "pref_noise_concentration": "assumption",
+  "criteria_base_krei": "survey"
  },
  "sources": [
   {
@@ -611,6 +652,26 @@
    "name": "한국은행 2024 지급수단 이용행태 조사 · 농촌경제연구원 식품소비행태조사",
    "use": "현금 결제 건수 비중(15.9%) 분리 표기, 외식 선택 기준 기본 가중치",
    "file": "data/processed/okpo/17_flow_targets.json"
+  },
+  {
+   "name": "2025 이민자체류실태 및 고용조사 — 소득과 소비 (국가데이터처·법무부)",
+   "use": "외국인 총소득 중 국내 지출(생활비+기타) 47.2%, E-9 송금 56.5%·무상 거처 76.7% → 외국인 예산 배수 근거, R1 참고 비교",
+   "file": "data/processed/okpo/22_foreign_spending_survey.csv"
+  },
+  {
+   "name": "옥포1동 기술센터(대우조선 복합업무지원단지) 입주 점포",
+   "use": "설계·엔지니어링 19곳과 사내식당(웰리브) 2곳이 한 건물 → 설계·기술직 점심 외출 축소 근거",
+   "file": "data/processed/okpo_stores.csv (지번 옥포동 1991-9)"
+  },
+  {
+   "name": "거제시 읍면동별 체류자격별 외국인 현황 (2026-10-31)",
+   "use": "타동에서 옥포로 오는 외국인의 사는 곳(동별 등록외국인 × 거리)·체류자격",
+   "file": "data/processed/okpo/21_foreign_by_dong_visa.csv"
+  },
+  {
+   "name": "옥포 상인회 인터뷰 녹취 (2026-11-27)",
+   "use": "① 저녁·주말 외국인 유입 증가 및 저소비(무소비 산책·송금) ② 한화오션 외부 설계동 사내 이전 및 사내식당 식사로 인한 평일 점심 외출 실종 ③ 외국인 비중 증가·혼성 근무로 인한 저녁 회식(주점) 수요 축소 반영",
+   "file": "docs/persona-plan.md"
   }
  ]
 }
