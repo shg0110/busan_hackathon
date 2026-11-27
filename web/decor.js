@@ -94,7 +94,8 @@ function nearRoad(x, z, extra, skip) {
   return false;
 }
 const inWater = (x, z) => D.water.some(w => inPoly(x, z, w.p));
-// 땅 높이(m): terrain.js(seohogyun-31)의 heightAt. 지형이 꺼져 있으면(TERRAIN_ON=false) 언제나 0이라 화면은 그대로다
+// 땅 높이(m): terrain.js(seohogyun-31)의 heightAt. 지형이 꺼져 있으면(TERRAIN_ON=false) 언제나 0이라 화면은 그대로다.
+// 이름표(M.labels)는 app.js placeLabels 가 땅 높이를 더하므로 여기서 더하지 않는다(땅 기준 y)
 const GH = (x, z) => (window.heightAt ? +window.heightAt(x, z) || 0 : 0);
 const inside = (x, z, m) => Math.abs(x) < HX - m && Math.abs(z) < HZ - m;
 
@@ -547,7 +548,7 @@ function schoolLabels() {
     if (!inside(z.x, z.z, 2)) continue;
     const el = document.createElement('div'); el.className = 'lbl place kid';
     el.innerHTML = '<b>어린이보호구역</b>' + (M.esc ? M.esc(z.name) : String(z.name).replace(/[<&>"]/g, ''));
-    box.appendChild(el); M.labels.push({ el, x: z.x, y: GH(z.x, z.z) + 2, z: z.z, pri: 2, kind: 'place', w: 0, h: 0 }); n++;   // pri 2: 첫 화면(멀리)에선 숨고 가까이 볼 때만(빈 층 표시와 다투지 않게)
+    box.appendChild(el); M.labels.push({ el, x: z.x, y: 2, z: z.z, pri: 2, kind: 'place', w: 0, h: 0 }); n++;   // pri 2: 첫 화면(멀리)에선 숨고 가까이 볼 때만(빈 층 표시와 다투지 않게)
   }
   return n;
 }
@@ -560,7 +561,7 @@ function edgeLabels() {
     if (px === undefined || inside(px, pz, 0) || pl.k !== 'industrial') continue;
     const t = Math.min((HX - 45) / Math.abs(px || 1), (HZ - 45) / Math.abs(pz || 1));
     const el = document.createElement('div'); el.className = 'lbl place major edge'; el.textContent = pl.n + ' 방향';
-    box.appendChild(el); M.labels.push({ el, x: px * t, y: GH(px * t, pz * t), z: pz * t, pri: 8, kind: 'place', w: 0, h: 0 }); n++;
+    box.appendChild(el); M.labels.push({ el, x: px * t, y: 0, z: pz * t, pri: 8, kind: 'place', w: 0, h: 0 }); n++;
   }
   return n;
 }
