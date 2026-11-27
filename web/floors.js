@@ -199,7 +199,8 @@ document.addEventListener('building-select', (e) => {
   for (const r of runs) {
     const el = document.createElement('div'); el.className = 'lbl place flr fl-' + r.st; el.innerHTML = `<b>${r.n0 === r.n1 ? r.n0 : r.n0 + '~' + r.n1}층</b> ${esc(r.tx)}`;
     document.getElementById('labels').appendChild(el);
-    const L = { el, x: lx, y: y00 + ((r.n0 + r.n1) / 2 - 0.5) * fh, z: lz, pri: 13, kind: 'place', w: 0, h: 0, nudge: true, abs: true };   // y 가 이미 건물 바닥(b.b, 지형 포함) 기준 M.labels.unshift(L); cutLabels.push(L);
+    const L = { el, x: lx, y: y00 + ((r.n0 + r.n1) / 2 - 0.5) * fh, z: lz, pri: 13, kind: 'place', w: 0, h: 0, nudge: true, abs: true };   // abs: y 가 이미 건물 바닥(b.b, 지형 포함) 기준
+    M.labels.unshift(L); cutLabels.push(L);
   }
   for (let n = 1; n <= b.lv; n++) {
     const f = byN[n], st = f ? (CUT_COL[f.state] ? f.state : 'other') : 'nodata';
