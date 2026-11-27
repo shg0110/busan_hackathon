@@ -12,8 +12,12 @@ const NE = EA.length;
 // 청록 계열: 파랑은 누르는 단추, 보라는 외국인 근로자 점, 주황은 빈 층, 노랑은 고른 거리, 초록은 영업 층·나무,
 // 회색은 아스팔트(바닥층)라 겹치지 않는 색. 적은 쪽은 옅게, 많은 쪽은 진하게
 const RAMP = ['#b8eef5', '#86dfea', '#4fcadb', '#1fb0c6', '#0e93a8', '#0b7285'].map(c => new THREE.Color(c));
-let mesh = null, on = true, last = '';
+let mesh = null, on = true, last = '', lastF = null, lastT = 0, wk = 1;
+// 카메라 거리에 따라 띠 폭 배율: 가까이(250m 안) 0.4, 중간(550m 안) 0.7, 멀리 1
+const widthK = () => { const d = M.camera.position.distanceTo(M.controls.target); return d < 250 ? 0.4 : d < 550 ? 0.7 : 1; };
+M.controls.addEventListener('change', () => { const k = widthK(); if (k !== wk && lastF) { wk = k; build(lastF, lastT); } });
 function build(F, t) {
+  lastF = F; lastT = t; wk = widthK();
   const h = Math.floor(t / 60) % 24, hs = [-2, -1, 0, 1, 2].map(d => (h + d + 24) % 24);   // 앞뒤 2시간
   const val = new Float32Array(NE); let mx = 0;
   for (let e = 0; e < NE; e++) { let v = 0; for (const k of hs) v += Math.min(F[k * NN + EA[e]], F[k * NN + EB[e]]); val[e] = v; if (v > mx) mx = v; }
@@ -23,7 +27,7 @@ function build(F, t) {
   for (let e = 0; e < NE; e++) {
     const v = val[e]; if (v < cap * 0.06) continue;
     const f = Math.min(1, v / cap), a = EA[e], b = EB[e], dx = NX[b] - NX[a], dz = NZ[b] - NZ[a], l = Math.hypot(dx, dz) || 1;
-    const w = 0.9 + f * 2.8, nx = -dz / l * w / 2, nz = dx / l * w / 2, y = 0.35;
+    const w = (0.9 + f * 2.8) * wk, nx = -dz / l * w / 2, nz = dx / l * w / 2, y = 0.35;
     pos.push(NX[a] + nx, y, NZ[a] + nz, NX[b] + nx, y, NZ[b] + nz, NX[a] - nx, y, NZ[a] - nz, NX[a] - nx, y, NZ[a] - nz, NX[b] + nx, y, NZ[b] + nz, NX[b] - nx, y, NZ[b] - nz);
     const x = f * (RAMP.length - 1), i = Math.min(RAMP.length - 2, Math.floor(x)), c = RAMP[i].clone().lerp(RAMP[i + 1], x - i);
     for (let k = 0; k < 6; k++) col.push(c.r, c.g, c.b);

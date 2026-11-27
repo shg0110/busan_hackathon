@@ -291,7 +291,7 @@ function streetBands(s) {
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  sBands = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true })); sBands.renderOrder = 11; scene.add(sBands);
+  sBands = new THREE.Mesh(g, (M.night >= 0.5 ? new THREE.MeshBasicMaterial({ vertexColors: true }) : new THREE.MeshLambertMaterial({ vertexColors: true }))); sBands.renderOrder = 11; scene.add(sBands);
 }
 function streetUI(on) {
   // 거리 보기에서는 길가 건물 층을 늘 모두 보여 주므로 층 칩을 잠그고, 그 이유를 칩 안에 짧게 보이게 쓴다
@@ -328,5 +328,8 @@ function choose(id) {
 tabs.onclick = (e) => { const b = e.target.closest('button'); if (b) choose(b.dataset.id); };
 const q = new URLSearchParams(location.search).get('street');
 choose(q === null ? 'light' : q);   // 기본: 거제시 공식 구간 '빛의 거리'
+// 밤에는 거리 층 띠도 제 색 그대로(floors.js 와 같게)
+document.addEventListener('map-light', (e) => { if (!sBands) return; const n = e.detail.night >= 0.5, basic = sBands.material.isMeshBasicMaterial;
+  if (n !== basic) { sBands.material.dispose(); sBands.material = n ? new THREE.MeshBasicMaterial({ vertexColors: true }) : new THREE.MeshLambertMaterial({ vertexColors: true }); need(); } });
 window.__street = { choose, get cur() { return cur; }, flowCache };
 })();
