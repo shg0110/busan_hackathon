@@ -10,7 +10,7 @@ const ST = window.STATS, STREETS = window.STREETS || [];
 // 기록지 머리: 이 지도에서 가장 센 숫자(공실률·순위)를 어느 화면에서나 한 줄로(평가 0e P0-1). 상권 전체 카드(#s-general·#s-rank)와 같은 STATS·같은 식
 if (ST && $('h-stat')) {
   const scope = (ST.scope.match(/\((.+)\)/) || [0, ST.scope])[1], h = $('h-stat');
-  h.innerHTML = `<b>${ST.general.toFixed(1)}%</b> 비어 있음<br>${scope} ${ST.of}개 상권 중 ${ST.rank}위<small>${ST.quarter} · 1층만이 아니라 건물 전체</small>`;   // 의미 단위로 줄을 나눔('1위'만 떨어지지 않게)
+  h.innerHTML = `<b>${ST.general.toFixed(1)}%</b> 비어 있음 · ${ST.quarter}<br>${scope} ${ST.of}개 상권 중 ${ST.rank}위`;   // 두 줄, 의미 단위로. 높이가 늘면 1440×900 에서 거리 요약이 아래 실험 묶음 뒤로 숨는다(평가 0e)
   h.hidden = false;
 }
 
