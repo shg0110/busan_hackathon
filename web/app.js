@@ -25,7 +25,22 @@ const C = {
 // ── 렌더러·장면 ─────────────────────────────────────────
 const canvas = document.getElementById('c');
 const SMALL = Math.min(innerWidth, innerHeight) < 720;
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+// 요약 카드(기록지)는 3D 와 상관없으니 렌더러보다 먼저 채운다 — 3D 를 못 그려도 숫자·접기 단추는 된다(seohogyun-20 제안)
+fillCard();
+const card = document.getElementById('card');
+function syncCardHeight() { document.documentElement.style.setProperty('--card-h', card.offsetHeight + 'px'); }
+window.__syncCard = syncCardHeight;
+document.getElementById('card-toggle').onclick = (e) => {
+  const c = card.classList.toggle('collapsed');
+  e.currentTarget.setAttribute('aria-expanded', String(!c)); e.currentTarget.title = c ? '펴기' : '접기';
+  syncCardHeight();
+};
+if (SMALL) { card.classList.add('collapsed'); document.getElementById('card-toggle').setAttribute('aria-expanded', 'false'); }
+// 렌더러: WebGL 이 꺼져 있거나 막혀 있으면 여기서 예외가 난다. 그때는 3D 를 만들지 않고 멈추되, 까닭을 남겨
+// shell.js 가 20초를 기다리지 않고 바로 안내를 띄우게 한다(window.__glFail, document 'map-fail' 이벤트)
+let renderer;
+try { renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' }); }
+catch (e) { window.__glFail = String((e && e.message) || e); document.dispatchEvent(new CustomEvent('map-fail', { detail: { reason: window.__glFail } })); return; }
 renderer.setPixelRatio(Math.min(devicePixelRatio, SMALL ? 1.75 : 2));
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.shadowMap.enabled = true;
@@ -751,16 +766,6 @@ function fillCard() {
   $('s-legend').innerHTML = `<span><i style="background:#d9480f"></i>${ST.label}</span>` +
     ST.compare.map((c, k) => `<span><i style="background:${cols[k]}"></i>${c.label}</span>`).join('');
 }
-fillCard();
-const card = document.getElementById('card');
-function syncCardHeight() { document.documentElement.style.setProperty('--card-h', card.offsetHeight + 'px'); }
-window.__syncCard = syncCardHeight;
-document.getElementById('card-toggle').onclick = (e) => {
-  const c = card.classList.toggle('collapsed');
-  e.currentTarget.setAttribute('aria-expanded', String(!c)); e.currentTarget.title = c ? '펴기' : '접기';
-  syncCardHeight();
-};
-if (SMALL) { card.classList.add('collapsed'); document.getElementById('card-toggle').setAttribute('aria-expanded', 'false'); }
 
 // ── 보기 설정 ─────────────────────────────────────────
 document.getElementById('L-est').onchange = (e) => paintEstimated(e.target.checked);
