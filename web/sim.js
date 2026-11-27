@@ -83,7 +83,8 @@ function nearest(x, z) {
 const TREES = new Map();
 function tree(t) {
   let T = TREES.get(t); if (T) { TREES.delete(t); TREES.set(t, T); return T; }
-  const dist = new Float32Array(NN).fill(Infinity), nxt = new Int32Array(NN).fill(-1);
+  // 거리는 64비트로: 32비트로 두면 저장할 때 반올림돼 '꺼낸 거리 > 저장된 거리'가 되어 노드를 건너뛴다(길 찾기가 출발점 근처에서 멈춤, 2026-11-27 고침)
+  const dist = new Float64Array(NN).fill(Infinity), nxt = new Int32Array(NN).fill(-1);
   const hn = [t], hd = [0]; dist[t] = 0;
   while (hn.length) {
     // 이진 힙 꺼내기
@@ -330,7 +331,7 @@ const assumed = GROUPS.filter(g => CFG.groups[g].src === '가정' || /가정/.te
   const ps = CFG.price_src || {};
   $('sim-src').innerHTML = `<ul>
     ${GROUPS.map(g => li(CFG.groups[g].ko + ` (평일 ${CFG.groups[g].wd.toLocaleString('ko-KR')}명·주말 ${CFG.groups[g].we.toLocaleString('ko-KR')}명)`, CFG.groups[g].src)).join('')}
-    ${CFG.scale ? li('규모 맞춤(모든 부류 × ' + CFG.scale.v + ')', CFG.scale.src) : ''}
+    ${CFG.scale ? li('규모 맞춤(모든 부류 × ' + CFG.scale.v + ')', CFG.scale.src) : li('규모 비교', '상권 안 하루 가게 방문(가상) 약 5,500건 ↔ 옥포1동 상권 카드 거래 환산 약 3,900건(경남빅데이터허브 2026년 9월, 카드 전체 추정 × 시뮬레이션 업종 비율). 같은 규모라 따로 맞추지 않음(행정동과 상권 경계가 달라서)')}
     ${li('교대 시간', `출근 ${sh(CFG.shift.in[0])}~${sh(CFG.shift.in[1])}, 퇴근 ${sh(CFG.shift.out[0])}~${sh(CFG.shift.out[1])} — ${CFG.shift_src || CFG.shift.src || '가정'}`)}
     ${CFG.foreignDaily ? li('외국인 하루 쓸 돈', CFG.foreignDaily.src) : ''}
     ${CATS.map(c => li(CFG.cats[c].ko + ' 1인 가격', ps[c] || `${CFG.cats[c].price.toLocaleString('ko-KR')}원 — 가정`)).join('')}
@@ -344,6 +345,7 @@ let simT = T0, playing = false, speed = 20, lastNow = 0;
 let drawDirty = true;   // 멈춰 있을 때도 시각을 옮기면 점을 다시 그려야 한다
 function seek(t) { reset(scen === 'we', 0); for (let s = T0; s <= t; s++) step(s, true); simT = t; drawDirty = true; ui(); }
 function ui() {
+  document.dispatchEvent(new CustomEvent('sim-time', { detail: { t: simT, scen } }));
   $('sim-clock').textContent = hm(simT); $('sim-range').value = Math.round(simT);
   let walk = 0, inside = 0, wait = 0, spend = 0;
   for (const a of A) { if (a.st === 1) walk++; else if (a.st === 2) inside++; else if (a.st === 3) wait++; spend += a.spent; }
@@ -510,6 +512,18 @@ function flowDay(we, set, seed = 0) {
   }
   return { tot, hour: Array.from(hour), grp };
 }
+// 유동인구 지도용: 하루 동안 길 노드마다 시간대별로 지나간 가상 인원(출발한 시각의 시간대에 센다)
+const NODEFLOW = {};
+function nodeFlow(we) {
+  const key = we ? 'we' : 'wd'; if (NODEFLOW[key]) return NODEFLOW[key];
+  reset(we, 0);
+  const F = new Float32Array(24 * NN);
+  for (let t = T0; t <= T1; t++) {
+    step(t, true);
+    for (const a of A) if (a.st === 1 && a.t0 === t && a.path) { const h = Math.floor(t / 60) % 24, base = h * NN; for (const n of a.path) F[base + n] += W; }
+  }
+  NODEFLOW[key] = F; return F;
+}
 // 빈 자리에 가게를 열었을 때 손님·매출만(비교 없이, 자리 순위용)
 function trySlot(bi, floor, cat, price, seats, runs = 3) {
   const c = CFG.cats[cat];
@@ -522,5 +536,6 @@ function trySlot(bi, floor, cat, price, seats, runs = 3) {
   removeVirtual(s);
   return r;
 }
-window.__sim = { runDay, experiment, seek, nodesNear, flowDay, trySlot, restore: () => seek(simT), won, GROUPS, get A() { return A; }, get W() { return W; }, SHOPS, CFG, nodes: NN, get t() { return simT; } };
+window.__sim = { runDay, experiment, seek, nodesNear, flowDay, trySlot, nodeFlow, restore: () => seek(simT), won, GROUPS,
+  graph: { NX, NZ, ADJ, NN }, get scen() { return scen; }, get A() { return A; }, get W() { return W; }, SHOPS, CFG, nodes: NN, get t() { return simT; } };
 })();
