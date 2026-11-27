@@ -16,3 +16,6 @@ data/raw/**/*.zip
 data/raw/**/*.shp
 # 인허가 전국 원본(수백 MB~GB): 받는 법은 docs/busan-evidence.md 6-5
 data/raw/localdata/*.csv
+
+# 상가정보 원본(시·도 파일 수십~100MB). 범위만 잘라 data/processed 에 둔다
+data/raw/sbiz/*.csv
