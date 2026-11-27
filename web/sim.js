@@ -748,7 +748,7 @@ const assumed = GROUPS.filter(g => CFG.groups[g].src === '가정' || /가정/.te
     ${li('업종 고르는 비율·머무는 시간·자리 수·걷는 속도', '가정(근거 자료 없음)')}
     ${li('가게까지 거리 감쇠 λ', '가게 고르기 무게 × e^(−거리/λ), λ = 주점 420m · 장보기 220m · 그 밖 300m — 가정(근거 자료 없음)')}
     ${li('2층 이상 가게', '1층보다 ' + CFG.upperFloor + '배 덜 고름 — 가정(근거 자료 없음). 가게 매력도는 근거 자료가 없어 모두 1')}
-    ${li('가게 앞을 지나는 사람 β = ' + PASSBY, 'β=0 으로 하루 돌린 가상 인물이 가게 앞을 지나간 인원(평일·주말 따로)이 가게들 평균의 몇 배인지를 β 제곱해 가게 고르기 무게에 곱함(0.2~5배로 자름). 손님 총수는 바꾸지 않고 어느 가게로 가는지만 바뀜. 0 이면 위치 장점 없음 — 가정')}
+    ${li('가게 앞을 지나는 사람 β = ' + PASSBY, 'β=0 으로 하루 돌린 가상 인물이 가게 앞을 지나간 인원(평일·주말 따로)이 가게들 평균의 몇 배인지를 β 제곱해 가게 고르기 무게에 곱함(0.2~5배로 자름). 가게 앞 = 가게에서 가장 가까운 길 노드 거리 + 20m(최대 40m) 안에서 가장 많이 지나간 노드. 어느 가게로 가는지만 바꾸지만 길목 가게가 차서 하루 결제가 약 0.4% 줄어듦(평일 36,113 → 36,061건). 0 이면 위치 장점 없음 — 가정')}
     ${li('영업시간', '세부 업종마다 하나씩 정한 가정 값(상가정보에 영업시간 항목이 없음). 시간 정하기에서 업종·가게마다 바꿀 수 있음')}
   </ul><p>근거: docs/okpo-persona-sources.md</p>`;
 }
@@ -981,7 +981,12 @@ function tick(now) {
 // ── 가게 앞을 지나는 사람(β) ─────────────────────────────
 // β=0 상태로 평일·주말 하루씩 돌려 길 노드마다 '지나간' 인원(출발·도착 노드 빼고)을 센다. 이 흐름은 고정(β 로 바뀐 흐름이 다시 계수를 바꾸는 순환 없음)
 // 계수 = ((가게 앞 통과 + 1) ÷ (실제 가게들 평균 + 1))^β, 0.2~5 로 자름. β=0 이면 계수가 없어(s.pb = null) 예전 계산과 똑같다
-function passbyOf(n) { if (!(PASSBY > 0) || !PASSF[0]) return null; return [0, 1].map(k => Math.min(5, Math.max(0.2, Math.pow((PASSF[k][n] + 1) / (PASS_MEAN[k] + 1), PASSBY)))); }
+// 가게 앞 길 흐름: 가장 가까운 노드 하나가 아니라, 그 거리 + 20m(최대 40m) 안 노드 중 가장 많이 지나간 값.
+// 가장 가까운 노드가 뒷길·막다른 길(지나가는 사람 0)이면 큰길에 면한 가게도 하한 0.2 에 걸렸음(빛의 거리 33채 중 7채). 기존 가게·실험 가게 똑같이
+function frontFlow(k, x, z) { const n0 = nearest(x, z), R = Math.min(40, Math.hypot(NX[n0] - x, NZ[n0] - z) + 20), F = PASSF[k], gx = Math.floor(x / GR), gz = Math.floor(z / GR), rr = Math.ceil(R / GR);
+  let m = F[n0]; for (let i = -rr; i <= rr; i++) for (let j = -rr; j <= rr; j++) { const L = GRID.get((gx + i) + ',' + (gz + j)); if (!L) continue; for (const n of L) if (F[n] > m && Math.hypot(NX[n] - x, NZ[n] - z) <= R) m = F[n]; }
+  return m; }
+function passbyAt(x, z) { if (!(PASSBY > 0) || !PASSF[0]) return null; return [0, 1].map(k => Math.min(5, Math.max(0.2, Math.pow((frontFlow(k, x, z) + 1) / (PASS_MEAN[k] + 1), PASSBY)))); }
 function buildPassby() {
   const t0 = performance.now();
   for (const s of SHOPS) s.pb = null;
@@ -990,9 +995,9 @@ function buildPassby() {
     const F = new Float32Array(NN), live = swapState(blank(false)); reset(k === 1, 0);
     for (let t = T0; t <= T1; t++) { step(t, true); for (let i = 0; i < ACTIVE.length; i++) { const a = ACTIVE[i]; if (a.st === 1 && a.t0 === t && a.path) { const p = a.path; for (let j = 1; j < p.length - 1; j++) F[p[j]] += W; } } }
     swapState(live); PASSF[k] = F;
-    const real = SHOPS.filter(s => !s.virtual); PASS_MEAN[k] = real.reduce((a, s) => a + F[s.node], 0) / (real.length || 1);
+    const real = SHOPS.filter(s => !s.virtual); PASS_MEAN[k] = real.reduce((a, s) => a + frontFlow(k, s.x, s.z), 0) / (real.length || 1);
   }
-  for (const s of SHOPS) s.pb = passbyOf(s.node);
+  for (const s of SHOPS) s.pb = passbyAt(s.x, s.z);
   PASSBY_MS = Math.round(performance.now() - t0);
 }
 buildPassby();
@@ -1013,7 +1018,7 @@ function addVirtual(bi, floor, sub, price, seats, hrs) {
   const b = MP.buildings[bi]; let cx = 0, cz = 0; for (const p of b.p) { cx += p[0]; cz += p[1]; } cx /= b.p.length; cz /= b.p.length;
   const s = { i: SHOPS.length, n: '새 가게(실험)', c: cat, sub, cs: '', x: cx, z: cz, b: bi, f: floor, node: nearest(cx, cz), ref: sb.basket,
     price, seats, open: H[0], close: H[1], stay: sb.stay, attract: 1.0 * (floor >= 2 ? CFG.upperFloor : 1), virtual: true };
-  staticWeights(s); s.pb = passbyOf(s.node); SHOPS.push(s); BYCAT[cat].push(s); SHOPNODE = null;
+  staticWeights(s); s.pb = passbyAt(cx, cz); SHOPS.push(s); BYCAT[cat].push(s); SHOPNODE = null;
   catWindows();   // 새 세부 업종이면 그 업종 보통 영업시간만큼 수요 시간이 생김(내 가게 시간으로는 넓히지 않음)
   return s;
 }
@@ -1503,6 +1508,6 @@ uiHooks.push(() => { updOcc(false); renderLive(false); });
 $('sim-play').addEventListener('click', () => { if (!playing) { updOcc(true); renderLive(true); } });   // 멈춘 순간 값으로 맞춤(재생 중엔 0.25~0.3초마다)
 updOcc(true);
 
-window.__sim = { get passby() { return { beta: PASSBY, ms: PASSBY_MS, mean: PASS_MEAN }; }, get playing() { return playing; }, get _fig() { return figMesh; }, get cfgVer() { return TS.ver; }, TS, applyTS, _catwin: CAT_WIN, hoursOf, fillHours, readHours, hoursTxt, _shops: () => SHOPS, _active: () => ACTIVE, _md: { MDX, MDZ, NX, NZ, NSW, NWD }, peakTxt, _ck: CK, runDay, experiment, seek, nodesNear, flowDay, trySlot, nodeFlow, nodeFlowAsync, restore: () => { drawDirty = true; need(); }, won, wonX, GROUPS, SUB, SUBS_OF, subOptions, NAT,
+window.__sim = { _pass: { PASSF, nearest, passbyAt, frontFlow, get mean() { return PASS_MEAN; } }, get passby() { return { beta: PASSBY, ms: PASSBY_MS, mean: PASS_MEAN }; }, get playing() { return playing; }, get _fig() { return figMesh; }, get cfgVer() { return TS.ver; }, TS, applyTS, _catwin: CAT_WIN, hoursOf, fillHours, readHours, hoursTxt, _shops: () => SHOPS, _active: () => ACTIVE, _md: { MDX, MDZ, NX, NZ, NSW, NWD }, peakTxt, _ck: CK, runDay, experiment, seek, nodesNear, flowDay, trySlot, nodeFlow, nodeFlowAsync, restore: () => { drawDirty = true; need(); }, won, wonX, GROUPS, SUB, SUBS_OF, subOptions, NAT,
   graph: { NX, NZ, ADJ, NN }, selectAgent, pickAt, occNow, get selAgent() { return curSel(); }, get scen() { return scen; }, get A() { return A; }, get W() { return W; }, SHOPS, CFG, nodes: NN, get t() { return simT; } };
 })();

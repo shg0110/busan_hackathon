@@ -24,6 +24,11 @@ const ok = (name, pass, detail) => { if (detail && detail.__err) pass = false; r
   ok('열 때 오류 0', errs.length === 0, errs);
   const pbOn = await ev(pg, () => { const S = window.__sim, SH = S._shops(); return { beta: S.passby.beta, ms: S.passby.ms, 계수있는가게: SH.filter(s => s.pb).length, 가게: SH.length }; });
   ok('기본 β 면 가게마다 계수 있음', !(pbOn.beta > 0) || pbOn.계수있는가게 === pbOn.가게, pbOn);
+  // 빛의 거리 길가 건물은 큰길에 면하므로 가게 앞 흐름 계수가 하한(0.2)에 걸리면 안 됨(예전엔 뒷길 노드를 잡아 7채가 0.2)
+  const pbSt = await ev(pg, async () => { const st = window.__street; st.choose('light'); await new Promise(r => setTimeout(r, 300)); const P = window.__sim._pass, B = window.__map.buildings;
+    const v = st.cur.slots.map(x => { const b = B[x.b]; let cx = 0, cz = 0; for (const p of b.p) { cx += p[0]; cz += p[1]; } const pb = P.passbyAt(cx / b.p.length, cz / b.p.length); return pb ? pb[0] : 1; });
+    st.choose(''); return { 건물: v.length, 하한: v.filter(x => x <= 0.2001).length, 최소: +Math.min(...v).toFixed(2), 최대: +Math.max(...v).toFixed(2) }; });
+  ok('빛의 거리 건물 가게 앞 흐름 계수가 하한에 안 걸림', pbSt.건물 > 0 && pbSt.하한 === 0, pbSt);
 
   // 2-0) 이름표(첫 화면): 보이는 이름표는 모두 자리(transform)를 받았나(목록에 안 들어간 이름표는 왼쪽 위 0,0 에 쌓임)
   const lbl = await ev(pg, () => { const L = [...document.querySelectorAll('#labels .lbl')].filter(e => !e.classList.contains('off') && e.style.visibility !== 'hidden' && getComputedStyle(e).display !== 'none');
