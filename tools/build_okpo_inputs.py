@@ -91,6 +91,23 @@ def foreigners():
     rows.sort(key=lambda r: -r[3])
     write('03_foreign_by_visa.csv', ['체류자격', '옥포1동', '옥포2동', '합계'], rows)
 
+    # 거제 18개 읍면동 전체(타동에서 옥포로 오는 외국인의 사는 곳·체류자격 배분용; 장평동 6,673명·아주동 3,241명 등)
+    skip = {'시도명', '시군구명', '구분', '총계', '데이터기준일자'}
+    long_rows = []
+    for x in read('population/경상남도_거제시_체류자격별 외국인 현황_20261031.csv'):
+        for d, v in x.items():
+            if d not in skip and int(num(v)) > 0:
+                long_rows.append((d, x['구분'], int(num(v))))
+    long_rows.sort(key=lambda r: (r[0], -r[2]))
+    write('21_foreign_by_dong_visa.csv', ['동', '체류자격', '인원'], long_rows)
+
+
+def immigrant_spending():
+    """2025 이민자체류실태: 외국인 총소득 대비 지출 비중(생활비·송금 등) — 외국인 예산·결제 배수의 근거"""
+    rows = [(x['대상'], x['조사시점'], x['항목'], num(x['값']), x['단위'])
+            for x in read('population/이민자체류실태_소득대비지출_2025.csv')]
+    write('22_foreign_spending_survey.csv', ['대상', '조사시점', '항목', '값', '단위'], rows)
+
 
 def card_sales():
     by_ind, by_age, by_org, detail = (collections.defaultdict(lambda: [0.0, 0.0]) for _ in range(4))
@@ -587,6 +604,6 @@ def national_travel_survey():
 
 if __name__ == '__main__':
     os.makedirs(OUT, exist_ok=True)
-    for step in (residents, foreigners, card_sales, vacancy, businesses, visitors,
+    for step in (residents, foreigners, immigrant_spending, card_sales, vacancy, businesses, visitors,
                  weather, facilities, shipyard, floating_and_targets, national_travel_survey):
         step()
