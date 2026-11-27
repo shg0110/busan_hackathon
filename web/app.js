@@ -11,10 +11,10 @@ THREE.ColorManagement.legacyMode = false;   // 적은 색 그대로 나오게(r1
 
 // ── 색 ───────────────────────────────────────────────
 const C = {
-  ground: '#e6e2d9', water: '#9fc2e4', green: '#cddfbf', wood: '#b6cfa6', pitch: '#d3e4c3',
-  road: '#ffffff', roadMinor: '#f9f8f5', ped: '#f3ede2', bridge: '#f2f2f2',
-  walls: ['#fbfaf8', '#f6f5f2', '#f9f8f4', '#f3f2ee', '#fdfcfa', '#f5f3ef'],
-  roof: '#cbc8c1', roofApt: '#c2bfb8',
+  ground: '#e9ebee', water: '#9cc3e6', green: '#d3e7c2', wood: '#c2dbb0', pitch: '#cfe5bf',
+  road: '#c9ced6', roadMinor: '#d8dce2', ped: '#eef0f3', bridge: '#d0d4da',
+  walls: ['#ffffff', '#fbfbfc', '#f7f8fa', '#f9fafb', '#fdfdfe', '#f4f5f7'],
+  roof: '#e3e6ea', roofApt: '#dadee3',
   est: '#f2b48f',          // 층수 추정 건물 강조
   select: '#d9480f',
 };
@@ -86,10 +86,12 @@ function clampTarget() {
   if (cx !== t.x || cz !== t.z) { camera.position.x += cx - t.x; camera.position.z += cz - t.z; t.x = cx; t.z = cz; }
 }
 controls.addEventListener('change', () => { clampTarget(); need(); });
+// 위 가운데 도움말: 처음 끌거나 누르면 사라진다(지명을 가리지 않게)
+canvas.addEventListener('pointerdown', () => { const h = document.getElementById('hint'); if (h) h.classList.add('gone'); }, { once: true });
 
 // ── 빛 ───────────────────────────────────────────────
-scene.add(new THREE.HemisphereLight('#ffffff', '#a9a294', 0.5));
-const sun = new THREE.DirectionalLight('#fff4e6', 1.15);
+scene.add(new THREE.HemisphereLight('#ffffff', '#b8bec7', 0.62));
+const sun = new THREE.DirectionalLight('#ffffff', 0.95);
 sun.position.set(-R * 0.5, R * 0.9, R * 0.35);
 sun.castShadow = true;
 sun.shadow.mapSize.set(SMALL ? 2048 : 4096, SMALL ? 2048 : 4096);
@@ -180,6 +182,15 @@ const MAJOR = new Set(['trunk', 'primary', 'secondary', 'tertiary', 'trunk_link'
 ribbonMesh(D.roads.filter(r => r.ped), 0, C.ped, 5);
 ribbonMesh(D.roads.filter(r => !r.ped && !MAJOR.has(r.k)), 0, C.roadMinor, 6);
 ribbonMesh(D.roads.filter(r => MAJOR.has(r.k)), 0, C.road, 7);
+// R-ONE 상권 경계: 땅 위 굵은 선(닫힌 고리) + 이름표
+if (D.boundary) {
+  const ring = D.boundary.concat([D.boundary[0]]);
+  const pos = []; ribbon(ring, 3.2, 0, pos);
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  const nrm = new Float32Array(pos.length); for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1; g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: '#d9480f', depthWrite: false, side: THREE.DoubleSide, transparent: true, opacity: 0.85 }));
+  m.renderOrder = 9; scene.add(m);
+}
 
 // ── 건물 ───────────────────────────────────────────────
 // 모든 건물을 한 덩어리로 합친다. triOwner[삼각형 번호] = 건물 번호 → 누른 건물 찾기.
@@ -190,9 +201,9 @@ function floorTexture() {
   const S = 64, cv = document.createElement('canvas'); cv.width = cv.height = S;
   const g = cv.getContext('2d');
   g.fillStyle = '#ffffff'; g.fillRect(0, 0, S, S);
-  g.fillStyle = '#e2e6eb'; g.fillRect(4, S * 0.18, S * 0.74, S * 0.52);    // 창(윗부분이 v 큰 쪽 → 캔버스 위쪽)
-  g.fillStyle = '#d6dadf'; g.fillRect(4, S * 0.18, S * 0.74, 3);
-  g.fillStyle = '#e4e1db'; g.fillRect(0, S - 5, S, 5);                     // 층 사이 슬래브(v=0 쪽)
+  g.fillStyle = '#edf0f4'; g.fillRect(5, S * 0.2, S * 0.7, S * 0.5);      // 창(윗부분이 v 큰 쪽 → 캔버스 위쪽)
+  g.fillStyle = '#e4e8ed'; g.fillRect(5, S * 0.2, S * 0.7, 2);
+  g.fillStyle = '#eef0f2'; g.fillRect(0, S - 4, S, 4);                     // 층 사이 슬래브(v=0 쪽)
   const t = new THREE.CanvasTexture(cv);
   t.wrapS = t.wrapT = THREE.RepeatWrapping; t.encoding = THREE.sRGBEncoding;
   t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
@@ -213,8 +224,8 @@ B.forEach((b, bi) => {
   const y0 = b.b || 0, y1 = y0 + b.h;
   const start = bPos.length / 3;
   const wc = wallCols[b.c % wallCols.length];
-  // 벽: 위로 갈수록 아주 조금 밝게(아래는 땅 반사로 어둡게 보이는 느낌)
-  const wallTop = wc, wallBot = tmpC.copy(wc).multiplyScalar(0.94).clone();
+  // 벽: 아래 3m 는 바닥 그늘(땅에 붙어 보이게), 그 위는 고른 색
+  const wallBot = tmpC.copy(wc).multiplyScalar(0.8).clone();
   const fh = b.k === 'roof' ? 99 : (b.h - 0.6) / b.lv;   // 층고(지붕만 있는 구조물은 무늬 없음)
   const v1 = b.k === 'roof' ? 0.15 : (y1 - y0 - 0.6) / fh + 0.0;
   let run = 0;
@@ -224,13 +235,21 @@ B.forEach((b, bi) => {
     if (l < 0.05) continue;
     const n = [-dz / l, 0, dx / l];
     const A = [a[0], y0, a[1]], Bv = [c2[0], y0, c2[1]], Cv = [c2[0], y1, c2[1]], Dv = [a[0], y1, a[1]];
-    bPos.push(...A, ...Bv, ...Cv, ...A, ...Cv, ...Dv);
     const u0 = run / 3.6, u1 = (run + l) / 3.6; run += l;     // 창 간격 3.6m
-    // 벽 위 0.6m(난간)는 v 가 층 수를 넘어 흰 칸으로 가도록 그대로 둔다
-    bUv.push(u0, 0, u1, 0, u1, v1 + 0.6 / fh, u0, 0, u1, v1 + 0.6 / fh, u0, v1 + 0.6 / fh);
+    const vTop = v1 + 0.6 / fh;                               // 벽 위 0.6m(난간)는 v 가 층 수를 넘어 흰 칸
+    const yAO = Math.min(y1, y0 + 3), vAO = (yAO - y0) / fh;
+    const E2 = [c2[0], yAO, c2[1]], F2 = [a[0], yAO, a[1]];
+    bPos.push(...A, ...Bv, ...E2, ...A, ...E2, ...F2);         // 아래 띠(그늘)
+    bUv.push(u0, 0, u1, 0, u1, vAO, u0, 0, u1, vAO, u0, vAO);
     for (let k = 0; k < 6; k++) bNrm.push(...n);
-    for (const cc of [wallBot, wallBot, wallTop, wallBot, wallTop, wallTop]) bCol.push(cc.r, cc.g, cc.b);
+    for (const cc of [wallBot, wallBot, wc, wallBot, wc, wc]) bCol.push(cc.r, cc.g, cc.b);
     triOwner.push(bi, bi);
+    if (y1 > yAO + 0.01) {
+      bPos.push(...F2, ...E2, ...Cv, ...F2, ...Cv, ...Dv);
+      bUv.push(u0, vAO, u1, vAO, u1, vTop, u0, vAO, u1, vTop, u0, vTop);
+      for (let k = 0; k < 6; k++) { bNrm.push(...n); bCol.push(wc.r, wc.g, wc.b); }
+      triOwner.push(bi, bi);
+    }
   }
   // 지붕
   const v2 = p.map(q => new THREE.Vector2(q[0], q[1]));
@@ -263,7 +282,7 @@ scene.add(bMesh);
     for (let i = 0; i < b.p.length; i++) { const a = b.p[i], c = b.p[(i + 1) % b.p.length]; lp.push(a[0], y, a[1], c[0], y, c[1]); }
   }
   const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3));
-  const lines = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: '#b9b2a5', transparent: true, opacity: 0.55 }));
+  const lines = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: '#b4bac3', transparent: true, opacity: 0.6 }));
   lines.renderOrder = 11; scene.add(lines);
 }
 
@@ -294,19 +313,21 @@ function select(bi) {
 const info = document.getElementById('info');
 const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 function showInfo(b) {
-  document.getElementById('i-title').textContent = b.n || b.ko;
+  document.getElementById('i-title').textContent = b.n || (b.jibun ? b.jibun.replace('거제시 ', '') : b.ko);
   const lvTag = b.real ? '<span class="tag ok">확인</span>' : '<span class="tag est">추정</span>';
+  const SRC = { vworld: '국토교통부 GIS건물통합정보', osm: 'OpenStreetMap', ml: 'Overture Maps(위성 인식)' };
   const rows = [
-    ['종류', esc(b.ko)],
+    ['용도', esc(b.ko)],
     ['층수', `지상 ${b.lv}층${lvTag}`],
-    ['높이', `약 ${Math.round(b.h)}m`],
+    b.appr ? ['사용승인', esc(b.appr.slice(0, 4)) + '년'] : null,
     ['바닥 넓이', `약 ${b.a.toLocaleString('ko-KR')}㎡`],
-    ['자료', b.src === 'osm' ? 'OpenStreetMap' : 'Overture Maps(위성 인식)'],
-  ];
+    ['자료', SRC[b.src] || b.src],
+  ].filter(Boolean);
   const note = b.real ? '' :
     '<p class="note">이 건물은 원자료에 층수가 없어 바닥 넓이로 짐작한 높이입니다.</p>';
+  const extra = window.__map && window.__map.infoExtra ? window.__map.infoExtra(b, selIdx) : '';
   document.getElementById('i-body').innerHTML =
-    `<dl class="rows">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>${note}`;
+    extra + `<dl class="rows">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>${note}`;
   info.hidden = false;
 }
 document.getElementById('i-close').onclick = () => select(-1);
@@ -342,11 +363,16 @@ for (const r of D.road_labels) {
   const el = document.createElement('div');
   el.className = 'lbl road'; el.textContent = r.n;
   labelBox.appendChild(el);
-  labels.push({ el, x: r.x, y: 1, z: r.z, pri: MAJOR.has(r.k) ? 4 : 1, kind: 'road', w: 0, h: 0 });
+  labels.push({ el, x: r.x, y: 1, z: r.z, a: r.a, pri: MAJOR.has(r.k) ? 4 : 1, kind: 'road', w: 0, h: 0 });
+}
+if (D.boundary) {
+  const top = D.boundary.reduce((m, p) => p[1] < m[1] ? p : m, D.boundary[0]);
+  const el = document.createElement('div'); el.className = 'lbl place zone'; el.textContent = 'R-ONE 거제옥포 상권';
+  labelBox.appendChild(el); labels.push({ el, x: top[0], y: 2, z: top[1] - 25, pri: 10, kind: 'place', w: 0, h: 0 });
 }
 labels.sort((a, b) => b.pri - a.pri);
 const show = { place: true, road: true };
-const _v = new THREE.Vector3();
+const _v = new THREE.Vector3(), _w = new THREE.Vector3();
 function placeLabels() {
   const W = canvas.clientWidth, H = canvas.clientHeight, taken = [];
   const dist = camera.position.distanceTo(controls.target);
@@ -361,7 +387,13 @@ function placeLabels() {
     if (taken.some(t => box[0] < t[2] && box[2] > t[0] && box[1] < t[3] && box[3] > t[1])) { L.el.classList.add('off'); continue; }
     taken.push(box);
     L.el.classList.remove('off');
-    L.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
+    let rot = 0;
+    if (L.kind === 'road') {   // 길 방향을 화면에 투영해 글자를 그 방향으로(거꾸로 서지 않게 ±90° 안으로)
+      _w.set(L.x + Math.cos(L.a) * 8, L.y, L.z + Math.sin(L.a) * 8).project(camera);
+      rot = Math.atan2(-(_w.y - _v.y) * H, (_w.x - _v.x) * W) * 180 / Math.PI;
+      if (rot > 90) rot -= 180; else if (rot < -90) rot += 180;
+    }
+    L.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)` + (rot ? ` rotate(${rot.toFixed(1)}deg)` : '');
   }
 }
 
@@ -403,6 +435,7 @@ function fillCard() {
 fillCard();
 const card = document.getElementById('card');
 function syncCardHeight() { document.documentElement.style.setProperty('--card-h', card.offsetHeight + 'px'); }
+window.__syncCard = syncCardHeight;
 document.getElementById('card-toggle').onclick = (e) => {
   const c = card.classList.toggle('collapsed');
   e.currentTarget.setAttribute('aria-expanded', String(!c)); e.currentTarget.title = c ? '펴기' : '접기';
@@ -466,5 +499,7 @@ requestAnimationFrame(() => requestAnimationFrame(() => {
 }));
 
 // 점검용(자동 시험이 읽음)
-window.__map = { select, buildings: B, camera, controls, HOME, labels, need, orbit, get selected() { return selIdx; } };
+window.__map = { select, buildings: B, camera, controls, HOME, labels, need, orbit, scene, renderer, R, esc,
+  get selected() { return selIdx; }, infoExtra: null };
+document.dispatchEvent(new Event('map-ready'));
 })();
