@@ -132,9 +132,17 @@ for st in STREETS:
                           side=side, odd=(side_by_b[i].most_common(1)[0][0] == 1) if i in side_by_b else None,
                           st=state, use=', '.join(f1['uses']) if f1 else (b.get('ko') or ''), area=f1['area'] if f1 else None,
                           shops=shops, lv=b['lv']))
-    # 홀짝으로 옆 확인: 같은 쪽 건물은 홀짝이 같아야 한다
+    # 홀짝으로 옆 확인: 같은 쪽 건물은 홀짝이 같아야 한다(기하로 정한 좌우와 주소 홀짝이 얼마나 맞는지)
     agree = sum(1 for x in slots if x['odd'] is not None and ((x['side'] == 'L') == x['odd']))
     known = sum(1 for x in slots if x['odd'] is not None)
+    # 주소 홀짝이 있는 건물은 주소를 믿는다(길이 꺾이는 구간에서 기하 좌우가 뒤집히는 것을 막음). 다수결로 '홀수 = 왼쪽/오른쪽'을 정한다
+    odd_left = agree >= known - agree
+    fixed = 0
+    for x in slots:
+        if x['odd'] is not None:
+            side = 'L' if (x['odd'] == odd_left) else 'R'
+            if side != x['side']:
+                x['side'] = side; fixed += 1
     slots.sort(key=lambda x: (x['side'], x['s']))
     cnt = {k: sum(1 for x in slots if x['st'] == k) for k in ('open', 'empty', 'unknown', 'home', 'other', 'nodata')}
     # 건물 전체(모든 상가 층) 기준 — 사용자 기준 "1층만 보지 말고 건물 전체"
@@ -149,8 +157,8 @@ for st in STREETS:
                  empty_area=W_['empty_area'], open_area=W_['open_area'])
     out.append(dict(id=st['id'], ko=st['ko'], note=st['note'], len=round(line.length), stores=len(pts),
                     p=[[round(x, 1), round(z, 1)] for x, z in line.coords], slots=slots, count=cnt, whole=whole,
-                    sideCheck=dict(agree=agree, known=known)))
-    print(f"{st['ko']}: {round(line.length)}m, 주소 가게 {len(pts)}, 길가 건물 {len(slots)}, 1층 {cnt}, 건물 전체 {whole}, 홀짝-좌우 일치 {max(agree, known - agree)}/{known}")
+                    sideCheck=dict(agree=max(agree, known - agree), known=known, fixed=fixed, oddLeft=odd_left)))
+    print(f"{st['ko']}: {round(line.length)}m, 주소 가게 {len(pts)}, 길가 건물 {len(slots)}, 1층 {cnt}, 건물 전체 {whole}, 홀짝-좌우 일치 {max(agree, known - agree)}/{known}, 주소로 고친 칸 {fixed}")
 
 dst = os.path.join(ROOT, 'web', 'data', f'{NAME}_street.js')
 with open(dst, 'w', encoding='utf-8') as f:

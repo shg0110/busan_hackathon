@@ -9,7 +9,7 @@ const { scene, need } = M, { NX, NZ, ADJ, NN } = SIM.graph;
 const EA = [], EB = [];
 for (let a = 0; a < NN; a++) { const A = ADJ[a]; for (let j = 0; j < A.length; j += 2) { const b = A[j]; if (b > a) { EA.push(a); EB.push(b); } } }
 const NE = EA.length;
-const RAMP = ['#a9c8ff', '#6fa2ff', '#3f7cf5', '#1c5fe0', '#123fae', '#0b2a7a'].map(c => new THREE.Color(c));
+const RAMP = ['#b8cdf2', '#8fb0ea', '#6690df', '#3f6fcf', '#2a54a8', '#1d3c7c'].map(c => new THREE.Color(c));
 let mesh = null, on = true, last = '';
 function build(F, t) {
   const h = Math.floor(t / 60) % 24, hs = [-2, -1, 0, 1, 2].map(d => (h + d + 24) % 24);   // 앞뒤 2시간
@@ -21,14 +21,14 @@ function build(F, t) {
   for (let e = 0; e < NE; e++) {
     const v = val[e]; if (v < cap * 0.06) continue;
     const f = Math.min(1, v / cap), a = EA[e], b = EB[e], dx = NX[b] - NX[a], dz = NZ[b] - NZ[a], l = Math.hypot(dx, dz) || 1;
-    const w = 2 + f * 8, nx = -dz / l * w / 2, nz = dx / l * w / 2, y = 0.35;
+    const w = 1.2 + f * 3.6, nx = -dz / l * w / 2, nz = dx / l * w / 2, y = 0.35;
     pos.push(NX[a] + nx, y, NZ[a] + nz, NX[b] + nx, y, NZ[b] + nz, NX[a] - nx, y, NZ[a] - nz, NX[a] - nx, y, NZ[a] - nz, NX[b] + nx, y, NZ[b] + nz, NX[b] - nx, y, NZ[b] - nz);
     const x = f * (RAMP.length - 1), i = Math.min(RAMP.length - 2, Math.floor(x)), c = RAMP[i].clone().lerp(RAMP[i + 1], x - i);
     for (let k = 0; k < 6; k++) col.push(c.r, c.g, c.b);
   }
   if (mesh) { scene.remove(mesh); mesh.geometry.dispose(); }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.92, depthWrite: false, side: THREE.DoubleSide }));
+  mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide }));
   mesh.renderOrder = 9.5; mesh.visible = on; scene.add(mesh);
   const total = Math.round(sorted.reduce((a, b) => a + b, 0) / 1000) * 1000;
   legend.querySelector('.fl-cap').textContent = `${String(h).padStart(2, '0')}시 앞뒤 2시간 · 가장 붐비는 길 약 ${Math.round(cap).toLocaleString('ko-KR')}명 지나감`;

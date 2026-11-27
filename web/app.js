@@ -11,11 +11,12 @@ THREE.ColorManagement.legacyMode = false;   // 적은 색 그대로 나오게(r1
 
 // ── 색 ───────────────────────────────────────────────
 const C = {
-  ground: '#e9ebee', water: '#9cc3e6', green: '#d3e7c2', wood: '#c2dbb0', pitch: '#cfe5bf',
-  road: '#c9ced6', roadMinor: '#d8dce2', ped: '#eef0f3', bridge: '#d0d4da',
-  walls: ['#ffffff', '#fbfbfc', '#f7f8fa', '#f9fafb', '#fdfdfe', '#f4f5f7'],
-  roof: '#e3e6ea', roofApt: '#dadee3',
-  est: '#f2b48f',          // 층수 추정 건물 강조
+  ground: '#e4e7eb', water: '#94bde3', green: '#cfe3bd', wood: '#bcd6a9', pitch: '#cbe1ba',
+  road: '#bfc5cd', roadMinor: '#cdd2d9', ped: '#eceef1', bridge: '#c6ccd3',
+  // 대구처럼 옅은 회색 건물(순백이면 지붕·벽이 날아가 윤곽이 흐림). 건물마다 아주 조금씩 다르게
+  walls: ['#e9ecef', '#e4e7eb', '#eceef1', '#e6e9ed', '#efeff1', '#e2e5e9'],
+  roof: '#d3d7dc', roofApt: '#cbd0d6',
+  est: '#f1dcc8',          // 층수 추정 건물 강조(은은하게)
   select: '#fcc419',
 };
 
@@ -90,8 +91,9 @@ controls.addEventListener('change', () => { clampTarget(); need(); });
 canvas.addEventListener('pointerdown', () => { const h = document.getElementById('hint'); if (h) h.classList.add('gone'); }, { once: true });
 
 // ── 빛 ───────────────────────────────────────────────
-scene.add(new THREE.HemisphereLight('#ffffff', '#b8bec7', 0.62));
-const sun = new THREE.DirectionalLight('#ffffff', 0.95);
+// 빛: 위를 향한 면(지붕·땅)이 정한 색 그대로 나오도록(합이 약 1). 너무 세면 지붕·땅이 하얗게 잘린다
+scene.add(new THREE.HemisphereLight('#ffffff', '#9aa3ad', 0.47));
+const sun = new THREE.DirectionalLight('#ffffff', 0.68);
 sun.position.set(-R * 0.5, R * 0.9, R * 0.35);
 sun.castShadow = true;
 sun.shadow.mapSize.set(SMALL ? 2048 : 4096, SMALL ? 2048 : 4096);
@@ -201,9 +203,9 @@ function floorTexture() {
   const S = 64, cv = document.createElement('canvas'); cv.width = cv.height = S;
   const g = cv.getContext('2d');
   g.fillStyle = '#ffffff'; g.fillRect(0, 0, S, S);
-  g.fillStyle = '#edf0f4'; g.fillRect(5, S * 0.2, S * 0.7, S * 0.5);      // 창(윗부분이 v 큰 쪽 → 캔버스 위쪽)
-  g.fillStyle = '#e4e8ed'; g.fillRect(5, S * 0.2, S * 0.7, 2);
-  g.fillStyle = '#eef0f2'; g.fillRect(0, S - 4, S, 4);                     // 층 사이 슬래브(v=0 쪽)
+  g.fillStyle = '#d9dee5'; g.fillRect(6, S * 0.22, S * 0.68, S * 0.46);   // 창(윗부분이 v 큰 쪽 → 캔버스 위쪽)
+  g.fillStyle = '#c9d0d8'; g.fillRect(6, S * 0.22, S * 0.68, 2);
+  g.fillStyle = '#f2f3f5'; g.fillRect(0, S - 4, S, 4);                     // 층 사이 슬래브(v=0 쪽)
   const t = new THREE.CanvasTexture(cv);
   t.wrapS = t.wrapT = THREE.RepeatWrapping; t.encoding = THREE.sRGBEncoding;
   t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
@@ -225,7 +227,7 @@ B.forEach((b, bi) => {
   const start = bPos.length / 3;
   const wc = wallCols[b.c % wallCols.length];
   // 벽: 아래 3m 는 바닥 그늘(땅에 붙어 보이게), 그 위는 고른 색
-  const wallBot = tmpC.copy(wc).multiplyScalar(0.8).clone();
+  const wallBot = tmpC.copy(wc).multiplyScalar(0.78).clone();
   const fh = b.k === 'roof' ? 99 : (b.h - 0.6) / b.lv;   // 층고(지붕만 있는 구조물은 무늬 없음)
   const v1 = b.k === 'roof' ? 0.15 : (y1 - y0 - 0.6) / fh + 0.0;
   let run = 0;
@@ -282,7 +284,7 @@ scene.add(bMesh);
     for (let i = 0; i < b.p.length; i++) { const a = b.p[i], c = b.p[(i + 1) % b.p.length]; lp.push(a[0], y, a[1], c[0], y, c[1]); }
   }
   const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3));
-  const lines = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: '#b4bac3', transparent: true, opacity: 0.6 }));
+  const lines = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: '#9aa2ac', transparent: true, opacity: 0.55 }));
   lines.renderOrder = 11; scene.add(lines);
 }
 
@@ -295,9 +297,9 @@ function paintEstimated(on) {
   const arr = colAttr.array, est = new THREE.Color(C.est);
   arr.set(baseCol);
   if (keepSet) {
-    const g = [0.93, 0.94, 0.95];
+    const g = [0.9, 0.91, 0.925];   // 거리 밖 건물: 옅은 회색 쪽으로 조금만(하얗게 날리지 않게)
     B.forEach((b, bi) => { if (keepSet.has(bi)) return; const [s0, e0] = bRange[bi];
-      for (let v = s0; v < e0; v++) for (let k = 0; k < 3; k++) arr[v * 3 + k] = arr[v * 3 + k] * 0.35 + g[k] * 0.65; });
+      for (let v = s0; v < e0; v++) for (let k = 0; k < 3; k++) arr[v * 3 + k] = arr[v * 3 + k] * 0.55 + g[k] * 0.45; });
   }
   if (on) B.forEach((b, bi) => { if (!b.real) { const [s, e] = bRange[bi]; for (let v = s; v < e; v++) { arr[v * 3] = est.r; arr[v * 3 + 1] = est.g; arr[v * 3 + 2] = est.b; } } });
   colAttr.needsUpdate = true; need();

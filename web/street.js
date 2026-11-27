@@ -22,14 +22,18 @@ let band = null;
 function drawBand(p) {
   if (band) { scene.remove(band); band.geometry.dispose(); band = null; }
   if (!p) return;
+  // 가게 위치로 만든 중심선은 조금 지그재그라 두 번 부드럽게(Chaikin) 다듬은 뒤 가는 선(폭 1.6m)으로
+  let q = p.map(v => v.slice());
+  for (let k = 0; k < 3; k++) { const r = [q[0]]; for (let i = 0; i < q.length - 1; i++) { const [ax, az] = q[i], [bx, bz] = q[i + 1];
+    r.push([ax * 0.75 + bx * 0.25, az * 0.75 + bz * 0.25], [ax * 0.25 + bx * 0.75, az * 0.25 + bz * 0.75]); } r.push(q[q.length - 1]); q = r; }
   const pos = [];
-  for (let i = 0; i < p.length - 1; i++) {
-    const [ax, az] = p[i], [bx, bz] = p[i + 1], dx = bx - ax, dz = bz - az, l = Math.hypot(dx, dz) || 1, nx = -dz / l * 9, nz = dx / l * 9;
+  for (let i = 0; i < q.length - 1; i++) {
+    const [ax, az] = q[i], [bx, bz] = q[i + 1], dx = bx - ax, dz = bz - az, l = Math.hypot(dx, dz) || 1, nx = -dz / l * 0.7, nz = dx / l * 0.7;
     pos.push(ax + nx, 0, az + nz, bx + nx, 0, bz + nz, ax - nx, 0, az - nz, ax - nx, 0, az - nz, bx + nx, 0, bz + nz, bx - nx, 0, bz - nz);
   }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  band = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: '#ffe066', transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide }));
-  band.renderOrder = 8; scene.add(band);
+  band = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: '#343a40', transparent: true, opacity: 0.75, depthWrite: false, side: THREE.DoubleSide }));
+  band.renderOrder = 9.6; scene.add(band);
 }
 function fly(toT, toC, dur = 900) {
   const cam = M.camera, ctl = M.controls, t0 = performance.now(), fC = cam.position.clone(), fT = ctl.target.clone();
@@ -67,7 +71,7 @@ function strip(s) {
     }
     return r;
   };
-  const lab = (sd) => { const o = s.slots.find(x => x.side === sd && x.odd != null); return o ? (o.odd ? '홀수 번지' : '짝수 번지') : ''; };
+  const lab = (sd) => { const oddL = s.sideCheck.oddLeft; return (sd === 'L') === oddL ? '홀수 번지' : '짝수 번지'; };
   return `<svg class="strip" viewBox="0 0 ${W} ${H}" role="img" aria-label="거리 양쪽 건물 층별 입면도">
     <text x="2" y="9" class="t">${lab('L')} 쪽 ↑ 위층</text>
     ${s.slots.filter(x => x.side === 'L').map(x => cell(x, 'L')).join('')}
@@ -89,7 +93,7 @@ function render(s) {
     </div>
     <p class="st-sub">길 양쪽 건물, 층마다 <span class="lgd">${['open', 'empty', 'unknown', 'home', 'other', 'nodata'].map(k => `<i style="background:${COL[k]}"></i>${KO[k]}`).join(' ')}</span></p>
     ${strip(s)}
-    <p class="st-tip">상가 층 ${w.floors}개 중 영업 ${w.open} · 가게 없음 ${w.empty} · 확인 불가 ${w.unknown}. 1층만 보면 가게 없음 ${c.empty}곳. 칸을 누르면 그 건물로 갑니다. 판정: 건축물대장 층별개요 × 상가정보(2026-09). 길 양쪽은 건물번호 홀짝으로 확인(${s.sideCheck.known}곳 중 ${Math.max(s.sideCheck.agree, s.sideCheck.known - s.sideCheck.agree)}곳 일치).</p>
+    <p class="st-tip">상가 층 ${w.floors}개 중 영업 ${w.open} · 가게 없음 ${w.empty} · 확인 불가 ${w.unknown}. 1층만 보면 가게 없음 ${c.empty}곳. 칸을 누르면 그 건물로 갑니다. 판정: 건축물대장 층별개요 × 상가정보(2026-09). 길 양쪽은 주소 건물번호 홀짝 기준(위치로 정한 좌우와 ${s.sideCheck.known}곳 중 ${s.sideCheck.agree}곳 일치${s.sideCheck.fixed ? `, 어긋난 ${s.sideCheck.fixed}곳은 주소를 따름` : ''}).</p>
     <p class="st-sub">이 거리를 지나간 가상 손님 <span class="lgd" id="fl-lg"></span></p>
     <div id="st-flow"><p class="exp-wait">계산 중…</p></div>
     <p class="st-sub">가게 없는 층 자리 순위</p>
