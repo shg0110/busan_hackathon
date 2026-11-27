@@ -1,0 +1,6 @@
+데이터명: 경상남도_주요 관광지 월별 관광객 및 화제어데이터 (공공데이터포털 15095836, Open API)
+제공기관: 경상남도
+URL: https://apis.data.go.kr/6480000/gnMainTrrsrtMnbyTuristNdKwrdDataService/getgnMainTrrsrtMnbyTuristNdKwrdData
+받은 날짜: 2026-11-27
+범위: 전체 2,856행 중 시군=거제시 408행(34개 관광지 × 2020년 1~12월). API 전체가 2020년 값뿐이다(수정일 2026-10-14 이지만 최신 연도 없음).
+비고: 화제어(키워드) 열은 뺐다. 옥포대첩기념공원 2020년 60,529명. 2022~2025년 값은 관광지식정보시스템(docs/okpo-persona-sources.md 3-3).

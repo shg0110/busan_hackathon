@@ -1,6 +1,5 @@
 """NEIS 교육정보 개방포털에서 옥포 구역 근처 학교의 학사일정(방학·개학)과 요일별 교시 수를 받는다.
 
-- 인증키 없이 호출한다(키가 없으면 한 번에 5건까지만 주므로 쪽을 넘기며 받는다).
 - 결과: data/raw/geoje/school/
     schools.csv            학교 목록
     schedule_events.csv    방학·개학·방학식·종업식·졸업식 같은 행사일
@@ -27,7 +26,7 @@ YEAR = '2026'
 
 
 def get(service, **q):
-    """(전체 건수, 앞 5건)을 돌려준다. 키가 없으면 pIndex 가 무시되어 늘 앞 5건만 온다."""
+    """(전체 건수, 행 목록)을 돌려준다."""
     params = {'Type': 'json', 'pIndex': 1, 'pSize': 5, 'ATPT_OFCDC_SC_CODE': OFFICE, **q}
     url = BASE + service + '?' + urllib.parse.urlencode(params)
     for attempt in range(4):
@@ -104,5 +103,5 @@ if __name__ == '__main__':
     schedule()
     periods()
     with open(os.path.join(OUT, 'SOURCE.txt'), 'w', encoding='utf-8') as f:
-        f.write('출처: NEIS 교육정보 개방포털 (https://open.neis.go.kr) 학교기본정보·학사일정·시간표 API, 인증키 없이 호출\n'
+        f.write('출처: NEIS 교육정보 개방포털 (https://open.neis.go.kr) 학교기본정보·학사일정·시간표 API\n'
                 f'받은 날짜: {datetime.date.today()}\n')
