@@ -1,5 +1,5 @@
 /* 바닥층: 도로 포장·인도·연석·중앙선·차선·횡단보도·정지선·주차장·골목 가장자리선 — decor.js 다음에 불러온다.
-   (decor.js 에 있던 바닥 표시를 옮겨 와 색 위계를 다시 잡았다. 2026-11-27, seohogyun-31)
+   (decor.js 에 있던 바닥 표시를 옮겨 와 색 위계를 다시 잡았다. 2026-11-27, 세션 31)
    자료: window.MAP_DATA(roads·parking·buildings, tools/map_build.py). 그릴 곳: window.__map.scene.
    좌표: x = 동쪽(m), z = 남쪽(m), y = 위.
 
@@ -35,7 +35,7 @@ const G = {
   parking: '#9da2a9', stall: '#f4f4f2',
   edge: '#848b94',                               // 골목 가장자리선
   // 녹지·물 바닥(app.js 가 그림, #55 연결점으로 색만 바꿈): 차분한 잎(#4e7c45~#77a465, decor.js)과 같은 계열로 채도를 낮춤
-  // 잔디(green)는 11월 말답게 아주 조금 누렇게(seohogyun-20 #86 나무 계절감과 맞춤). 인조잔디(pitch)·숲 바닥(wood)은 그대로
+  // 잔디(green)는 11월 말답게 아주 조금 누렇게(세션 20 #86 나무 계절감과 맞춤). 인조잔디(pitch)·숲 바닥(wood)은 그대로
   wood: '#a8bc95', green: '#c4cca4', pitch: '#b9cda3', water: '#9cbfdc',
 };
 const MAJOR = new Set(['trunk', 'primary', 'secondary', 'tertiary']);
@@ -45,7 +45,7 @@ const VEHICLE_SKIP = new Set(['service', 'footway', 'path', 'steps', 'cycleway',
 const WALK_W = 2.5;            // 인도 폭(m)
 const JUNC_CLEAR = 15;         // 교차로 앞뒤로 중앙선·차선을 비우는 길이(m)
 
-// ── 지형(terrain.js, seohogyun-31): 켜져 있으면 모든 바닥 층을 땅 높이에 붙인다. 꺼져 있으면 아래는 모두 그대로(높이 0) ──
+// ── 지형(terrain.js, 세션 31): 켜져 있으면 모든 바닥 층을 땅 높이에 붙인다. 꺼져 있으면 아래는 모두 그대로(높이 0) ──
 const TON = !!window.TERRAIN_ON, TH = (typeof window.heightAt === 'function') ? window.heightAt : () => 0;
 const LIFT = 0.2;   // 지형 면 위로 띄우는 높이. 0.05 였을 때 8m 로 나눈 차도 면이 6m 지형 격자의 오목한 곳에서 땅 밑으로 들어가 보도블록이 차도를 가로질러 보였다(11-27)
 // 삼각형을 가장 긴 변의 가운데에서 둘로 나누기를 되풀이해 모든 변이 maxE 이하가 되게(감는 방향 유지). 6m 지형 격자 위에서 긴 삼각형이 땅을 뚫거나 뜨지 않게
@@ -663,7 +663,7 @@ if (D.parking && D.parking.length) {
     out.push(A[0], yy, A[1], B[0], yy, B[1], C[0], yy, C[1], A[0], yy, A[1], C[0], yy, C[1], D[0], yy, D[1]);
   };
   for (const c of CW) {
-    // 건너는 길이는 지금 그려진 차도 폭(roadcal.js 가 바꿨으면 그 폭). seohogyun-20 보행 신호등도 c.span 을 쓰므로 여기서 맞춰 둔다
+    // 건너는 길이는 지금 그려진 차도 폭(roadcal.js 가 바꿨으면 그 폭). 세션 20 보행 신호등도 c.span 을 쓰므로 여기서 맞춰 둔다
     if (D.roads[c.ri] && D.roads[c.ri].w) c.span = D.roads[c.ri].w;
     const ax = c.dx, az = c.dz, nx = -az, nz = ax, half = (c.span || 12) / 2 - 0.3, hl = (c.w || 4) / 2;
     for (let o = -half + 0.25; o <= half - 0.25 + 1e-6; o += 1.0) rect(c.x + nx * o, c.z + nz * o, ax, az, nx, nz, hl, 0.25, y, pos);
@@ -830,7 +830,7 @@ if (M.water && M.water.material) M.water.material.color.set(G.water);
 
 // 버스 정류장 노면 상자·가로수 보호판은 규칙으로 놓은 것이라 지웠다(11-27 "실제 자료가 아닌 거는 없애자")
 
-// ── 정류장 점자블록(실제 자료: OSM 정류장 tactile_paving=yes, seohogyun-20 이 load 뒤 window.__decor.spots.busTactile = [{ x, z, ri }]) ──
+// ── 정류장 점자블록(실제 자료: OSM 정류장 tactile_paving=yes, 세션 20 이 load 뒤 window.__decor.spots.busTactile = [{ x, z, ri }]) ──
 // 점자블록이 '있다'는 것만 자료다. 크기·모양은 일반형(정류장 쪽 연석 바로 뒤 인도에 길 방향 2m × 0.6m 점형 블록)으로 그린다
 function busTactile() {
   const B = (window.__decor && window.__decor.spots && window.__decor.spots.busTactile) || [];
@@ -855,7 +855,7 @@ function busTactile() {
 }
 if (document.readyState === 'complete') setTimeout(busTactile, 0); else addEventListener('load', () => setTimeout(busTactile, 0));   // decor.js 의 load 처리 다음
 
-// ── 사진 바닥(정사영상, seohogyun-20 이 만드는 data/okpo_ortho.js → window.ORTHO = { img, src, year }): ?ground=photo 또는 __map.setGroundPhoto(true) ──
+// ── 사진 바닥(정사영상, 세션 20 이 만드는 data/okpo_ortho.js → window.ORTHO = { img, src, year }): ?ground=photo 또는 __map.setGroundPhoto(true) ──
 // 지형 면 그림을 사진으로 바꾸고, 사진에 이미 있는 길·인도·연석·노면 표시·물거품은 숨긴다(사진과 OSM 선이 어긋나 겹쳐 보이지 않게). 건물·이름표·흐름 띠는 그대로.
 // 사진은 지형 격자 범위(x0 ~ x0+(nx-1)·cell, z0 ~ …)에 꽉 차고 위쪽이 북쪽이어야 한다. 자료가 없으면 아무것도 하지 않고 false
 {

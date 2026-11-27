@@ -1,4 +1,4 @@
-/* 지형 공용 함수(seohogyun-31). 자료: web/data/okpo_terrain.js(tools/terrain_build.py, AWS Open Data Terrain Tiles z15, 바다는 0)
+/* 지형 공용 함수(세션 31). 자료: web/data/okpo_terrain.js(tools/terrain_build.py, AWS Open Data Terrain Tiles z15, 바다는 0)
  *
  *   heightAt(x, z)      → 땅 높이(m). 6m 격자 쌍선형, 지도 밖은 가장자리 값. 한 번에 1μs 안팎(배열 4칸 읽기)
  *   heightRange(poly)   → { min, max, mean }: 다각형 꼭짓점·가운데의 높이(건물 바닥 = min 으로 두면 뜨지 않는다)

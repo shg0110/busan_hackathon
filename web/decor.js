@@ -94,7 +94,7 @@ function nearRoad(x, z, extra, skip) {
   return false;
 }
 const inWater = (x, z) => D.water.some(w => inPoly(x, z, w.p));
-// 땅 높이(m): terrain.js(seohogyun-31)의 heightAt. 지형이 꺼져 있으면(TERRAIN_ON=false) 언제나 0이라 화면은 그대로다.
+// 땅 높이(m): terrain.js(세션 31)의 heightAt. 지형이 꺼져 있으면(TERRAIN_ON=false) 언제나 0이라 화면은 그대로다.
 // 이름표(M.labels)는 app.js placeLabels 가 땅 높이를 더하므로 여기서 더하지 않는다(땅 기준 y)
 const GH = (x, z) => (window.heightAt ? Math.max(0, +window.heightAt(x, z) || 0) : 0);   // 0 아래(해안 바다 쪽 음수, 31 terrain_build)로는 내리지 않음: 물건이 물에 잠기지 않게
 const inside = (x, z, m) => Math.abs(x) < HX - m && Math.abs(z) < HZ - m;
@@ -190,7 +190,7 @@ function openSpans(m, clear) {
   return spans.filter(([a, b]) => b - a > 3);
 }
 
-// ── 바닥 표시(인도·연석·중앙선·차선·주차장·골목 가장자리선·횡단보도·정지선)는 ground.js 로 옮겼다(2026-11-27, seohogyun-31).
+// ── 바닥 표시(인도·연석·중앙선·차선·주차장·골목 가장자리선·횡단보도·정지선)는 ground.js 로 옮겼다(2026-11-27, 세션 31).
 //    횡단보도 자리는 ground.js 가 아래 spots.crosswalk 배열에 채운다([x, z, 길 폭]).
 const stats = { centerM: 0, laneM: 0, crosswalks: 0, stopLines: 0 };
 const spots = { crosswalk: [], bus: [] };   // 다른 파일(주차된 차 등)이 피할 자리: [x, z, 길 폭] / [x, z]
@@ -416,7 +416,7 @@ function addMerged(parts, name) {
 
 // ── 버스 정류장: OSM 정류장(STREET_OBJS.busstops, highway=bus_stop)의 실제 속성대로 — 쉼터는 shelter=yes 인 곳에만, 벤치·쓰레기통은 그 표시가 있을 때,
 //    표지 기둥은 모든 정류장(정류장 표지가 있다는 것이 정류장의 뜻). 이름은 가까이 볼 때 작은 이름표로. 자료가 없으면 SIM_DATA.stops 에 쉼터만(예전 방식).
-//    tactile_paving=yes 인 곳은 바닥(ground.js, seohogyun-31)이 점자블록을 깔 수 있게 spots.busTactile 로 내보낸다
+//    tactile_paving=yes 인 곳은 바닥(ground.js, 세션 31)이 점자블록을 깔 수 있게 spots.busTactile 로 내보낸다
 function busStops() {
   const O = window.STREET_OBJS && window.STREET_OBJS.busstops;
   const S = (O && O.length) ? O : ((window.SIM_DATA && window.SIM_DATA.stops) || []).map(s => ({ x: s.x, z: s.z, name: s.n, shelter: true }));
@@ -480,7 +480,7 @@ function busStops() {
   if (M.renderer) M.renderer.shadowMap.needsUpdate = true;
   M.need && M.need();
 }
-// ── 신호등: 공공데이터포털 표준데이터의 실제 자리에만 세운다(window.FACILITIES, seohogyun-31 이 만듦) ──
+// ── 신호등: 공공데이터포털 표준데이터의 실제 자리에만 세운다(window.FACILITIES, 세션 31 이 만듦) ──
 //   차량·보행 = 전국신호등표준데이터 좌표(signals), 보행 = 전국횡단보도표준데이터 '보행자신호등유무'가 있음인 횡단보도 양 끝(crosswalks)
 // 자료에 방향이 없어서 기둥은 가장 가까운 차도 쪽을 보게 돌린다. 1.5m 안에 몰린 신호등은 한 기둥으로 묶는다.
 // 차량 신호등: 6m 기둥 + 길 쪽 팔 + 가로형 3구. 보행 신호등: 3m 기둥 + 2구. 켜진 불(초록/빨강)은 그림이다

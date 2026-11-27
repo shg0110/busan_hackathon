@@ -1,4 +1,4 @@
-/* 도로 폭·차로 수 보정(seohogyun-31): data/okpo_roadcal.js(tools/road_calibrate.py, 전국횡단보도표준데이터 도로명별 연장·차로수)를
+/* 도로 폭·차로 수 보정(세션 31): data/okpo_roadcal.js(tools/road_calibrate.py, 전국횡단보도표준데이터 도로명별 연장·차로수)를
  * MAP_DATA 를 불러온 직후, 다른 파일이 읽기 전에 덮어쓴다. 원래 값은 w0·ln0 에 남기고, 바꾼 길에는 wsrc 를 단다.
  * ?roadcal=0 이면 폭은 덮어쓰지 않는다(OSM 등급별 기본값 그대로). 순서: data/okpo_map.js → data/okpo_roadcal.js → roadcal.js → 나머지
  *

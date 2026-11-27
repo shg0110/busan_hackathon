@@ -16,7 +16,7 @@ let mesh = null, on = true, last = '', lastF = null, lastT = 0, wk = 1;
 // 카메라 거리에 따라 띠 폭 배율: 가까이(250m 안) 0.4, 중간(550m 안) 0.7, 멀리 1
 const widthK = () => { const d = M.camera.position.distanceTo(M.controls.target); return d < 250 ? 0.4 : d < 550 ? 0.7 : 1; };
 M.controls.addEventListener('change', () => { const k = widthK(); if (k !== wk && lastF) { wk = k; build(lastF, lastT); } dimFlow(); });
-// 멀리(700m 넘게) 보고 재생 중이 아니면 흐름 띠를 옅게(0.35) — 상권 전체에서 청록 선이 지도를 덮어 빈 층 주황이 묻혔음. 재생하면 진하게(seohogyun-20 제안 C)
+// 멀리(700m 넘게) 보고 재생 중이 아니면 흐름 띠를 옅게(0.35) — 상권 전체에서 청록 선이 지도를 덮어 빈 층 주황이 묻혔음. 재생하면 진하게(세션 20 제안 C)
 function dimFlow() { if (!mesh) return; const o = M.camera.position.distanceTo(M.controls.target) > 700 && !(SIM && SIM.playing) ? 0.35 : 0.8; if (mesh.material.opacity !== o) { mesh.material.opacity = o; need(); } }
 document.addEventListener('sim-play', dimFlow);
 function build(F, t) {

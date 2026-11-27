@@ -26,3 +26,15 @@ data/raw/geoje/card_sales/*.csv
 # 페르소나 json/jsonl(각 60MB): personas.csv 와 같은 내용. 다시 만들기: python3 -I tools/build_personas.py
 data/processed/personas/personas.json
 data/processed/personas/personas.jsonl
+
+# 공개 저장소에서 뺀 원자료(로컬 보관, 받는 곳은 각 문서의 출처 링크)
+# - 부산시 공고 원본: 첨부 지도 그림 바탕이 상용 지도 화면이라 재배포하지 않는다(docs/busan-evidence.md 6절 링크)
+data/raw/busan_refill/
+# - 거제시 월간 보고서 원본(담당 공무원 실명 포함). 출처: report_202610/source.txt
+data/raw/geoje/floating_population/report_202610/*.pdf
+data/raw/geoje/floating_population/report_202610/*.odt
+data/raw/geoje/floating_population/report_202610/*.jpg
+# - 경남빅데이터허브(원자료 SKT·NH카드)·소상공인365 화면 값 원본과 받는 도구. 옮겨 적은 숫자는 docs/flow-references.md 3·4절
+data/raw/geoje/floating_population/gnhub_*
+data/raw/geoje/floating_population/sbiz365_*
+tools/gnhub_okpo_flow.py

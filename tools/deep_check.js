@@ -1,4 +1,4 @@
-// 깊은 점검(seohogyun-ea): 첫 화면만 보는 web_check.js 가 놓친 회귀를 잡는다.
+// 깊은 점검(세션 ea): 첫 화면만 보는 web_check.js 가 놓친 회귀를 잡는다.
 // 실제로 놓쳤던 것 — #102 층 단면 이름표가 왼쪽 위에 쌓임, #112 가까이 보면 사람 모양 0개, 실험 가게 시간으로 업종 수요가 넓어져 손님 3 → 161명.
 // 실행: NODE_PATH=~/.npm/_npx/f0a362733743bae2/node_modules node tools/deep_check.js   (하나라도 실패하면 끝 코드 1)
 const { chromium } = require('playwright');
@@ -99,7 +99,7 @@ const ok = (name, pass, detail) => { if (detail && detail.__err) pass = false; r
   const tb = await ev(pg, () => { if (!window.TERRAIN_ON) return { 지형: false }; const f = window.__flow.mesh; if (!f) return { 띠: 0 }; const p = f.geometry.attributes.position.array, H = window.terrainRaw; let deep = 0, n = 0;
     for (let i = 0; i < p.length; i += 3) { n++; if (p[i + 1] - Math.max(0, H(p[i], p[i + 2])) - 0.2 < -0.3) deep++; } return { 점: n, 묻힘: deep }; });
   ok('흐름 띠가 바닥 밑으로 묻히지 않음', !tb.묻힘, tb);
-  // 10) 바닥층(seohogyun-31): 지형 면·물 높이·실제 횡단보도·도로 폭 보정·꼭짓점 NaN
+  // 10) 바닥층(세션 31): 지형 면·물 높이·실제 횡단보도·도로 폭 보정·꼭짓점 NaN
   const gd = await ev(pg, () => {
     const S = window.__map.scene, g = window.__ground || {}, get = n => S.children.find(o => o.name === 'ground-' + n);
     let nan = 0; for (const o of S.children) if (o.name && o.name.startsWith('ground-')) { const a = o.geometry.attributes.position.array; for (let i = 0; i < a.length; i++) if (!(a[i] === a[i])) { nan++; break; } }

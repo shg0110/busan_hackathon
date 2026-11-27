@@ -108,7 +108,7 @@ const MDX = new Float32Array(NX.length), MDZ = new Float32Array(NX.length);
     if (best < 30) { MDX[i] = bx; MDZ[i] = bz; } } }
 // 길 가장자리 오프셋: 8m 이상 길은 인도의 빈 띠(가장자리 + 2.25m — 0.7 가로등·1.2 기둥·1.5 가로수 줄을 피해 건물 쪽, 바닥층 ground.js 기준),
 // 인도 없는 골목은 가장자리 안쪽 0.6m
-// 인도 있는 길(r.sw, seohogyun-31 roadcal.js — 바닥층이 인도·연석을 그리는 길과 같은 기준)이면 가장자리 + 2.25m 인도 위,
+// 인도 있는 길(r.sw, 세션 31 roadcal.js — 바닥층이 인도·연석을 그리는 길과 같은 기준)이면 가장자리 + 2.25m 인도 위,
 // 없으면 가장자리 안쪽 0.6m. 전엔 폭 8m 이상을 인도로 봤는데 #117 로 옥포로가 7.5m(실측)가 되어 인도가 있는데도 차도 가장자리를 걸을 뻔했음
 const sideOff = (w, sw) => sw ? w / 2 + 2.25 : Math.max(0.6, w / 2 - 0.6);
 const NN = NX.length;
@@ -616,7 +616,7 @@ const FIG_MAX = 4000, FIG_NEAR = 200, FIG_R = 420;
 function figMode() { return MP.camera.position.distanceTo(MP.controls.target) < FIG_NEAR; }
 // 2만 명 1:1이라 멀리서 8px 점이 길을 덮음 → 카메라 거리에 따라 크기(가까이 8 · 중간 5.5 · 멀리 3.5px)
 const dotPx = () => { const d = MP.camera.position.distanceTo(MP.controls.target); return d < 260 ? 6.5 : d < 620 ? 4.5 : 3.2; };
-// 멀리(700m 넘게) 보고 재생 중이 아니면 사람 점을 옅게(크기 60%·불투명도 0.5) — 상권 전체에서 빈 층 주황이 점에 묻히지 않게, 재생하면 진하게(seohogyun-20 제안 C)
+// 멀리(700m 넘게) 보고 재생 중이 아니면 사람 점을 옅게(크기 60%·불투명도 0.5) — 상권 전체에서 빈 층 주황이 점에 묻히지 않게, 재생하면 진하게(세션 20 제안 C)
 const DIM_D = 700; let dimNow = null;
 function dimDots() { return MP.camera.position.distanceTo(MP.controls.target) > DIM_D && !playing; }
 let dotNow = 0, figNow = null; function syncDot() { const dim = dimDots(), v = dotPx() * (dim ? 0.6 : 1);
@@ -672,7 +672,7 @@ function draw(t) {
   return n;
 }
 // 가까이(카메라 200m 안) 보면 점 대신 작은 사람 모양(몸통 원기둥 + 머리 공, 부류 색). 화면 가운데 420m 안의 사람만, 최대 4,000명
-// 실제 사람 비율(키 1.7m, 어깨 폭 약 0.45m, 머리 지름 0.24m — seohogyun-20 지적: 전엔 몸통 0.7m 로 볼링 핀 같았음).
+// 실제 사람 비율(키 1.7m, 어깨 폭 약 0.45m, 머리 지름 0.24m — 세션 20 지적: 전엔 몸통 0.7m 로 볼링 핀 같았음).
 // 크기는 그릴 때 카메라 거리로: 60m 안은 실제 크기, 멀수록 키워 200m 에서 약 2.3배(지도 높이에서도 사람으로 읽히게)
 const figGeo = (() => { const body = new THREE.CylinderGeometry(0.2, 0.13, 0.95, 10); body.translate(0, 0.9, 0);   // 어깨 → 허리
   const legs = new THREE.CylinderGeometry(0.13, 0.09, 0.45, 8); legs.translate(0, 0.225, 0);
@@ -867,7 +867,7 @@ function tsChanged(o) { return o.p0 !== T0 || o.p1 !== T1 || o.ship || Object.ke
 function ticks() {   // 눈금을 실제 시각 자리에(같은 간격으로 늘어놓으면 05·12·18·24·05시가 제자리에 오지 않음)
   const el = $('sim-ticks'), span = TS.p1 - TS.p0, step = span > 720 ? 240 : span > 360 ? 120 : 60;
   const lab = (m) => { const hh = String(Math.floor((m % 1440) / 60)).padStart(2, '0'), mm = m % 60; return mm ? `${hh}:${String(mm).padStart(2, '0')}` : `${hh}시`; };
-  // 양 끝(범위 처음·끝)은 늘 보이게, 가운데는 정각 눈금(끝과 너무 가까우면 뺌) — seohogyun-20 제안
+  // 양 끝(범위 처음·끝)은 늘 보이게, 가운데는 정각 눈금(끝과 너무 가까우면 뺌) — 세션 20 제안
   let h = `<span style="position:absolute;left:0">${lab(TS.p0)}</span><span style="position:absolute;right:0">${lab(TS.p1)}</span>`;
   for (let m = Math.ceil(TS.p0 / step) * step; m <= TS.p1; m += step) { const f = (m - TS.p0) / span; if (f < 0.08 || f > 0.92) continue;
     h += `<span style="position:absolute;left:${(f * 100).toFixed(2)}%;transform:translateX(-50%)">${lab(m)}</span>`; }

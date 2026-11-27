@@ -1,4 +1,4 @@
-/* 거리 강조 이름표(3D 위 글자) — 화면 껍데기 스타일은 app.css(seohogyun-20 담당), 이 파일은 3D·실험 쪽 추가분 */
+/* 거리 강조 이름표(3D 위 글자) — 화면 껍데기 스타일은 app.css(세션 20 담당), 이 파일은 3D·실험 쪽 추가분 */
 .lbl.street-name { font-size: 15px; font-weight: 700; color: #212529; background: #ffd43b; border-radius: 8px; padding: 3px 10px; text-shadow: none;
   box-shadow: 0 2px 6px rgba(0,0,0,.18); }
 .lbl.street-end { font-size: 12px; font-weight: 700; color: #fff; background: #212529; border-radius: 6px; padding: 2px 8px; text-shadow: none; }
@@ -25,7 +25,7 @@
 .m-tot span { font-weight: 600; color: #212529; } .m-tot b { font-size: 15px; font-weight: 800; color: #212529; font-variant-numeric: tabular-nums; }
 .x-menu-note { font-size: 11px; color: #6b7280; margin: 4px 0 0; line-height: 1.45; }
 
-/* ── 임시: rail 화면(seohogyun-20, #rail)이 없을 때만 적용. rail 이 들어오면 이 블록은 지워도 됨 ── */
+/* ── 임시: rail 화면(세션 20, #rail)이 없을 때만 적용. rail 이 들어오면 이 블록은 지워도 됨 ── */
 body:not(:has(#rail)) .sim-play { width: auto; height: 40px; padding: 0 14px 0 12px; border-radius: 999px; white-space: nowrap; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; }
 body:not(:has(#rail)) #tabs button small { display: none; }
 body:not(:has(#rail)) .tog-note { display: block; font-size: 10.5px; opacity: .85; }
@@ -54,7 +54,7 @@ body:not(:has(#rail)) .st-how p, body:not(:has(#rail)) .st-from { font-size: 11.
 .lbl.flr.fl-open { border-left-color: #4fa679; } .lbl.flr.fl-empty { border-left-color: #f0783a; } .lbl.flr.fl-unknown { border-left-color: #8d959e; }
 .lbl.flr.fl-home { border-left-color: #c3d3e4; } .lbl.flr.fl-other { border-left-color: #e3d7c1; }
 
-/* 시간 정하기 창(sim.js #ts-dlg): 재생 범위 · 업종/가게 영업시간 · 부류 외출 시각. 모양은 app.css(seohogyun-20)에서 덮어써도 됨 */
+/* 시간 정하기 창(sim.js #ts-dlg): 재생 범위 · 업종/가게 영업시간 · 부류 외출 시각. 모양은 app.css(세션 20)에서 덮어써도 됨 */
 .ts-dlg { width: min(720px, 92vw); max-height: 86vh; padding: 0; border: 0; border-radius: 16px; background: #fff; color: var(--g900); box-shadow: 0 12px 40px rgba(0, 20, 60, .22); font-family: var(--font); }
 .ts-dlg::backdrop { background: rgba(25, 31, 40, .38); }
 .ts { display: flex; flex-direction: column; max-height: 86vh; }

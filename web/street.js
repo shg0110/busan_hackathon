@@ -378,7 +378,7 @@ tabs.onclick = (e) => { const b = e.target.closest('button'); if (b) choose(b.da
 const QS = new URLSearchParams(location.search), q = QS.get('street');
 // ── 첫 화면 연출: 상권 전체를 비스듬히 내려다보다가 기본 거리('빛의 거리')로 3.4초 동안 내려앉는다.
 // 주소에 보기 설정(street·cam·t·#해시)이 있거나 움직임 줄이기 설정이면 건너뜀. ?intro=1 강제, ?intro=0 끔.
-// 지도를 누르거나 휠·키를 쓰면 그 자리에서 멈추고 바로 조작. 끝나면 window.__introDone = true + 'intro-done' 이벤트(seohogyun-20 요청)
+// 지도를 누르거나 휠·키를 쓰면 그 자리에서 멈추고 바로 조작. 끝나면 window.__introDone = true + 'intro-done' 이벤트(세션 20 요청)
 const introOn = QS.get('intro') === '1' || (QS.get('intro') !== '0' && q === null && !QS.has('cam') && !QS.has('t') && !location.hash
   && !matchMedia('(prefers-reduced-motion: reduce)').matches);
 function introDone() { if (window.__introDone) return; window.__introDone = true; document.dispatchEvent(new CustomEvent('intro-done')); }
