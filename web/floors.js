@@ -97,7 +97,11 @@ M.infoExtra = (b, bi) => {
 };
 
 // ── 가게 없는 1층 둘러보기: 상권 안, 넓은 순서로 하나씩 날아가 정보창(실험 포함)을 연다 ──
-const tour = Object.keys(F.b).map(Number).filter(bi => B[bi] && B[bi].i && F.b[bi].some(f => f.n === 1 && f.state === 'empty'))
+// 같은 지번(PNU)에 건물 그림이 여럿이면 층별 자료가 그림마다 똑같이 복사돼 있어(2026-11 기준 271곳 중 46개 지번이 2~4번) 같은 빈 층이 여러 번 셌다 →
+// 지번 + 층별 자료가 같으면 한 곳으로(가장 큰 그림). street.js 빈 1층 목록도 이 sameLot 을 쓴다
+const lotKey = (bi) => (B[bi].pnu || 'b' + bi) + '|' + JSON.stringify(F.b[bi].map(f => [f.n, f.state, f.area]));
+function sameLot(list) { const m = new Map(); for (const bi of list) { const k = lotKey(bi), o = m.get(k); if (o === undefined || (B[bi].a || 0) > (B[o].a || 0)) m.set(k, bi); } return [...m.values()]; }
+const tour = sameLot(Object.keys(F.b).map(Number).filter(bi => B[bi] && B[bi].i && F.b[bi].some(f => f.n === 1 && f.state === 'empty')))
   .sort((a, c) => (F.b[c].find(f => f.n === 1).area || 0) - (F.b[a].find(f => f.n === 1).area || 0));
 let tourAt = -1;
 function flyTo(bi) {
@@ -116,8 +120,9 @@ function flyTo(bi) {
 function nextTour() { if (!tour.length) return; tourAt = (tourAt + 1) % tour.length; flyTo(tour[tourAt]);
   document.getElementById('tour-n').textContent = `${tourAt + 1} / ${tour.length}`; }
 document.getElementById('tour-n').textContent = `${tour.length}곳`;
-// 빈 1층으로 날아간 뒤 정보창의 '이 빈 층에 가게 열어 보기'(#exp)가 보이게
-document.getElementById('tour-btn').onclick = () => { nextTour(); setTimeout(() => { const e = document.getElementById('exp'); if (e) e.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, 750); };
+// 누르면 빈 1층 자리 목록(street.js openList)을 연다. 목록을 못 쓰면(시뮬·거리 자료 없음) 예전처럼 넓은 순으로 한 곳씩 날아가 정보창의 '이 빈 층에 가게 열어 보기'(#exp)가 보이게
+document.getElementById('tour-btn').onclick = () => { if (window.__street && window.__street.openList) { window.__street.openList(); return; }
+  nextTour(); setTimeout(() => { const e = document.getElementById('exp'); if (e) e.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, 750); };
 need();
 // ── 빈 층이 몰린 곳 한눈에 ─────────────────────────────
 // ① 지붕: 위에서 보면 지붕이 가장 넓게 보이므로, 가게 없는 층이 있는 건물 지붕을 주황으로(1층 옅게 → 3층 이상 진하게)
@@ -211,5 +216,5 @@ document.addEventListener('building-select', (e) => {
   cutGroup.children.forEach(o => { o.frustumCulled = false; }); scene.add(cutGroup); need();
 });
 
-window.__floors = { hot, emptyN, bands, mesh: bandMesh, rest: restMesh, stats: S, tour, nextTour };
+window.__floors = { hot, emptyN, bands, mesh: bandMesh, rest: restMesh, stats: S, tour, nextTour, sameLot };
 })();

@@ -60,7 +60,7 @@ mark { background: none; color: inherit; }
 #card { position: static; }
 .card-head { display: none; }
 .mini { display: none; }
-body.street-mode #card { display: none; }
+body.street-mode #card, body.list-mode #card { display: none; }
 .big { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; }
 .big-num { font-size: 44px; line-height: 1.1; font-weight: 800; letter-spacing: -.04em; font-variant-numeric: tabular-nums; color: var(--g900); }
 .big-unit { font-size: 24px; font-weight: 800; margin-left: -8px; align-self: flex-end; margin-bottom: 6px; }
@@ -152,6 +152,19 @@ table.rk td:nth-child(2) { word-break: keep-all; }
 table.rk th:nth-child(n+3), table.rk td:nth-child(n+3) { text-align: right; font-variant-numeric: tabular-nums; }
 table.rk td:first-child { color: var(--g600); font-variant-numeric: tabular-nums; }
 table.rk tr[data-b]:hover td { background: var(--primary-soft); }
+/* 빈 1층 자리 목록(street.js openList): 거르기 칸, 닫기 단추(상권 전체 탭이 이미 눌려 있어 따로 둠) */
+body.list-mode .st-head .icon-btn { display: grid; }
+.ls-f { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 14px 0 4px; }
+.ls-f label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; color: var(--g700); min-width: 0; }
+.ls-f label:first-child { grid-column: 1 / -1; }
+.ls-f select { min-height: 44px; padding: 6px 10px; border: 0; border-radius: 10px; background: var(--g100); font: inherit; font-size: 15px; color: var(--g900); min-width: 0; }
+.ls-f .ls-up { flex-direction: row; align-items: center; gap: 8px; grid-column: 1 / -1; min-height: 44px; cursor: pointer; }
+.ls-f .ls-up input { width: 18px; height: 18px; margin: 0; }
+.ls-f .ls-up small { display: block; font-weight: 400; color: var(--g600); }
+#ls-n b { color: var(--g900); }
+table.ls { margin-top: 6px; }
+table.ls td:first-child { width: 1.6em; }
+#ls-more { width: 100%; margin-top: 8px; }
 
 /* ── 지도에 보이는 것: 스위치 목록 ───────────── */
 #layers { display: flex; flex-direction: column; }

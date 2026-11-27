@@ -120,7 +120,7 @@ function addLabel(text, cls, x, y, z) {
 function clearRank() { for (const L of rankLabels) { L.el.remove(); const i = M.labels.indexOf(L); if (i >= 0) M.labels.splice(i, 1); } rankLabels = []; }
 // 순위 번호를 건물 지붕 위에(표의 순위와 같은 숫자, '비슷함'이면 같은 번호). 누르면 그 건물로
 function rankLabel(x) { const b = B[x.b]; if (!b) return; let cx = 0, cz = 0; for (const q of b.p) { cx += q[0]; cz += q[1]; } cx /= b.p.length; cz /= b.p.length;
-  const el = document.createElement('div'); el.className = 'lbl place rk-n'; el.textContent = x.grp + '위'; el.title = `${x.floor}층 · 평일 하루 ${Math.round(x.r.wd)}명`; el.onclick = () => flyBuilding(x.b);
+  const el = document.createElement('div'); el.className = 'lbl place rk-n'; el.textContent = x.tag || x.grp + '위'; el.title = x.tip || `${x.floor}층 · 평일 하루 ${Math.round(x.r.wd)}명`; el.onclick = () => flyBuilding(x.b);
   document.getElementById('labels').appendChild(el);
   const L = { el, x: cx, y: (b.b || 0) + b.h + 4, z: cz, pri: 14, kind: 'place', w: 0, h: 0, abs: true, nudge: true }; M.labels.unshift(L); rankLabels.push(L); }   // nudge: 붙은 건물끼리 번호가 겹치면 숨기지 않고 아래로 비킴
 // 순위 건물이 모두 화면에 들어오게 카메라를 맞춤(가운데 = 건물들 평균, 거리 = 가장 먼 건물까지에 비례, flyBuilding 과 같은 방향)
@@ -250,7 +250,8 @@ function render(s) {
     <p class="st-from">구간: ${esc(FROM[s.id] || s.note)}</p>`;
   document.getElementById('st-close').onclick = () => choose('');
   panel.querySelectorAll('rect[data-b]').forEach(r => { r.onclick = () => flyBuilding(+r.dataset.b); r.onkeydown = (e) => { if (e.key === 'Enter') flyBuilding(+r.dataset.b); }; });
-  document.getElementById('rk-run').onclick = () => rank(s);
+  // 건물마다 가장 낮은 빈 층 하나(같은 건물 위층은 위치가 같아 결과도 같음)
+  document.getElementById('rk-run').onclick = () => rank(s, s.slots.map(x => { const f = x.fl.filter(f => f[1] === 'empty').sort((a, c) => a[0] - c[0])[0]; return f ? { ...x, floor: f[0], area: f[2] } : null; }).filter(Boolean), '건물마다 가장 낮은 빈 층');
   // 주 버튼에 고른 업종을 넣어 누르기 전에 무엇을 하는지 알 수 있게: '빈 층이 있는 7채에 베트남 음식점 열어 보기'
   const sel = document.getElementById('rk-cat'), runLabel = () => { const sb = SIM && SIM.SUB[sel.value];
     document.getElementById('rk-run').textContent = `${nEmptyB(s)}채의 빈 층에 열어 보기`; };   // 업종은 바로 위 선택 칸에 보임(버튼은 한 줄로)
@@ -281,11 +282,11 @@ function flow(s) {
     <div class="exp-mix"><b>평일</b> ${mix(f.wd.grp, f.wd.tot)}</div><div class="exp-mix"><b>주말</b> ${mix(f.we.grp, f.we.tot)}</div>
     <p class="st-tip">가상 인물이 이 길(중심선 14m 안)을 지나간 횟수입니다. 실제 유동인구가 아닙니다. 사람 수·교대 시간은 '자료와 가정 보기'(재생 막대를 펼치면 보입니다)를 따릅니다.</p>`;
 }
-function rank(s) {
+// 자리 순위: owner = 이 계산을 시작한 화면(거리 또는 빈 1층 목록 LIST). 다른 화면으로 바뀌면(cur !== owner) 멈춘다.
+// slots = [{ b, floor, area, where?(자리 설명, 없으면 거리 왼쪽·오른쪽 위치), side, s }], pick = 각주에 쓸 '어느 자리를 골랐나'
+function rank(s, slots, pick) {
   const sub = document.getElementById('rk-cat').value, cfg = SIM.SUB[sub];   // 세부 업종 기본값(대표 메뉴 1인 지출·자리)
   const hrs = SIM.readHours(document.getElementById('rk-open'), document.getElementById('rk-close'));   // 내 가게 영업시간
-  // 건물마다 가장 낮은 빈 층 하나(같은 건물 위층은 위치가 같아 결과도 같음)
-  const slots = s.slots.map(x => { const f = x.fl.filter(f => f[1] === 'empty').sort((a, c) => a[0] - c[0])[0]; return f ? { ...x, floor: f[0], area: f[2] } : null; }).filter(Boolean);
   const out = document.getElementById('rk-out'), btn = document.getElementById('rk-run');
   btn.disabled = true; const res = []; let i = 0; const t0 = performance.now(); clearRank(); need();
   out.innerHTML = `<p class="exp-wait">빈 층이 있는 ${slots.length}채에 차례로 가게를 열어 하루씩 돌려 보는 중입니다(평일·주말 3번씩).</p><div class="prog"><i style="width:0%"></i></div><p class="exp-wait" id="rk-p">0 / ${slots.length}</p>`;
@@ -301,9 +302,9 @@ function rank(s) {
       res.forEach((x, k) => { const t = tot(x); x.lo = Math.min(...t); x.hi = Math.max(...t);
         if (!lead || x.hi < lead.lo) { lead = x; grp = k + 1; lead.n = 0; } x.grp = grp; lead.n++; x.lead = lead; });
       const rng = (a) => `<br><small class="th-u">${Math.round(Math.min(...a))}~${Math.round(Math.max(...a))}</small>`;
-      out.innerHTML = `<table class="exp-cmp rk"><tr><th>순위</th><th>자리</th><th>평일<br><small class="th-u">하루</small></th><th>주말<br><small class="th-u">하루</small></th><th>평일 매출<br><small class="th-u">하루</small></th></tr>${res.map((x, k) => `<tr data-b="${x.b}"><td>${x.grp}${x.lead.n > 1 ? '<br><small class="th-u">비슷함</small>' : ''}</td><td>${x.floor}층 · ${x.side === 'L' ? '왼쪽' : '오른쪽'} ${Math.round(x.s)}m${x.area ? ` · <span class="nw">${Math.round(x.area)}㎡</span>` : ''}</td><td>${Math.round(x.r.wd)}명${rng(x.r.wdRuns)}</td><td>${Math.round(x.r.we)}명${rng(x.r.weRuns)}</td><td>${SIM.won(x.r.wdWon)}</td></tr>`).join('')}</table>
+      out.innerHTML = `<table class="exp-cmp rk"><tr><th>순위</th><th>자리</th><th>평일<br><small class="th-u">하루</small></th><th>주말<br><small class="th-u">하루</small></th><th>평일 매출<br><small class="th-u">하루</small></th></tr>${res.map((x, k) => `<tr data-b="${x.b}"><td>${x.grp}${x.lead.n > 1 ? '<br><small class="th-u">비슷함</small>' : ''}</td><td>${x.where ? esc(x.where) : `${x.floor}층 · ${x.side === 'L' ? '왼쪽' : '오른쪽'} ${Math.round(x.s)}m`}${x.area ? ` · <span class="nw">${Math.round(x.area)}㎡</span>` : ''}</td><td>${Math.round(x.r.wd)}명${rng(x.r.wdRuns)}</td><td>${Math.round(x.r.we)}명${rng(x.r.weRuns)}</td><td>${SIM.won(x.r.wdWon)}</td></tr>`).join('')}</table>
         <p class="exp-nb">${SIM.demandTxt ? SIM.demandTxt(sub, hrs) : ''} 지도 건물 위 번호가 이 순위입니다.</p>
-        <p class="exp-foot">${esc(document.getElementById('rk-cat').selectedOptions[0].textContent)} · 영업 ${SIM.hoursTxt(hrs)} · 1인 ${SIM.wonX(cfg.basket)}(대표 메뉴 기준) · 건물마다 가장 낮은 빈 층, 평일·주말 3번씩 평균과 범위(사람 1:1), 범위가 겹치면 같은 순위('비슷함'), 2층 이상은 덜 고르고 앞을 지나는 사람이 많을수록 더 고르는 것(가정 β=${SIM.passby.beta})을 반영 · 계산 ${((performance.now() - t0) / 1000).toFixed(1)}초. 행을 누르면 그 건물로 가서 자세히 실험할 수 있습니다. 가상 인물로 자리끼리 비교한 값입니다.</p>`;
+        <p class="exp-foot">${esc(document.getElementById('rk-cat').selectedOptions[0].textContent)} · 영업 ${SIM.hoursTxt(hrs)} · 1인 ${SIM.wonX(cfg.basket)}(대표 메뉴 기준) · ${esc(pick)}, 평일·주말 3번씩 평균과 범위(사람 1:1), 범위가 겹치면 같은 순위('비슷함'), 2층 이상은 덜 고르고 앞을 지나는 사람이 많을수록 더 고르는 것(가정 β=${SIM.passby.beta})을 반영 · 계산 ${((performance.now() - t0) / 1000).toFixed(1)}초. 행을 누르면 그 건물로 가서 자세히 실험할 수 있습니다. 가상 인물로 자리끼리 비교한 값입니다.</p>`;
       out.querySelectorAll('tr[data-b]').forEach(tr => tr.onclick = () => flyBuilding(+tr.dataset.b));
       res.slice().reverse().forEach(rankLabel); fitRank(res);   // 거꾸로 넣어야(unshift) 1위가 먼저 자리를 잡음
       out.scrollIntoView({ behavior: 'smooth', block: 'start' });   // 끝나면 결과 맨 위로, 지도엔 순위 번호
@@ -315,6 +316,103 @@ function rank(s) {
     setTimeout(next, 0);
   }
   setTimeout(next, 30);
+}
+
+// ── 빈 1층 자리 목록(상권 전체) ───────────────────────────
+// 상권 전체 카드의 '빈 1층에 가게 열어 보기'를 누르면 이 패널에 상권(R-ONE 경계) 안 가게 없는 1층 목록을 연다.
+// 예전엔 누를 때마다 넓은 순으로 한 곳씩 날아가기만 해서(1 / 271…) 후보 전체를 보거나 고를 수 없었다.
+// 정렬 값 '앞을 지나는 사람'은 sim.js 가 처음에 한 번 계산해 둔 길 흐름(frontFlow, 평일)이라 즉시 나온다.
+// 하루 시뮬은 무거우므로(271곳이면 하루 1,600번 넘게) 목록 위 10곳만 '순위 내기'로 돌린다.
+const LIST = { id: '__list' };   // cur 에 넣어 다른 화면으로 바뀌면 순위 계산이 멈추게
+const LS = { sort: 'flow', st: '', area: 0, upper: false, n: 30 };
+const ON_ST = new Map(); for (const s of ST) for (const x of s.slots) if (!ON_ST.has(x.b)) ON_ST.set(x.b, s);
+// 이름: 건물 이름이 '제1호'·'2동'처럼 번호뿐이면 찾기 어려우니 지번을 먼저
+const bNameOf = (b) => { const nm = [b.n, b.dn].find(v => v && !/^제?\s*\d+\s*(호|동)?$/.test(v)); return nm || (b.jibun ? b.jibun.replace('거제시 ', '') : b.n || (b.ko === '건물' ? '이름 없는 건물' : b.ko || '건물')); };
+let CAND = null;
+// 후보: 상권 경계 안 건물(B[].i) 중 가게 없는 1층(위층 포함이면 건물마다 가장 낮은 빈 층)
+function candidates() {
+  if (CAND) return CAND;
+  const F = window.FLOORS, P = SIM && SIM._pass, out = [];
+  const keys = Object.keys((F && F.b) || {}).map(Number).filter(bi => B[bi] && B[bi].i);
+  for (const bi of (window.__floors && window.__floors.sameLot ? window.__floors.sameLot(keys) : keys)) {   // 같은 지번 그림 여럿 → 한 곳
+    const k = String(bi), b = B[bi];
+    const emp = F.b[k].filter(f => f.state === 'empty').sort((a, c) => a.n - c.n); if (!emp.length) continue;
+    let x = 0, z = 0; for (const q of b.p) { x += q[0]; z += q[1]; } x /= b.p.length; z /= b.p.length;
+    const st = ON_ST.get(bi);
+    out.push({ b: bi, floor: emp[0].n, area: emp[0].area || 0, x, z, first: emp[0].n === 1, nEmpty: emp.length,
+      flow: P && P.PASSF[0] ? P.frontFlow(0, x, z) : null, st, name: bNameOf(b) });
+  }
+  return (CAND = out);
+}
+function sameNear(sub, x, z, R = 250) { let n = 0; for (const s of SIM._shops()) if (!s.virtual && s.sub === sub && Math.hypot(s.x - x, s.z - z) <= R) n++; return n; }
+function listNow() {
+  const t = M.controls.target, sub = document.getElementById('rk-cat')?.value;
+  let L = candidates().filter(c => (LS.upper || c.first) && (!LS.st || (c.st && c.st.id === LS.st)) && c.area >= LS.area);
+  for (const c of L) { c.same = sub ? sameNear(sub, c.x, c.z) : null; c.d = Math.hypot(c.x - t.x, c.z - t.z); }
+  const by = { flow: (a, b) => (b.flow || 0) - (a.flow || 0), area: (a, b) => b.area - a.area, near: (a, b) => a.d - b.d }[LS.sort];
+  return L.sort(by);
+}
+// 지도 번호: 지금 목록 위 10곳(순위를 내면 rank 결과 번호로 바뀜)
+function listLabels(L) {
+  clearRank();
+  L.slice(0, 10).reverse().forEach((c, j) => { const k = Math.min(10, L.length) - j; rankLabel({ b: c.b, grp: k, floor: c.floor, r: null, tag: `${k}`, tip: `${c.floor}층 · ${c.name}` }); });
+  need();
+}
+function listTable() {
+  const L = listNow(), sub = document.getElementById('rk-cat').value, subKo = SIM.SUB[sub] ? SIM.SUB[sub].ko : '';
+  const firstN = candidates().filter(c => c.first).length;
+  panel.querySelector('h2').textContent = LS.upper ? '빈 층 자리 목록' : '빈 1층 자리 목록';
+  document.getElementById('ls-n').innerHTML = `${LS.upper ? '빈 층이 있는 건물' : '가게 없는 1층'} <b>${L.length}곳</b>${L.length !== (LS.upper ? candidates().length : firstN) ? ` (조건에 맞는 곳)` : ''} · ${{ flow: '앞을 지나는 사람 많은 순', area: '넓은 순', near: '지금 보는 곳에서 가까운 순' }[LS.sort]}`;
+  const rows = L.slice(0, LS.n).map((c, k) => `<tr data-b="${c.b}"><td>${k + 1}</td><td>${c.floor}층 · ${esc(c.name)}${c.st ? `<br><small class="th-u">${esc(c.st.ko.split(' (')[0])}</small>` : ''}</td><td>${c.area ? `${Math.round(c.area)}㎡` : '-'}</td><td>${c.flow != null ? Math.round(c.flow).toLocaleString('ko-KR') + '명' : '-'}</td><td>${c.same != null ? c.same + '곳' : '-'}</td></tr>`).join('');
+  document.getElementById('ls-t').innerHTML = `<tr><th></th><th>자리</th><th>면적</th><th>앞을 지나는 사람<br><small class="th-u">평일 하루</small></th><th>같은 업종<br><small class="th-u">250m 안</small></th></tr>${rows}`;
+  document.getElementById('ls-t').querySelectorAll('tr[data-b]').forEach(tr => tr.onclick = () => flyBuilding(+tr.dataset.b));
+  const more = document.getElementById('ls-more'); more.hidden = L.length <= LS.n; more.textContent = `더 보기 (${L.length - LS.n}곳 더)`;
+  document.getElementById('rk-run').textContent = `위 ${Math.min(10, L.length)}곳에 ${subKo} 열어 순위 내기`;
+  document.getElementById('rk-run').disabled = !L.length;
+  document.getElementById('rk-out').innerHTML = '';
+  listLabels(L);
+  return L;
+}
+function openList() {
+  if (!SIM || !window.FLOORS) return;
+  cur = LIST; clearRank(); drawBand(null); M.tint(null); M.select(-1);
+  tabs.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.id === '')));
+  document.body.classList.remove('street-mode'); document.body.classList.add('list-mode');
+  panel.innerHTML = `
+    <div class="st-head"><h2>빈 1층 자리 목록</h2><button class="icon-btn" id="st-close" aria-label="목록 닫기" title="목록 닫기"><svg viewBox="0 0 20 20"><path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
+    <p class="st-line">상권 안에서 가게가 없는 1층을 모았습니다. 줄을 누르면 그 건물로 가서 가게를 열어 볼 수 있습니다.</p>
+    <div class="ls-f">
+      <label>정렬<select id="ls-sort"><option value="flow">앞을 지나는 사람 많은 순</option><option value="area">넓은 순</option><option value="near">지금 보는 곳에서 가까운 순</option></select></label>
+      <label>거리<select id="ls-st"><option value="">상권 전체</option>${ST.map(s => `<option value="${s.id}">${esc(s.ko.split(' (')[0])}</option>`).join('')}</select></label>
+      <label>면적<select id="ls-area"><option value="0">모두</option><option value="33">33㎡(10평) 이상</option><option value="66">66㎡(20평) 이상</option><option value="99">99㎡(30평) 이상</option><option value="165">165㎡(50평) 이상</option></select></label>
+      <label class="ls-up"><input type="checkbox" id="ls-up"><span>위층도 넣기 <small>건물마다 가장 낮은 빈 층</small></span></label>
+    </div>
+    <p class="st-tip" id="ls-n"></p>
+    <div class="ls-wrap"><table class="exp-cmp rk ls" id="ls-t"></table></div>
+    <button type="button" class="btn-sub" id="ls-more" hidden></button>
+    <details class="st-how"><summary>어떻게 셌나요</summary><p>‘가게 없는 1층’은 건축물대장 층별개요의 상가 층 가운데 2026년 9월 상가정보에 그 층 가게가 없는 곳입니다. 사무실·창고로 쓰거나 등록이 늦은 가게도 들어 있을 수 있습니다. 면적은 그 층 면적입니다. ‘앞을 지나는 사람’은 가상 시민이 평일 하루 이 건물 앞 길(가장 가까운 길 지점에서 20m 더, 최대 40m 안의 가장 붐비는 곳)을 지나간 횟수로, 실제 유동인구가 아닙니다. ‘같은 업종’은 아래에서 고른 업종의 기존 가게가 250m 안에 몇 곳 있는지입니다. 지도 위 번호는 목록 위 10곳입니다.</p></details>
+    <div class="st-rank">
+      <select id="rk-cat" aria-label="업종">${SIM.subOptions ? SIM.subOptions('viet') : ''}</select>
+      <div class="rk-hours"><label>여는 시각<select id="rk-open"></select></label><label>닫는 시각<select id="rk-close"></select></label></div>
+      <button class="btn-primary btn-main" id="rk-run"></button>
+    </div>
+    <div id="rk-out"></div>`;
+  panel.hidden = false;
+  const $ = (id) => document.getElementById(id), sel = $('rk-cat');
+  $('st-close').onclick = () => choose('');
+  $('ls-sort').value = LS.sort; $('ls-st').value = LS.st; $('ls-area').value = String(LS.area); $('ls-up').checked = LS.upper;
+  const re = () => { LS.n = 30; listTable(); };
+  $('ls-sort').onchange = (e) => { LS.sort = e.target.value; re(); };
+  $('ls-st').onchange = (e) => { LS.st = e.target.value; re(); };
+  $('ls-area').onchange = (e) => { LS.area = +e.target.value; re(); };
+  $('ls-up').onchange = (e) => { LS.upper = e.target.checked; re(); };
+  $('ls-more').onclick = () => { LS.n += 30; listTable(); };
+  const rkH = () => { if (SIM.fillHours) SIM.fillHours($('rk-open'), $('rk-close'), sel.value); };
+  sel.addEventListener('change', () => { rkH(); listTable(); }); rkH();
+  $('rk-run').onclick = () => { const L = listNow().slice(0, 10);
+    rank(LIST, L.map(c => ({ b: c.b, floor: c.floor, area: c.area, where: `${c.floor}층 · ${c.name}` })), `목록(${$('ls-sort').selectedOptions[0].textContent}) 위 ${L.length}곳`); };
+  listTable();
+  panel.scrollIntoView({ block: 'start', behavior: 'smooth' });
 }
 
 // 거리 모드: 거리 건물에만 층 띠(가게 없음 + 영업 중), 카드·재생 패널 접기, 도움말 숨김
@@ -362,7 +460,7 @@ function streetUI(on) {
   }
 }
 function choose(id, noFly) {
-  const s = ST.find(x => x.id === id) || null; cur = s; clearRank();
+  const s = ST.find(x => x.id === id) || null; cur = s; clearRank(); document.body.classList.remove('list-mode');
   tabs.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.id === (s ? s.id : ''))));
   document.body.classList.toggle('street-mode', !!s);
   streetUI(!!s); streetBands(s);
@@ -404,5 +502,5 @@ else {
 document.addEventListener('map-light', (e) => { if (!sBands) return; const n = e.detail.night >= 0.5, basic = sBands.material.isMeshBasicMaterial;
   if (n !== basic) { sBands.material.dispose(); sBands.material = n ? new THREE.MeshBasicMaterial({ vertexColors: true }) : new THREE.MeshLambertMaterial({ vertexColors: true }); need(); } });
 document.addEventListener('sim-config', () => { if (cur && SIM) flow(cur); });
-window.__street = { choose, get cur() { return cur; }, flowCache };
+window.__street = { choose, openList, get cur() { return cur; }, flowCache };
 })();
