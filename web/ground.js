@@ -887,7 +887,25 @@ if (document.readyState === 'complete') setTimeout(busTactile, 0); else addEvent
 }
 
 // 지형 그림에 넓은 면을 순서대로 칠한다(토지 이용 0.5~ → 숲 1 → 잔디 2 → 놀이터 2.5 → 인조잔디 3 → 주차장 4.5)
-if (TON && LC) { paintQ.sort((a, b) => a[0] - b[0]); for (const [, p, col, tk] of paintQ) paintArea(p, col, tk); landTex.needsUpdate = true; stats.painted = paintQ.length; }
+if (TON && LC) { paintQ.sort((a, b) => a[0] - b[0]); for (const [, p, col, tk] of paintQ) paintArea(p, col, tk); stats.painted = paintQ.length; }
+// 음영 기복(실제 땅 높이에서): 위에서 보면 해가 비탈을 약하게만 비춰 언덕이 잘 안 읽혀, 북서쪽 빛 기준 기복 음영을 지형 그림에 옅게 곱한다.
+// 512² 로 계산해 늘려 깐다(부드러운 기복만, 길·건물 경계는 건드리지 않음). 세기 HS_K 는 해 그림자와 겹쳐 두 번 그늘지지 않게 옅게
+const HS_K = 0.35;
+if (TON && LC && window.TERRAIN) {
+  const T = window.TERRAIN, N = 512, W = (T.nx - 1) * T.cell, Hh = (T.nz - 1) * T.cell, e = Math.max(W, Hh) / N;
+  const cv = document.createElement('canvas'); cv.width = cv.height = N; const g = cv.getContext('2d'), im = g.createImageData(N, N), d = im.data;
+  const lx = -0.6, lz = -0.6, ly = 0.53;   // 북서(위 왼쪽)에서 비추는 빛
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const x = T.x0 + (i + 0.5) / N * W, z = T.z0 + (j + 0.5) / N * Hh;
+    const gx = (TH(x + e, z) - TH(x - e, z)) / (2 * e), gz = (TH(x, z + e) - TH(x, z - e)) / (2 * e), l = Math.hypot(gx, 1, gz);
+    const sh = Math.max(0, (-gx * lx + ly - gz * lz) / l) / Math.hypot(lx, ly, lz);   // 0~1, 평지 ≈ 0.53/0.98
+    const flatSh = ly / Math.hypot(lx, ly, lz), v = Math.max(0, Math.min(1, 1 + (sh - flatSh) * 1.6));   // 평지는 1(그대로), 빛 등진 비탈은 어둡게, 빛 받는 비탈은 1 위(잘림)
+    const k = (j * N + i) * 4; d[k] = d[k + 1] = d[k + 2] = Math.round(255 * v); d[k + 3] = 255;
+  }
+  g.putImageData(im, 0, 0);
+  LC.save(); LC.globalCompositeOperation = 'multiply'; LC.globalAlpha = HS_K; LC.imageSmoothingEnabled = true; LC.drawImage(cv, 0, 0, LC.canvas.width, LC.canvas.height); LC.restore();
+}
+if (TON && LC) landTex.needsUpdate = true;
 if (M.renderer) M.renderer.shadowMap.needsUpdate = true;
 M.need && M.need();
 
