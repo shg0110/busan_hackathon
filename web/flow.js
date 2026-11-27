@@ -33,7 +33,7 @@ function build(F, t) {
     const ns = M.TON ? Math.max(1, Math.ceil(l / 8)) : 1;
     for (let k = 0; k < ns; k++) {
       const x0 = NX[a] + dx * k / ns, z0 = NZ[a] + dz * k / ns, x1 = NX[a] + dx * (k + 1) / ns, z1 = NZ[a] + dz * (k + 1) / ns;
-      const ya = 0.35 + M.hAt(x0, z0), yb = 0.35 + M.hAt(x1, z1);
+      const ya = 0.35 + M.GL + M.hAt(x0, z0), yb = 0.35 + M.GL + M.hAt(x1, z1);
       pos.push(x0 + nx, ya, z0 + nz, x1 + nx, yb, z1 + nz, x0 - nx, ya, z0 - nz, x0 - nx, ya, z0 - nz, x1 + nx, yb, z1 + nz, x1 - nx, yb, z1 - nz);
       for (let v = 0; v < 6; v++) col.push(c.r, c.g, c.b);
     }

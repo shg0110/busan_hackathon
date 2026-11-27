@@ -614,7 +614,7 @@ function drawFigures(n) {
   const sc = Math.max(1, Math.min(2.3, d / 60)); let k = 0;
   for (let i = 0; i < n && k < FIG_MAX; i++) {
     const x = pos[i * 3], z = pos[i * 3 + 2]; if (Math.abs(x - tx) > FIG_R || Math.abs(z - tz) > FIG_R) continue;
-    _fm.makeScale(sc, sc, sc).setPosition(x, pos[i * 3 + 1] - 1.2, z); figMesh.setMatrixAt(k, _fm); figMesh.setColorAt(k, _fc.setRGB(col[i * 3], col[i * 3 + 1], col[i * 3 + 2])); k++;
+    _fm.makeScale(sc, sc, sc).setPosition(x, pos[i * 3 + 1] - 1.2 + MP.GL * 0.8, z);   // 발이 바닥층(땅 위 0.2m) 위에 figMesh.setMatrixAt(k, _fm); figMesh.setColorAt(k, _fc.setRGB(col[i * 3], col[i * 3 + 1], col[i * 3 + 2])); k++;
   }
   figMesh.count = k; figMesh.instanceMatrix.needsUpdate = true; if (figMesh.instanceColor) figMesh.instanceColor.needsUpdate = true;
 }
