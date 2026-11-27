@@ -83,6 +83,21 @@ function nearest(x, z) {
 const TREES = new Map();
 function tree(t) {
   let T = TREES.get(t); if (T) { TREES.delete(t); TREES.set(t, T); return T; }
+  T = computeTree(t); TREES.set(t, T); if (TREES.size > 400) TREES.delete(TREES.keys().next().value); return T;
+}
+// 가게 노드별 '모든 노드까지 거리' 표(Float32, 한 번만 계산해 계속 씀). 실험·순위 계산은 경로 모양 없이 거리만 쓴다.
+// 전에는 최근 400개만 기억하는 나무가 가게·집 2,600곳 사이에서 밀려나 같은 계산을 되풀이해 실험 1번이 40초 걸렸다(11-27)
+const DT = new Map();
+function distTable(n) { let a = DT.get(n); if (!a) { a = Float32Array.from(computeTree(n).dist); DT.set(n, a); } return a; }
+let SHOPNODE = null;
+function distBetween(a, b) {
+  if (!SHOPNODE) SHOPNODE = new Set(SHOPS.map(s => s.node));
+  if (SHOPNODE.has(b)) return distTable(b)[a];
+  if (SHOPNODE.has(a)) return distTable(a)[b];
+  return tree(b).dist[a];
+}
+function computeTree(t) {
+  let T;
   // 거리는 64비트로: 32비트로 두면 저장할 때 반올림돼 '꺼낸 거리 > 저장된 거리'가 되어 노드를 건너뛴다(길 찾기가 출발점 근처에서 멈춤, 2026-11-27 고침)
   const dist = new Float64Array(NN).fill(Infinity), nxt = new Int32Array(NN).fill(-1);
   const hn = [t], hd = [0]; dist[t] = 0;
@@ -98,7 +113,7 @@ function tree(t) {
       if (nd < dist[v]) { dist[v] = nd; nxt[v] = u; hn.push(v); hd.push(nd); let i = hn.length - 1;
         while (i > 0) { const p = (i - 1) >> 1; if (hd[p] <= hd[i]) break; [hn[i], hn[p]] = [hn[p], hn[i]]; [hd[i], hd[p]] = [hd[p], hd[i]]; i = p; } } }
   }
-  T = { dist, nxt }; TREES.set(t, T); if (TREES.size > 400) TREES.delete(TREES.keys().next().value); return T;
+  T = { dist, nxt }; return T;
 }
 function pathFrom(a, t) { const T = tree(t), p = [a]; let u = a, guard = 0; while (u !== t && u >= 0 && guard++ < 20000) { u = T.nxt[u]; if (u >= 0) p.push(u); } return p; }
 
@@ -117,13 +132,21 @@ const HOMES = SD.homes.map(h => ({ ...h, node: nearest(h.x, h.z) }));
 const GATES = (SD.gates.length ? SD.gates : [{ x: 0, z: 0, n: '입구' }]).map(g => ({ ...g, node: nearest(g.x, g.z) }));
 const STOPS = SD.stops.map(s => ({ ...s, node: nearest(s.x, s.z) }));
 function pickW(list, w, r) { let s = 0; for (const x of list) s += w(x); let u = r() * s; for (const x of list) { u -= w(x); if (u <= 0) return x; } return list[list.length - 1]; }
+// 집 고르기는 부류별 누적 무게표를 한 번만 만들고 이진 탐색(사람마다 1,529곳을 다시 더하면 하루 2,300만 번 계산)
+const HOME_CUM = {};
+function homeCum(key, w) { let c = HOME_CUM[key]; if (!c) { c = new Float64Array(HOMES.length); let s = 0; HOMES.forEach((h, i) => { s += w(h); c[i] = s; }); HOME_CUM[key] = c; } return c; }
+function pickHome(key, w, r) {
+  const c = homeCum(key, w), u = r() * c[c.length - 1];
+  let lo = 0, hi = c.length - 1; while (lo < hi) { const m = (lo + hi) >> 1; if (c[m] < u) lo = m + 1; else hi = m; }
+  return HOMES[lo];
+}
 const AGENTS_MAX = 2400;
 // 사람 한 명의 하루 일정(나들이 목록). 업종 고르는 비율·시간대는 가정(docs/okpo-sim-assumptions.md)
 function makeDay(g, we, r) {
   const sh = CFG.shift, U = (a, b) => a + (b - a) * r(), I = (a, b) => Math.round(U(a, b));
   const out = [];
   if (g === 'worker') {
-    const home = pickW(HOMES, h => h.w * (h.k === 'apt' ? 1.6 : 1), r), gate = GATES[Math.floor(r() * GATES.length)];
+    const home = pickHome('worker', h => h.w * (h.k === 'apt' ? 1.6 : 1), r), gate = GATES[Math.floor(r() * GATES.length)];
     if (!we) {
       const tin = I(sh.in[0], sh.in[1]);
       out.push({ t: tin - 25, from: home.node, stops: r() < 0.18 ? [r() < 0.6 ? 'mart' : 'cafe'] : [], to: gate.node, budget: 8000 });
@@ -137,7 +160,7 @@ function makeDay(g, we, r) {
     return { home, out };
   }
   if (g === 'foreign') {
-    const home = pickW(HOMES, h => h.w * (h.k === 'house' ? 3 : 0.4), r), gate = GATES[Math.floor(r() * GATES.length)];
+    const home = pickHome('foreign', h => h.w * (h.k === 'house' ? 3 : 0.4), r), gate = GATES[Math.floor(r() * GATES.length)];
     if (!we) {
       out.push({ t: I(sh.in[0], sh.in[1]) - 30, from: home.node, stops: r() < 0.12 ? ['mart'] : [], to: gate.node, budget: 5000 });
       const v = r();
@@ -149,7 +172,7 @@ function makeDay(g, we, r) {
     return { home, out };
   }
   if (g === 'resident') {
-    const home = pickW(HOMES, h => h.w, r), v = r();
+    const home = pickHome('resident', h => h.w, r), v = r();
     const t = I(600, 1170);
     const stops = v < 0.35 ? ['mart'] : v < 0.5 ? ['life'] : v < 0.62 ? ['cafe'] : v < 0.82 ? ['meal'] : v < 0.9 ? ['meal', 'cafe'] : ['pub'];
     out.push({ t: stops[0] === 'pub' ? I(1110, 1260) : t, from: home.node, stops, to: home.node, budget: I(15000, 50000) });
@@ -190,29 +213,41 @@ function reset(we, seed) {
 const live = (s) => !s.off;
 function seatFree(si, t) { const o = SHOP_ST[si].occ; let n = 0; for (let k = o.length - 1; k >= 0; k--) { if (o[k] > t) n++; else o.splice(k, 1); } return n < SHOPS[si].seats; }
 function openAt(s, t) { return t >= s.open && t < s.close - 10; }
-function chooseShop(a, cat, t, nodeFrom) {
-  const list = BYCAT[cat].filter(live); if (!list.length) return null;
-  const T = null; // 직선거리로 고른다(빠름). 실제 이동 시간은 길 거리로 계산
-  const fx = NX[nodeFrom], fz = NZ[nodeFrom], lam = cat === 'pub' ? 420 : cat === 'mart' ? 220 : 300;
-  const groupPref = (s) => {
-    if (a.g === 'foreign') { if (s.c === 'intl') return 3.0; if (s.price > 12000 && s.c !== 'pub') return 0.35; }
-    if (a.g === 'tourist' && s.c === 'meal' && /회|해물|해산물|생선/.test(s.cs || '')) return 1.8;
-    return 1;
-  };
-  const cand = [], ref = CFG.cats[cat].price, el = CFG.priceElastic[a.g] ?? 1;
-  for (const s of list) {
-    if (!openAt(s, t + 5)) continue;
-    const d = Math.hypot(s.x - fx, s.z - fz);
-    const w = s.attract * groupPref(s) * Math.exp(-d / lam) * Math.pow(ref / s.price, el);
-    if (w > 1e-4) cand.push([s, w]);
+// 가게마다 부류별로 바뀌지 않는 무게(매력 × 부류 선호 × 가격 민감도)를 미리 한 번만 계산(고를 때마다 거듭제곱·글자 검사를 하지 않게)
+const SEAFOOD = /회|해물|해산물|생선/;
+function staticWeights(s) {
+  const ref = CFG.cats[s.c].price, w = {};
+  for (const g of GROUPS) {
+    let pref = 1;
+    if (g === 'foreign') { if (s.c === 'intl') pref = 3.0; else if (s.price > 12000 && s.c !== 'pub') pref = 0.35; }
+    if (g === 'tourist' && s.c === 'meal' && SEAFOOD.test(s.cs || '')) pref = 1.8;
+    w[g] = s.attract * pref * Math.pow(ref / s.price, CFG.priceElastic[g] ?? 1);
   }
-  if (!cand.length) return null;
-  let sum = 0; for (const c of cand) sum += c[1]; let u = a.r() * sum;
-  for (const c of cand) { u -= c[1]; if (u <= 0) return c[0]; }
-  return cand[cand.length - 1][0];
+  s.wg = w;
 }
+for (const s of SHOPS) staticWeights(s);
+const LAM = { pub: 420, mart: 220 };
+function chooseShop(a, cat, t, nodeFrom) {
+  // 직선거리로 고른다(빠름). 실제 이동 시간은 길 거리로 계산. 거리 무게가 1/400 아래(약 6λ 밖)면 건너뛴다
+  const list = BYCAT[cat], fx = NX[nodeFrom], fz = NZ[nodeFrom], lam = LAM[cat] || 300, far2 = (6 * lam) ** 2, g = a.g;
+  let n = 0, sum = 0;
+  const cw = CW.length >= list.length ? CW : (CW = new Float64Array(list.length * 2)), ci = CI.length >= list.length ? CI : (CI = new Int32Array(list.length * 2));
+  for (let i = 0; i < list.length; i++) {
+    const s = list[i];
+    if (s.off || !openAt(s, t + 5)) continue;
+    const dx = s.x - fx, dz = s.z - fz, d2 = dx * dx + dz * dz;
+    if (d2 > far2) continue;
+    const w = s.wg[g] * Math.exp(-Math.sqrt(d2) / lam);
+    if (w > 1e-4) { sum += w; cw[n] = sum; ci[n] = i; n++; }
+  }
+  if (!n) return null;
+  const u = a.r() * sum;
+  let lo = 0, hi = n - 1; while (lo < hi) { const m = (lo + hi) >> 1; if (cw[m] < u) lo = m + 1; else hi = m; }
+  return list[ci[lo]];
+}
+let CW = new Float64Array(0), CI = new Int32Array(0);
 function startTrip(a, fromNode, toNode, t, render) {
-  const T = tree(toNode), d = T.dist[fromNode];
+  const d = distBetween(fromNode, toNode);
   const L = isFinite(d) ? d : Math.hypot(NX[fromNode] - NX[toNode], NZ[fromNode] - NZ[toNode]) * 1.3;
   a.st = 1; a.t0 = t; a.t1 = t + Math.max(1, L / CFG.walk); a.goalNode = toNode;
   if (render) { a.path = isFinite(d) ? pathFrom(fromNode, toNode) : [fromNode, toNode]; a.pd = null; }
@@ -391,9 +426,9 @@ function addVirtual(bi, floor, cat, price, seats, open, close) {
   const b = MP.buildings[bi]; let cx = 0, cz = 0; for (const p of b.p) { cx += p[0]; cz += p[1]; } cx /= b.p.length; cz /= b.p.length;
   const s = { i: SHOPS.length, n: '새 가게(실험)', c: cat, cs: '', x: cx, z: cz, b: bi, f: floor, node: nearest(cx, cz),
     price, seats, open, close, attract: 1.0 * (floor >= 2 ? CFG.upperFloor : 1), virtual: true };
-  SHOPS.push(s); BYCAT[cat].push(s); return s;
+  staticWeights(s); SHOPS.push(s); BYCAT[cat].push(s); SHOPNODE = null; return s;
 }
-function removeVirtual(s) { SHOPS.pop(); BYCAT[s.c].splice(BYCAT[s.c].indexOf(s), 1); }
+function removeVirtual(s) { SHOPS.pop(); BYCAT[s.c].splice(BYCAT[s.c].indexOf(s), 1); SHOPNODE = null; }
 function neighbors(s, R) { return SHOPS.filter(o => !o.virtual && o.c === s.c && Math.hypot(o.x - s.x, o.z - s.z) <= R).map(o => o.i); }
 function experiment(bi, floor, cat, price, seats, open, close) {
   const s = addVirtual(bi, floor, cat, price, seats, open, close);

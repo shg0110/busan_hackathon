@@ -21,7 +21,7 @@ V.forEach((v, i) => {
   v.top = top + r * 0.8;
 });
 head.instanceColor.needsUpdate = true;
-for (const m of [stem, head]) { m.renderOrder = 12; m.castShadow = false; scene.add(m); }
+for (const m of [stem, head]) { m.renderOrder = 12; m.castShadow = false; m.frustumCulled = false; scene.add(m); }
 
 // 강한 후보에 이름표
 const box = document.getElementById('labels');
