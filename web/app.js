@@ -25,7 +25,7 @@ const C = {
 // ── 렌더러·장면 ─────────────────────────────────────────
 const canvas = document.getElementById('c');
 const SMALL = Math.min(innerWidth, innerHeight) < 720;
-// 요약 카드(기록지)는 3D 와 상관없으니 렌더러보다 먼저 채운다 — 3D 를 못 그려도 숫자·접기 단추는 된다(seohogyun-20 제안)
+// 요약 카드(기록지)는 3D 와 상관없으니 렌더러보다 먼저 채운다 — 3D 를 못 그려도 숫자·접기 단추는 된다(세션 20 제안)
 fillCard();
 const card = document.getElementById('card');
 function syncCardHeight() { document.documentElement.style.setProperty('--card-h', card.offsetHeight + 'px'); }
@@ -238,7 +238,7 @@ function boundaryK() { const d = camera.position.distanceTo(controls.target); re
 // ── 건물 ───────────────────────────────────────────────
 // 모든 건물을 한 덩어리로 합친다. triOwner[삼각형 번호] = 건물 번호 → 누른 건물 찾기.
 const B = D.buildings;
-// 지형(seohogyun-31 terrain.js, 기본 꺼짐·?terrain=1): 건물 바닥을 발자국 아래 가장 낮은 땅 높이로 올린다(b.b0 = 원래 값).
+// 지형(세션 31 terrain.js, 기본 꺼짐·?terrain=1): 건물 바닥을 발자국 아래 가장 낮은 땅 높이로 올린다(b.b0 = 원래 값).
 // b.b 를 쓰는 층 띠·층 단면·거리 층 띠·간판은 따로 고치지 않아도 따라온다. 땅에 붙는 선·이름표·사람은 hAt 을 더한다
 const TON = !!window.TERRAIN_ON, hAt = TON && window.heightAt ? window.heightAt : () => 0;
 // 지형을 켜면 바닥층(ground.js)이 땅 위 0.2m 에 깔리므로(LIFT, #111) 땅에 얹는 띠·그늘·고리는 그보다 위로(GL 만큼 더 띄움)
@@ -692,7 +692,7 @@ if (D.boundary) {
 labels.sort((a, b) => b.pri - a.pri);
 const show = { place: true, road: true };
 const _v = new THREE.Vector3(), _w = new THREE.Vector3();
-const COVER = ['#info', '#sim', '#nav', '#tabs', '#street', '#card', '#layers', '#rail', '#hint', '#scale', '#credit'];   // 축척 막대·출처 줄 밑 이름표도 숨김(seohogyun-20 지적)
+const COVER = ['#info', '#sim', '#nav', '#tabs', '#street', '#card', '#layers', '#rail', '#hint', '#scale', '#credit'];   // 축척 막대·출처 줄 밑 이름표도 숨김(세션 20 지적)
 // 패널 자리는 그리기 루프 밖(0.4초마다, 화면이 다 그려진 뒤)에서 재 둔다 — 루프 안에서 재면 브라우저가 배치를 한 번 더 계산해 끊길 수 있다
 let coverCache = [];
 function measureCover() {
@@ -759,7 +759,7 @@ function placeLabels() {
   const W = canvas.clientWidth, H = canvas.clientHeight, taken = coverBoxes();
   const dist = camera.position.distanceTo(controls.target);
   for (const L of labels) {
-    // 멀리(카메라 700m 넘게, 상권 전체 보기)서는 큰길(pri ≥ 4)·큰 지명(pri ≥ 8)과 ①②③·폐업·거리 이름표만 — 빈 층 주황이 이름표에 묻히지 않게(seohogyun-20 제안 C)
+    // 멀리(카메라 700m 넘게, 상권 전체 보기)서는 큰길(pri ≥ 4)·큰 지명(pri ≥ 8)과 ①②③·폐업·거리 이름표만 — 빈 층 주황이 이름표에 묻히지 않게(세션 20 제안 C)
     const far = L.kind === 'road' ? (L.pri < 4 ? 700 : R * 3) : (L.pri <= 2 ? R * 0.5 : L.pri < 8 ? 700 : R * 3);
     if (!show[L.kind] || dist > far || L.occ) { L.el.classList.add('off'); continue; }   // L.occ: 건물 뒤(measureOcc)
     _v.set(L.x, L.y + (L.abs ? 0 : Math.max(0, hAt(L.x, L.z))), L.z).project(camera);   // 바다 위 이름표는 물 높이 0 아래로 내리지 않음   // 땅 기준 이름표는 지형 높이를 더함(abs 는 이미 절대 높이)
