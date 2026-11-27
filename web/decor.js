@@ -688,6 +688,18 @@ function afterLoad() {
   try { stats.signals = realSignals(); } catch (e) { console.warn('decor 신호등', e); }
   try { stats.areaLabels = edgeLabels(); stats.schoolLabels = schoolLabels(); } catch (e) { console.warn('decor 이름표', e); }
   if (window.__decor) { window.__decor.areaLabels = stats.areaLabels || 0; window.__decor.signals = stats.signals || null; window.__decor.streetObjs = stats.streetObjs || null; window.__decor.schoolLabels = stats.schoolLabels || 0; }
+  // 멀리서는 거리 시설(CCTV 노란 판·빨간 소화전·우체통)과 신호등 불빛이 지붕 위 색종이 점처럼 보이고, 주황·빨강은 빈 층 색과 부딪친다(평가 0e P1-3).
+  // 카메라가 초점에서 NEAR_M 넘게 떨어지면 숨겨 가까이 볼 때만 보이게 한다. 회색 정류장은 남긴다
+  try {
+    const NEAR_M = 170, names = ['decor-street-objs', 'decor-signal', 'decor-signal-light'];
+    const nearOnly = () => {
+      const on = M.camera.position.distanceTo(M.controls.target) < NEAR_M; let ch = false;
+      for (const n of names) { const m = scene.getObjectByName(n); if (m && m.visible !== on) { m.visible = on; ch = true; } }
+      if (ch) { if (M.renderer) M.renderer.shadowMap.needsUpdate = true; M.need && M.need(); }
+      if (window.__decor) window.__decor.nearOnly = on;
+    };
+    M.controls.addEventListener('change', nearOnly); nearOnly();
+  } catch (e) { console.warn('decor 가까이만', e); }
   if (M.renderer) M.renderer.shadowMap.needsUpdate = true;
   M.need && M.need();
 }
