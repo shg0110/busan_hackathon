@@ -662,7 +662,7 @@ if (D.boundary) {
 labels.sort((a, b) => b.pri - a.pri);
 const show = { place: true, road: true };
 const _v = new THREE.Vector3(), _w = new THREE.Vector3();
-const COVER = ['#info', '#sim', '#nav', '#tabs', '#street', '#card', '#layers', '#rail', '#hint'];
+const COVER = ['#info', '#sim', '#nav', '#tabs', '#street', '#card', '#layers', '#rail', '#hint', '#scale', '#credit'];   // 축척 막대·출처 줄 밑 이름표도 숨김(seohogyun-20 지적)
 // 패널 자리는 그리기 루프 밖(0.4초마다, 화면이 다 그려진 뒤)에서 재 둔다 — 루프 안에서 재면 브라우저가 배치를 한 번 더 계산해 끊길 수 있다
 let coverCache = [];
 function measureCover() {
