@@ -760,6 +760,8 @@ function runExp() {
     renderExp(r, sub, price, ms, bi, floor, menus);
   }, 30);
 }
+// 가장 붐비는 시각(손님이 가장 많은 시간대)
+function peakTxt(hr, lab) { let m = -1, h = 0; hr.forEach((v, i) => { if (v > m) { m = v; h = i; } }); return m >= 0.5 ? `${lab}엔 ${h}시대가 가장 붐빔(${Math.round(m)}명)` : `${lab} 손님 거의 없음`; }
 function renderExp(r, sub, price, ms, bi, floor, menus) {
   const k = SUB[sub].ko;
   const row = (sc, lab) => { const x = r[sc]; return `<tr><th>${lab}</th><td><b>${Math.round(x.v).toLocaleString('ko-KR')}명</b><span class="rng">${Math.round(x.vMin)}~${Math.round(x.vMax)}</span></td><td>${won(x.won)}</td></tr>`; };
@@ -780,7 +782,8 @@ function renderExp(r, sub, price, ms, bi, floor, menus) {
     <table class="exp-res"><tr><th></th><th>하루 손님(평균·범위)</th><th>하루 매출</th></tr>${row('wd', '평일')}${row('we', '주말')}</table>
     <p class="exp-sub">평일 손님 구성</p><div class="exp-mix">${mix(g)}</div>
     <p class="exp-sub">시간대별 손님 <span class="lg"><i style="background:#2f6fed"></i>평일 <i style="background:#7048e8"></i>주말</span></p>
-    <div class="exp-hours"><div>${bars(r.wd.hour, '#2f6fed')}</div><div>${bars(r.we.hour, '#7048e8')}</div><div class="ax"><span>0시</span><span>12시</span><span>23시</span></div></div>
+    <p class="exp-nb">${peakTxt(r.wd.hour, '평일')} · ${peakTxt(r.we.hour, '주말')}</p>
+    <div class="exp-hours"><div>${bars(r.wd.hour, '#2f6fed')}</div><div>${bars(r.we.hour, '#7048e8')}</div><div class="ax"><span>0시</span><span>6시</span><span>12시</span><span>18시</span><span>23시</span></div></div>
     <p class="exp-sub">주변 가게 영향</p><p class="exp-nb">${nbTxt}</p>
     ${cmp}
     <p class="exp-sub">1인 지출 ${wonX(price)}</p><p class="exp-nb">${bk}</p>
@@ -863,6 +866,6 @@ function trySlot(bi, floor, sub, price, seats, runs = 3) {
   removeVirtual(s);
   return r;
 }
-window.__sim = { _ck: CK, runDay, experiment, seek, nodesNear, flowDay, trySlot, nodeFlow, nodeFlowAsync, restore: () => { drawDirty = true; need(); }, won, wonX, GROUPS, SUB, SUBS_OF, subOptions, NAT,
+window.__sim = { peakTxt, _ck: CK, runDay, experiment, seek, nodesNear, flowDay, trySlot, nodeFlow, nodeFlowAsync, restore: () => { drawDirty = true; need(); }, won, wonX, GROUPS, SUB, SUBS_OF, subOptions, NAT,
   graph: { NX, NZ, ADJ, NN }, get scen() { return scen; }, get A() { return A; }, get W() { return W; }, SHOPS, CFG, nodes: NN, get t() { return simT; } };
 })();
