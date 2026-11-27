@@ -1129,7 +1129,7 @@ function renderExp(r, sub, price, ms, bi, floor, menus, hrs) {
     : `${nbN}: 변화가 작거나 돌릴 때마다 달라 판단하기 어렵습니다(${r.wd.nb >= 0 ? '+' : ''}${Math.round(r.wd.nb)}명).`;
   const bk = menus.filter(m => m.qty > 0 && m.price > 0).map(m => `${esc(m.n)} ${wonX(m.price)} × ${fmtQ(m.qty)}`).join(' + ');
   const same = HIST.filter(h => h.bi === bi && h.floor === floor);
-  const cmp = same.length > 1 ? `<table class="exp-cmp"><tr><th>업종</th><th>1인</th><th>평일</th><th>주말</th><th>평일 매출</th></tr>${same.map(h => `<tr><td>${esc(SUB[h.sub].ko)}${h.hrs ? `<span class="cmp-h">${hoursTxt(h.hrs)}</span>` : ''}</td><td>${wonX(h.price)}</td><td>${Math.round(h.r.wd.v)}명</td><td>${Math.round(h.r.we.v)}명</td><td>${won(h.r.wd.won)}</td></tr>`).join('')}</table>` : '<p class="exp-tip">업종이나 영업시간을 바꿔 한 번 더 돌리면 이 자리에서 비교표가 생깁니다.</p>';
+  const cmp = same.length > 1 ? `<table class="exp-cmp"><tr><th>업종</th><th>1인</th><th>평일<br><small class="th-u">하루</small></th><th>주말<br><small class="th-u">하루</small></th><th>평일 매출<br><small class="th-u">하루</small></th></tr>${same.map(h => `<tr><td>${esc(SUB[h.sub].ko)}${h.hrs ? `<span class="cmp-h">${hoursTxt(h.hrs)}</span>` : ''}</td><td>${wonX(h.price)}</td><td>${Math.round(h.r.wd.v)}명</td><td>${Math.round(h.r.we.v)}명</td><td>${won(h.r.wd.won)}</td></tr>`).join('')}</table>` : '<p class="exp-tip">업종이나 영업시간을 바꿔 한 번 더 돌리면 이 자리에서 비교표가 생깁니다.</p>';
   $('x-out').innerHTML = `
     <table class="exp-res"><tr><th></th><th>하루 손님(평균·범위)</th><th>하루 매출</th></tr>${row('wd', '평일')}${row('we', '주말')}</table>
     <p class="exp-sub">평일 손님 구성</p><div class="exp-mix">${mix(g)}</div>
