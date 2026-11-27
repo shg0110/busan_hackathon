@@ -43,7 +43,8 @@ const VAL = JSON.parse(fs.readFileSync(path.join(ROOT, 'data', 'processed', 'per
 const csv = fs.readFileSync(path.join(ROOT, 'data', 'processed', 'okpo', '14_flow_hourly.csv'), 'utf8').replace(/^﻿/, '').trim().split('\n').map(l => l.split(','));
 const HOUR_TGT = csv.slice(1).map(r => +r[csv[0].indexOf('카드건수_2026비율')]);
 const TX_TGT = VAL.scale.daily_total_transactions_map_weekday || VAL.scale.daily_total_transactions_incl_cash_weekday;
-const SALES_TGT = VAL.scale.map_daily_sales_target_krw || 0;
+const SALES_TGT = VAL.scale.map_daily_sales_target_krw || 0;   // 허브 실측 기반 지도 범위 일매출 목표
+const CAT_PRICE = VAL.scale.cat_price_krw || null, PRICE_RATIO = VAL.scale.sim_realized_price_ratio || null;
 const CAT_TGT = VAL.checks.find(c => c.name.startsWith('C9')).target;
 const R1 = VAL.reference[0];
 
@@ -53,13 +54,13 @@ for (const r of PD.p) { const k = PD.wkeys[r[13]]; popWd[k] = (popWd[k] || 0) + 
 const KR = ['worker', 'resident', 'tourist'], FO = ['foreign.vn', 'foreign.halal', 'foreign.etc'];
 
 function measure(we) {
-  const acc = { visits: 0, won: 0, noShop: 0, noMoney: 0, lost: 0, hour: new Array(24).fill(0), cat: {}, key: {} };
+  const acc = { visits: 0, won: 0, noShop: 0, noMoney: 0, lost: 0, hour: new Array(24).fill(0), cat: {}, catN: {}, key: {} };
   for (let k = 0; k < RUNS; k++) {
     const st = S.runDay(we, k);
     for (let i = 0; i < SD.shops.length; i++) {
       const v = st.visits[i] / RUNS, w = st.spend[i] / RUNS, c = SD.shops[i].c === 'intl' ? 'meal' : SD.shops[i].c;
       acc.visits += v; acc.won += w; acc.lost += st.lost[i] / RUNS;
-      acc.cat[c] = (acc.cat[c] || 0) + w;
+      acc.cat[c] = (acc.cat[c] || 0) + w; acc.catN[SD.shops[i].c] = (acc.catN[SD.shops[i].c] || 0) + v;
       if (st.byHour[i]) for (let h = 0; h < 24; h++) acc.hour[h] += st.byHour[i][h] / RUNS;
     }
     acc.noShop += st.noShop / RUNS; acc.noMoney += st.noMoney / RUNS;
@@ -72,6 +73,8 @@ function measure(we) {
   const catShare = Object.fromEntries(Object.keys(CAT_TGT).map(c => [c, (acc.cat[c] || 0) / Math.max(acc.won, 1)]));
   return {
     transactions: Math.round(acc.visits), revenue_krw: Math.round(acc.won),
+    // 실현 단가 ÷ 업종 가격(CAT_PRICE): build_personas.py 의 SIM_REALIZED_PRICE_RATIO 가 맞는지 보는 값
+    realized_price_ratio: CAT_PRICE ? +(acc.won / Math.max(1, Object.entries(acc.catN).reduce((s, [c, n]) => s + n * (CAT_PRICE[c] || 0), 0))).toFixed(3) : null,
     failed: { no_open_shop: Math.round(acc.noShop), no_money: Math.round(acc.noMoney), gave_up_waiting: Math.round(acc.lost),
       share_of_tries: +((tries - acc.visits) / Math.max(tries, 1)).toFixed(4) },
     hour_share: hourShare.map(v => +v.toFixed(4)),
@@ -88,12 +91,14 @@ const wd = measure(false), we = measure(true);
 const check = (name, value, lo, hi, note) => ({ name, value, range: [lo, hi], pass: value >= lo && value <= hi, note });
 const checks = [
   check('S1. 평일 하루 결제 수 ÷ 페르소나 보정 결제 수(지도 범위 매출액 기준)', +(wd.transactions / TX_TGT).toFixed(3), 0.95, 1.05,
-    `시뮬 ${wd.transactions}건(${Math.round(wd.revenue_krw / 1e4).toLocaleString()}만 원) vs 목표 ${TX_TGT}건(${Math.round(SALES_TGT / 1e4).toLocaleString()}만 원)`),
+    `시뮬 ${wd.transactions}건 vs 목표 ${TX_TGT}건`),
   check('S2. 평일 결제 24시간 비율 최대 차이(카드 실측 대비)', wd.hour_max_abs_diff, 0, 0.018, '페르소나 C8b 와 같은 허용 폭'),
   check('S3. 평일 업종별 매출 비중 최대 차이(옥포1동 카드매출 대비)', wd.category_max_abs_diff, 0, 0.05, '페르소나 C9 와 같은 단위(업종 1인 가격 × 지출 배수)'),
   check('S4. 외국인(선주 감독관·가족 제외) 1인당 평일 매출 ÷ 내국인', wd.foreign_to_korean, R1.all_foreign_range[0], R1.all_foreign_range[1],
     '페르소나 R1 과 같은 참고 범위(2025 이민자체류실태). 시뮬의 내국인에는 10대가 섞여 있다'),
   check('S5. 평일 헛걸음 비율(갈 가게 없음·돈 부족·자리 포기 ÷ 시도)', wd.failed.share_of_tries, 0, 0.05, '업종 영업시간·예산과 가게 가격이 맞지 않으면 커진다'),
+  check('S6. 평일 하루 매출 ÷ 지도 범위 실제 일매출 목표(허브 카드 × 보정)', +(wd.revenue_krw / Math.max(SALES_TGT, 1)).toFixed(3), 0.9, 1.1,
+    `시뮬 ${Math.round(wd.revenue_krw / 1e4).toLocaleString()}만 원 vs 목표 ${Math.round(SALES_TGT / 1e4).toLocaleString()}만 원. 실현 단가 ÷ 업종 가격 ${wd.realized_price_ratio}(페르소나 가정 ${PRICE_RATIO})`),
 ];
 const out = { generated_by: 'tools/sim_persona_check.js', persona_version: PD.version, runs_per_day: RUNS, seconds: +((Date.now() - t0) / 1000).toFixed(1),
   summary: { pass: `${checks.filter(c => c.pass).length}/${checks.length}` }, checks, weekday: wd, weekend: we,

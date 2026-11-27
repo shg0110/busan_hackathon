@@ -1744,12 +1744,17 @@ for _ in range(14):
 
 # ── 7. 최종 페르소나 레코드 조립 ─────────────────────────────────────────────
 # 지도 범위(옥포1·2동) 총 결제량 배율: 카드·현금 구분 없이, 시뮬 1인 가격 단위 지출 합이 지도 범위 실제 일매출(약 4.30억 원)과 같도록 환산
-# sim.js 는 가격 탄력성(priceElastic)으로 저렴한 가게를 더 자주 고르므로 실현 단가가 업종 단순평균(CAT_PRICE)의 약 82.5% 수준이다
-SIM_REALIZED_PRICE_RATIO = 0.825
-sim_unit_spend_at_card = sum(w_10k[i] * raw_tx[i] * tx_spend(people[i]) for i in range(N)) * SIM_REALIZED_PRICE_RATIO or 1.0
-MAP_TX_SCALE = MAP_DAILY_SALES_TARGET_KRW / sim_unit_spend_at_card
+# 시뮬 실현 단가 ÷ CAT_PRICE: tools/sim_persona_check.js 실측(2026-11-27) 업종별 0.80~1.04, 전체 0.95.
+# CAT_PRICE 가 이미 가격대(tier) 가중 평균이라 시뮬은 거의 그 값으로 결제한다. 예전 0.825 가정은 결제 수를 약 15% 부풀려 매출이 넘쳤다
+# (값이 바뀌면 validation_sim.json 의 realized_price_ratio 를 보고 고친다)
+SIM_REALIZED_PRICE_RATIO = 0.95
 # 외지 관광객(국민여행조사 거제 실측 일 38,364원·약 2.7~3곳)과 거제 타동 방문객(옆 동네 방문 1.5~2곳)의 다중 방문 보정
 SEG_TOTAL_TX_MULT = {'tourist': 2.65, 'geoje_visitor': 1.45}
+# 다중 방문 배수를 넣은 '뒤에' 전체를 지도 범위 실제 일매출에 맞춘다(구성 비율만 바뀌고 총 매출은 목표 그대로).
+# 예전엔 목표에 맞춘 다음 배수를 곱해 매출이 목표보다 약 24.5% 넘쳤다
+sim_unit_spend_at_card = sum(w_10k[i] * raw_tx[i] * SEG_TOTAL_TX_MULT.get(people[i]['segment'], 1.0) * tx_spend(people[i])
+                             for i in range(N)) * SIM_REALIZED_PRICE_RATIO or 1.0
+MAP_TX_SCALE = MAP_DAILY_SALES_TARGET_KRW / sim_unit_spend_at_card
 
 for i, p in enumerate(people):
     p['persona_id'] = f'OP-P{i + 1:05d}'
@@ -2019,7 +2024,10 @@ val['scale'] = {
     'street_visitors_by_sim_group_weekend': {k: round(v) for k, v in sim_group_street_we.items()},
     'daily_card_transactions_weekday': round(tx_tot_got),
     'daily_total_transactions_map_weekday': round(sum(p['weekday_expansion_weight'] * p['expected_total_tx_weekday_synthetic'] for p in people)),
-    'map_daily_sales_target_krw': round(sum(p['weekday_expansion_weight'] * p['expected_total_tx_weekday_synthetic'] * tx_spend(p) for p in people) * SIM_REALIZED_PRICE_RATIO),
+    'map_daily_sales_target_krw': round(MAP_DAILY_SALES_TARGET_KRW),   # 허브 실측 기반 목표(시뮬 점검 S6 이 이 값과 견줌)
+    'map_daily_sales_model_krw': round(sum(p['weekday_expansion_weight'] * p['expected_total_tx_weekday_synthetic'] * tx_spend(p) for p in people) * SIM_REALIZED_PRICE_RATIO),
+    'sim_realized_price_ratio': SIM_REALIZED_PRICE_RATIO,
+    'cat_price_krw': {c: round(CAT_PRICE[c]) for c in CATS},
     'map_tx_scale': round(MAP_TX_SCALE, 4),
     'seg_total_tx_mult': SEG_TOTAL_TX_MULT,
     'offline_total_mult': round(OFFLINE_TOTAL_MULT, 4),
