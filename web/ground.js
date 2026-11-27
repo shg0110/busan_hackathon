@@ -315,8 +315,22 @@ function flat(pos, color, order, glow, name, tex) {
 // 한 방향 차로 수: OSM 차로 수(lanes)가 있는 길만(큰길 9개). 없으면 1(차선 없이 중앙선만)
 // 11-27 사용자 "실제 자료가 아닌 거는 없애자": 폭으로 추정하던 차로 수는 뺐다
 function lanesPerDir(r) { const ln = r.ln || 0; if (!ln) return 1; return r.ow ? ln : Math.max(1, Math.floor(ln / 2)); }
-function openSpans(m, clear) {
-  const cuts = m.js.map(j => [j.s - clear, j.s + clear]).sort((a, b) => a[0] - b[0]);
+// 실제 횡단보도(공공데이터포털 전국횡단보도표준데이터, tools/okpo_facilities_build.py): 큰길 위 것은 길을 따른 거리 s 를 구해 둔다(중앙선·차선 끊기, 보도턱 낮춤 자리 연석 끊기)
+const CW = ((window.FACILITIES || {}).crosswalks || []);
+const cwOn = new Map();   // 길 번호 → [{ s, w, ramp }]
+function sAlong(m, x, z) {   // 점을 길 선에 내렸을 때 길 시작에서의 거리
+  let best = null;
+  for (let i = 0; i < m.r.p.length - 1; i++) {
+    const a = m.r.p[i], b = m.r.p[i + 1], dx = b[0] - a[0], dz = b[1] - a[1], l2 = dx * dx + dz * dz;
+    const t = l2 ? Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / l2)) : 0, d = Math.hypot(x - a[0] - t * dx, z - a[1] - t * dz);
+    if (!best || d < best.d) best = { d, s: m.w.cum[i] + t * Math.sqrt(l2) };
+  }
+  return best;
+}
+for (const m of majors) for (const c of CW) if (c.ri === m.ri) { const q = sAlong(m, c.x, c.z); if (q && q.d < 1) { let l = cwOn.get(m.ri); if (!l) cwOn.set(m.ri, l = []); l.push({ s: q.s, w: c.w || 4, ramp: !!c.ramp }); } }
+// extra: 더 비울 구간 [[a, b]..]
+function openSpans(m, clear, extra) {
+  const cuts = m.js.map(j => [j.s - clear, j.s + clear]).concat(extra || []).sort((a, b) => a[0] - b[0]);
   const spans = []; let s = 0;
   for (const [a, b] of cuts) { if (a > s) spans.push([s, a]); s = Math.max(s, b); }
   if (s < m.w.L) spans.push([s, m.w.L]);
@@ -395,7 +409,8 @@ const LANDUSE = {
   const center = [], lane = [], curb = { pos: [], nrm: [] };
   for (const m of majors) {
     const w = m.r.w, ow = !!m.r.ow, ln = m.r.ln || 0;
-    for (const [a, b] of openSpans(m, JUNC_CLEAR)) {
+    const cwCut = (cwOn.get(m.ri) || []).map(c => [c.s - c.w / 2 - 2, c.s + c.w / 2 + 2]);   // 횡단보도 위와 앞뒤 2m 는 중앙선·차선 없음
+    for (const [a, b] of openSpans(m, JUNC_CLEAR, cwCut)) {
       if (!ow) { stripe(m, 0, 0.3, a, b, 0.03, center); stats.centerM += b - a; }
       // 교차로 쪽 끝 18m 는 실선(진로변경 제한선), 그 사이는 3m 칠하고 5m 비우는 점선
       const SOLID = 18, sa = a > 0.5 ? Math.min(b, a + SOLID) : a, sb = b < m.w.L - 0.5 ? Math.max(sa, b - SOLID) : b;
@@ -409,7 +424,8 @@ const LANDUSE = {
       else for (let k = 1; k < per; k++) for (const sgn of [1, -1]) dash(sgn * k * (w / 2) / per);
     }
     // 연석: 차도 가장자리 바로 바깥 0.2m 폭, 15cm 솟은 상자(사람 눈높이에서 길 가장자리가 입체로 보이게). 교차로 앞뒤 8m 는 비움(교차로 입구. 큰길끼리 만나는 모서리는 아래에서 곡선으로 이음)
-    if (!m.r.br) for (const [a, b] of openSpans(m, 8)) for (const sgn of [1, -1]) { raised(m, sgn * (w / 2 + 0.1), 0.2, 0.15, a, b, curb.pos, curb.nrm); stats.curbM = (stats.curbM || 0) + (b - a); }
+    const rampCut = (cwOn.get(m.ri) || []).filter(c => c.ramp).map(c => [c.s - c.w / 2, c.s + c.w / 2]);   // 보도턱낮춤여부 = Y 인 횡단보도 폭만큼 연석 없음
+    if (!m.r.br) for (const [a, b] of openSpans(m, 8, rampCut)) for (const sgn of [1, -1]) { raised(m, sgn * (w / 2 + 0.1), 0.2, 0.15, a, b, curb.pos, curb.nrm); stats.curbM = (stats.curbM || 0) + (b - a); }
   }
   // ── 교차로 모서리: 큰길끼리 만나는 모서리에서, 끊긴 연석(교차점에서 8m)을 곡선으로 잇고 곡선과 모서리 사이 쐐기는 아스팔트로 ──
   // 예전엔 인도 모서리가 직각이고 연석이 모서리를 돌지 않았다(11-27 근접 캡처). 곡선은 두 길 가장자리선이 만나는 점을 조절점으로 한 2차 베지어
@@ -499,9 +515,29 @@ if (D.parking && D.parking.length) {
   flat(edge, G.edge, 8, null, 'alley-edge');
 }
 
-// 횡단보도·정지선·골목 입구 횡단보도·점자블록·맨홀·과속방지턱·빗물받이·진행 방향 화살표·횡단보도 예고 마름모·어린이보호구역(붉은 포장·글자·30)은 지웠다.
-// 11-27 사용자 "실제 자료가 아닌 거는 없애자": OSM 에 옥포 횡단보도·신호·과속방지턱 점이 하나도 없어 모두 규칙으로 놓은 장식이었다.
-// 실제 자료(예: 공공데이터포털 전국횡단보도표준데이터·전국어린이보호구역표준데이터)를 받으면 그 자리에만 다시 그린다.
+// ── 횡단보도(실제 자료): 공공데이터포털 전국횡단보도표준데이터(거제시, 기준일 2026-07-20) 중 좌표에 한 건뿐이고 차도 가장자리 3m 안인 것(개수는 FACILITIES.meta) ──
+// 같은 좌표에 여러 건이 묶인 기록(지번 주소로 잡은 좌표로 보임)·차도에서 먼 기록은 자리를 알 수 없어 그리지 않는다(이유는 data/processed/okpo_crosswalks.csv).
+// 줄무늬: 0.5m 막대·0.5m 틈을 길을 건너는 방향으로 늘어놓고, 막대 길이(길 방향)는 자료의 횡단보도폭. 건너는 길이는 그려진 차도 폭(자료의 횡단보도연장은 csv 에 남김)
+// 점자블록은 자료에 '있음'인 곳만 양 끝 인도 쪽에. 정지선·화살표·신호등 자리는 자료에 없어 그리지 않는다
+{
+  const pos = [], tac = [], y = 0.03;
+  const rect = (cx, cz, ax, az, nx, nz, hl, hw, yy, out) => {   // 가운데·길 방향 a·길 건너는 방향 n, 반길이 hl(a 쪽)·반폭 hw(n 쪽)
+    const P = (u, v) => [cx + ax * u + nx * v, cz + az * u + nz * v], A = P(-hl, -hw), B = P(hl, -hw), C = P(hl, hw), D = P(-hl, hw);
+    out.push(A[0], yy, A[1], B[0], yy, B[1], C[0], yy, C[1], A[0], yy, A[1], C[0], yy, C[1], D[0], yy, D[1]);
+  };
+  for (const c of CW) {
+    const ax = c.dx, az = c.dz, nx = -az, nz = ax, half = (c.span || 12) / 2 - 0.3, hl = (c.w || 4) / 2;
+    for (let o = -half + 0.25; o <= half - 0.25 + 1e-6; o += 1.0) rect(c.x + nx * o, c.z + nz * o, ax, az, nx, nz, hl, 0.25, y, pos);
+    if (c.tactile) for (const sg of [1, -1]) { const o = sg * ((c.span || 12) / 2 + 0.65); rect(c.x + nx * o, c.z + nz * o, ax, az, nx, nz, hl, 0.3, 0.028, tac); }
+  }
+  flat(pos, G.zebra, 8.9, '#3c3c3c', 'zebra');
+  const dots = canvasTex(64, (g, n) => {   // 점형 점자블록: 노란 판에 돋은 점 4×4
+    g.fillStyle = '#f2c94c'; g.fillRect(0, 0, n, n); g.fillStyle = 'rgba(160,110,0,0.55)';
+    for (let yy = 0; yy < 4; yy++) for (let xx = 0; xx < 4; xx++) { g.beginPath(); g.arc(xx * 16 + 8, yy * 16 + 8, 4, 0, Math.PI * 2); g.fill(); }
+  }, 0.3);
+  flat(tac, '#ffffff', 8.9, null, 'tactile', dots);
+  stats.crosswalks = CW.length; stats.tactile = CW.filter(c => c.tactile).length;
+}
 
 // ── 바다: 해안에서 멀어질수록 진해지는 색(격자에 꼭짓점 색), 해안 물거품 띠, 부두 안벽 ──
 // app.js 의 물 메시는 숨기고(ea 허락, #55) 같은 모양을 바탕으로 다시 깐 뒤, 그 위에 깊이 색을 투명도로 얹는다.
@@ -607,7 +643,7 @@ if (M.scene.background && M.scene.background.isColor) M.scene.background.set(G.g
 if (M.scene.fog) M.scene.fog.color.set(G.ground);
 if (edgeFollow) edgeFollow();   // 낮 기준 배경을 정한 다음 한 번 맞춘다(밤이면 ea 가 바꾼 뒤 map-light 로 다시 맞춤)
 
-// ── 닳은 페인트: 노면 표시(중앙선·차선)에 닳음 무늬를 투명도로 입혀 군데군데 아스팔트가 비치게 ──
+// ── 닳은 페인트: 노면 표시(중앙선·차선·횡단보도)에 닳음 무늬를 투명도로 입혀 군데군데 아스팔트가 비치게 ──
 // 바퀴가 지나는 자리가 더 닳는 것까지는 넣지 않았다(무늬는 3m 마다 되풀이). 투명 재질이 되어 투명 패스로 가지만, 그 뒤에 그리는 ea 띠(9.3~9.7)·흐름(9.5)도 투명이라 순서가 같다
 {
   const worn = canvasTex(256, (g, n) => {
@@ -619,7 +655,7 @@ if (edgeFollow) edgeFollow();   // 낮 기준 배경을 정한 다음 한 번 �
   }, 3);
   worn.encoding = THREE.LinearEncoding;   // 투명도로만 쓰므로 색 변환 없이
   let nw = 0;
-  for (const nm of ['center', 'lane']) {
+  for (const nm of ['center', 'lane', 'zebra']) {
     const mesh = made.find(o => o.name === 'ground-' + nm); if (!mesh) continue;
     const P = mesh.geometry.attributes.position.array, uv = new Float32Array(P.length / 3 * 2), k = 1 / worn.userData.m;
     for (let i = 0, j = 0; i < P.length; i += 3, j += 2) { uv[j] = P[i] * k; uv[j + 1] = P[i + 2] * k; }
@@ -660,6 +696,7 @@ M.need && M.need();
 window.__ground = {
   meshes: made.length, majorRoads: majors.length, hidOld: Array.isArray(M.roads) ? M.roads.filter(r => r && !r.visible).length : 0,
   centerM: Math.round(stats.centerM), laneM: Math.round(stats.laneM), edgeM: Math.round(stats.edgeM), curbM: Math.round(stats.curbM || 0),
+  crosswalks: stats.crosswalks || 0, tactile: stats.tactile || 0, rampCuts: [...cwOn.values()].flat().filter(c => c.ramp).length, onMajor: [...cwOn.values()].flat().length,
   parking: stats.parking, landuse: stats.landuse || 0, playgrounds: stats.playgrounds || 0, corners: stats.corners || 0,
   wornMeshes: stats.wornMeshes || 0, waterCells: stats.waterCells || 0, coastM: stats.coastM || 0,
 };
