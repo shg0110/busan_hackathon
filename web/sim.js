@@ -56,6 +56,8 @@ const NAT = [['vn', 0.274, '베트남'], ['halal', 0.08, '인도네시아·우�
 // 가게 무게를 미리 계산할 부류(+국적) 키: 페르소나 번들이 있으면 그 키 전부(선주 감독관 'foreign.expat' 포함)
 const WKEYS = [...new Set([...GROUPS.flatMap(g => g === 'foreign' ? NAT.map(n => 'foreign.' + n[0]) : [g]), ...((window.PERSONAS && window.PERSONAS.wkeys) || [])])];
 const T0 = 300, T1 = 1740;   // 05:00 ~ 29:00(다음 날 05:00) — 24시간
+// 라스트 오더: 마감 30분 전까지만 새 손님을 받는다. 이미 들어온 손님은 마감 시각까지 머문다(enter). tools/build_personas.py 의 LAST_ORDER_MIN 과 같게
+const LAST_ORDER = 30;
 
 // ── 난수(시드 고정) ─────────────────────────────────────
 // 난수 상태를 f.s 에 두어 복사할 수 있게(재생 중간 저장·되돌리기용). 수열은 예전과 같음
@@ -216,7 +218,7 @@ function catWindows() { for (const k in CAT_WIN) delete CAT_WIN[k];
 function applyHours() { for (const s of SHOPS) { const h = TS.shop[s.i] || hoursOf(s.sub, s.c); s.open = h[0]; s.close = h[1]; } catWindows(); }
 const CAT_WIN = {};
 catWindows();
-const catOpen = (c, t) => { const w = CAT_WIN[c]; return !!w && t + 5 >= w[0] && t + 5 < w[1] - 10; };
+const catOpen = (c, t) => { const w = CAT_WIN[c]; return !!w && t + 5 >= w[0] && t + 5 < w[1] - LAST_ORDER; };
 function pickCatFromWeights(cw, cats, r, forbid, t) {
   let s = 0;
   const ok = (i) => cats[i] !== forbid && (t === undefined || catOpen(cats[i], t));
@@ -452,7 +454,7 @@ function reset(we, seed) {
 }
 const live = (s) => !s.off;
 function seatFree(si, t) { const o = SHOP_ST[si].occ; let n = 0; for (let k = o.length - 1; k >= 0; k--) { if (o[k] > t) n++; else o.splice(k, 1); } return n < SHOPS[si].seats; }
-function openAt(s, t) { return t >= s.open && t < s.close - 10; }
+function openAt(s, t) { return t >= s.open && t < s.close - LAST_ORDER; }   // 새 손님을 받는 시간(라스트 오더까지)
 // 가게마다 부류(+국적)별로 바뀌지 않는 무게를 미리 한 번만 계산(고를 때마다 거듭제곱을 하지 않게)
 // 무게 = 매력 × 세부 업종 선호(MENU.prefs, 가정) × 업종 안 가격대(세부 업종 1인 지출이 큰 업종 기준가보다 비싸면 덜, 0.25~1.6배)
 //        × 같은 세부 업종 안 가격(이 가게 1인 지출이 그 세부 업종 보통보다 비싸면 덜). 탄력은 부류별 priceElastic(가정)
@@ -544,7 +546,7 @@ function step(t, render) {
     }
     if (a.st === 3) {
       const s = SHOPS[a.shop];
-      if (!openAt(s, t)) { STATS.lost[s.i] += W; nextStop(a, t, render); }   // 기다리는 사이 가게가 손님을 그만 받으면(마감 10분 전) 다음 곳으로
+      if (!openAt(s, t)) { STATS.lost[s.i] += W; nextStop(a, t, render); }   // 기다리는 사이 라스트 오더(마감 30분 전)가 지나면 다음 곳으로
       else if (seatFree(s.i, t)) enter(a, s, t);
       else if (t >= a.waitEnd) { STATS.lost[s.i] += W; nextStop(a, t, render); }
       continue;
@@ -556,7 +558,7 @@ function enter(a, s, t) {
   const baseStay = a.dwell ? (a.dwell * 0.45 + s.stay * 0.55) : s.stay;
   // 다중 방문(n곳)일 때는 한 번 외출의 체류 시간을 가게 수로 나눠 써서 뒤쪽 결제가 다음 시간대로 과도하게 밀리지 않게 한다
   const nStops = (PD && PD.pay_mode === 'avg_stops' && a.stops && a.stops.length > 1) ? a.stops.length : 1;
-  // 마감 시각을 넘겨 머물지 않게 자른다(예전엔 02시 마감 호프에 03시대까지 손님이 남았다). 들어올 때는 openAt 이라 마감까지 10분 넘게 남아 있다
+  // 마감 시각을 넘겨 머물지 않게 자른다(예전엔 02시 마감 호프에 03시대까지 손님이 남았다). 라스트 오더 전에 들어오므로 마감까지 30분 넘게 남아 있다
   const stay = Math.min(s.close - t, Math.max(4, (baseStay / nStops) * (0.75 + 0.5 * a.r())));
   a.st = 2; a.until = t + stay; SHOP_ST[s.i].occ.push(a.until);
   const pay = payOf(a, s);
@@ -1051,7 +1053,7 @@ function fillHours(oSel, cSel, sub) { const h = hoursOf(sub, SUB[sub].cat); oSel
 function readHours(oSel, cSel) { const o = +oSel.value; let c = +cSel.value; if (c <= o) c += 1440; return [o, Math.min(c, T1)]; }
 const hoursTxt = (h) => `${tLabel(h[0])}~${tLabel(h[1])}`;
 function hoursNote() { const el = $('x-hours-note'); if (!el) return; const sub = $('x-cat').value, d = hoursOf(sub, SUB[sub].cat), h = readHours($('x-open'), $('x-close'));
-  el.textContent = (h[0] === d[0] && h[1] === d[1] ? `${SUB[sub].ko} 보통 영업시간(가정)입니다. 내 가게 시간으로 바꿔 보세요.` : `${SUB[sub].ko} 보통(${hoursTxt(d)})과 다르게 ${hoursTxt(h)}로 셉니다.`) + ' 하루는 05:00~다음 날 05:00(24시간)을 셉니다.'; }
+  el.textContent = (h[0] === d[0] && h[1] === d[1] ? `${SUB[sub].ko} 보통 영업시간(가정)입니다. 내 가게 시간으로 바꿔 보세요.` : `${SUB[sub].ko} 보통(${hoursTxt(d)})과 다르게 ${hoursTxt(h)}로 셉니다.`) + ' 새 손님은 마감 30분 전(라스트 오더)까지 받습니다. 하루는 05:00~다음 날 05:00(24시간)을 셉니다.'; }
 function fillDefaults() {
   const sb = SUB[$('x-cat').value]; if (!sb) return;
   $('x-seats').value = sb.seats;
