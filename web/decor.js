@@ -272,6 +272,7 @@ for (const g of D.greens) {
 if (shrubs.length > MAX_SHRUBS) shrubs.length = MAX_SHRUBS;
 
 // ── 나무 그리기 ─────────────────────────────────────────
+const leafKind = [];   // 나무마다 잎 색 종류 'y'(은행 노랑)·'b'(마른 갈색)·'g'(초록) — ground.js 가 떨어진 잎 무늬를 깔 때 씀
 const treeRefs = [];   // 나무마다 {x, z, parts: [[InstancedMesh, 번호]..]} — 나중에 버스 정류장 자리의 나무를 숨길 때 쓴다
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
 function hideTreesNear(x, z, r) {
@@ -348,6 +349,7 @@ function hideTreesNear(x, z, r) {
       // 노랑은 초록빛 쪽으로 낮췄다: 햇빛(따뜻한 색)과 곱해지면 주황으로 보이고, '고른 거리' 노란 선과 섞였다
       const base = street ? (u < 0.32 ? pick(GINKGO) : u < 0.55 ? pick(DRY) : green) : (u < 0.72 ? green : u < 0.9 ? pick(OLIVE) : pick(GINKGO));
       const turning = !base.equals(green);
+      leafKind[broadIdx[i]] = !turning ? 'g' : GINKGO.some(c => c.equals(base)) ? 'y' : 'b';   // 올리브는 공원·숲에만 있어 'b'로 묶음
       const sy = 0.82 + rand() * 0.22;
       q.setFromAxisAngle(up, rand() * Math.PI * 2);
       pos.set(x, h - r * sy, z); scl.set(r, r * sy, r); mtx.compose(pos, q, scl); leaf.setMatrixAt(b, mtx); leaf.setColorAt(b, base);
@@ -905,9 +907,9 @@ function afterLoad() {
     const [sw, sl] = tm('play', playgrounds); stats.swings = sw; stats.slides = sl;
     stats.school = tm('school', schoolZones); stats.areaLabels = tm('area', areaLabels);
   } catch (e) { console.warn('decor 소품', e); }
-  // 보이는 가로수 자리(정류장·신호등 등 때문에 숨긴 것 빼고): ground.js(seohogyun-31)가 load 다음 차례에 읽어 나무 보호판을 깐다
+  // 보이는 가로수 자리(정류장·신호등 등 때문에 숨긴 것 빼고)와 잎 색 종류: ground.js(seohogyun-31)가 load 다음 차례에 읽어 나무 보호판·떨어진 잎을 깐다
   spots.streetTree = [];
-  trees.forEach((t, i) => { if (t[4] === 'street' && treeRefs[i] && treeRefs[i].parts.length) spots.streetTree.push([Math.round(t[0] * 10) / 10, Math.round(t[1] * 10) / 10]); });
+  trees.forEach((t, i) => { if (t[4] === 'street' && treeRefs[i] && treeRefs[i].parts.length) spots.streetTree.push([Math.round(t[0] * 10) / 10, Math.round(t[1] * 10) / 10, leafKind[i] || 'g']); });   // [x, z, 'y'|'b'|'g']
   if (window.__decor) Object.assign(window.__decor, { lights: stats.lights || 0, signs: stats.signs || 0, poles: stats.poles || 0, wires: stats.wires || 0, schoolPosts: stats.school || 0, bollards: stats.bollards || 0, swings: stats.swings || 0, slides: stats.slides || 0, playAt: stats.playAt || [], areaLabels: stats.areaLabels || 0, lightAt: stats.lightAt || [], signAt: stats.signAt || [], ms: Object.assign(ms, { all: Math.round(performance.now() - T0) }) });
   if (M.renderer) M.renderer.shadowMap.needsUpdate = true;
   M.need && M.need();
