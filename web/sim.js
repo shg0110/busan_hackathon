@@ -56,8 +56,10 @@ const WKEYS = GROUPS.flatMap(g => g === 'foreign' ? NAT.map(n => 'foreign.' + n[
 const T0 = 300, T1 = 1560;   // 05:00 ~ 26:00(다음 날 02:00)
 
 // ── 난수(시드 고정) ─────────────────────────────────────
-function rng(seed) { let a = seed >>> 0; return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a);
-  t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+// 난수 상태를 f.s 에 두어 복사할 수 있게(재생 중간 저장·되돌리기용). 수열은 예전과 같음
+function rng(seed) { const st = { a: seed >>> 0 }; const f = () => { let a = st.a; a |= 0; a = a + 0x6D2B79F5 | 0; st.a = a; let t = Math.imul(a ^ a >>> 15, 1 | a);
+  t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; f.s = st; return f; }
+const rngFrom = (a) => { const f = rng(0); f.s.a = a; return f; };
 function hash01(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0) / 4294967296; }
 
 // ── 길 그래프(도로 전부, 0.5m 로 이음, 20m 마다 쪼갬) ──────────────
@@ -406,7 +408,36 @@ const assumed = GROUPS.filter(g => CFG.groups[g].src === '가정' || /가정/.te
 $('sim-note').textContent = `가상 인물 ${' '}점 1개 = 사람 약 ${'{W}'}명. ` + (assumed ? '사람 수·교대 시간은 아직 근거 확인 전 가정 값입니다.' : '');
 let simT = T0, playing = false, speed = 15, lastNow = 0;
 let drawDirty = true;   // 멈춰 있을 때도 시각을 옮기면 점을 다시 그려야 한다
-function seek(t) { reset(scen === 'we', 0); for (let s = T0; s <= t; s++) step(s, true); simT = t; drawDirty = true; ui(); }
+// 재생 막대 옮기기: 예전엔 매번 05시부터 다시 계산(18시 0.3초·새벽 1시 0.5초). 이제
+//  - 앞으로 옮기면 지금 상태에서 이어서 계산
+//  - 뒤로 옮기면 1시간마다 저장해 둔 상태 중 가장 가까운 것에서 이어서 계산
+const CK = { key: null, m: new Map() };
+let liveKey = null;
+function cloneAgent(a) { return { ...a, visits: a.visits.slice(), r: rngFrom(a.r.s.a) }; }
+function snap() {
+  return { A: A.map(cloneAgent), SHOP_ST: SHOP_ST.map(o => ({ occ: o.occ.slice() })), W,
+    STATS: { visits: STATS.visits.slice(), spend: STATS.spend.slice(), lost: STATS.lost.slice(), noMoney: STATS.noMoney,
+      byHour: STATS.byHour.map(h => h && h.slice()), byGroup: STATS.byGroup.map(g => g && { ...g }) } };
+}
+function restoreSnap(k) {
+  A = k.A.map(cloneAgent); SHOP_ST = k.SHOP_ST.map(o => ({ occ: o.occ.slice() })); W = k.W;
+  const S = k.STATS; STATS = { visits: S.visits.slice(), spend: S.spend.slice(), lost: S.lost.slice(), noMoney: S.noMoney,
+    byHour: S.byHour.map(h => h && h.slice()), byGroup: S.byGroup.map(g => g && { ...g }) };
+}
+function keep(s) { if (s % 60 === 0 && CK.key === liveKey && !CK.m.has(s) && SHOP_ST.length === SHOPS.length) CK.m.set(s, snap()); }
+function seek(t) {
+  const key = scen;
+  if (CK.key !== key) { CK.key = key; CK.m.clear(); }
+  let from;
+  if (liveKey === key && A.length && t >= simT) from = Math.floor(simT);
+  else {
+    let best = -1; for (const m of CK.m.keys()) if (m <= t && m > best) best = m;
+    if (best >= 0) { restoreSnap(CK.m.get(best)); from = best; } else { reset(key === 'we', 0); from = T0 - 1; }
+    liveKey = key;
+  }
+  for (let s = from + 1; s <= t; s++) { step(s, true); keep(s); }
+  simT = t; drawDirty = true; ui();
+}
 function ui() {
   document.dispatchEvent(new CustomEvent('sim-time', { detail: { t: simT, scen } }));
   $('sim-clock').textContent = hm(simT); $('sim-range').value = Math.round(simT);
@@ -439,7 +470,7 @@ function tick(now) {
   if (!lastNow) lastNow = now; const dt = Math.min(0.1, (now - lastNow) / 1000); lastNow = now;
   if (playing) {
     const to = Math.min(T1, simT + speed * dt);
-    for (let s = Math.floor(simT) + 1; s <= Math.floor(to); s++) step(s, true);
+    for (let s = Math.floor(simT) + 1; s <= Math.floor(to); s++) { step(s, true); keep(s); }
     simT = to; if (simT >= T1) { playing = false; playBtn(); }
     ui();
   }
@@ -661,6 +692,6 @@ function trySlot(bi, floor, sub, price, seats, runs = 3) {
   removeVirtual(s);
   return r;
 }
-window.__sim = { runDay, experiment, seek, nodesNear, flowDay, trySlot, nodeFlow, nodeFlowAsync, restore: () => { drawDirty = true; need(); }, won, wonX, GROUPS, SUB, SUBS_OF, subOptions, NAT,
+window.__sim = { _ck: CK, runDay, experiment, seek, nodesNear, flowDay, trySlot, nodeFlow, nodeFlowAsync, restore: () => { drawDirty = true; need(); }, won, wonX, GROUPS, SUB, SUBS_OF, subOptions, NAT,
   graph: { NX, NZ, ADJ, NN }, get scen() { return scen; }, get A() { return A; }, get W() { return W; }, SHOPS, CFG, nodes: NN, get t() { return simT; } };
 })();
