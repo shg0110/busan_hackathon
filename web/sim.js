@@ -386,7 +386,7 @@ const assumed = GROUPS.filter(g => CFG.groups[g].src === '가정' || /가정/.te
     ${li('교대 시간', `출근 ${sh(CFG.shift.in[0])}~${sh(CFG.shift.in[1])}, 퇴근 ${sh(CFG.shift.out[0])}~${sh(CFG.shift.out[1])} — ${CFG.shift_src || CFG.shift.src || '가정'}`)}
     ${CFG.foreignDaily ? li('외국인 하루 쓸 돈', CFG.foreignDaily.src) : ''}
     ${li('세부 업종별 1인 지출(대표 메뉴 × 1인 수량)', MENU.subs.map(x => `${x.ko} ${x.basket.toLocaleString('ko-KR')}원(근거 ${x.confirmed[0]}/${x.confirmed[1]})`).join(' · '))}
-    ${li('메뉴 가격 근거', '거제시 「개인서비스품목 가격동향」 2026-11-26 옥포1·2동 업소 가격(동마다 1곳, 두 동 평균). 유흥주점·식료품·미용·사우나는 옥포1·2동 카드 건당 금액(2025-02). 그 밖은 가정. 커피·햄버거는 업소마다 종류가 달라(4,700 vs 1,800, 3,800 vs 18,000) 평균을 쓰지 않음')}
+    ${li('메뉴 가격 근거', '① 옥포: 거제시 「개인서비스품목 가격동향」 2026-11-26 옥포1·2동 업소 가격(동마다 1곳, 두 동 평균)과 옥포 업체 공개 가격(당근 동네업체 페이지, 2026-11-27 확인) ② 옥포에 없으면 거제 다른 동·옆 동(아주동) 값 ③ 편의점은 전국 정가, 세탁은 경남 평균 ④ 유흥주점·식료품·미용·사우나는 옥포1·2동 카드 결제 건당 금액(2025-02)으로 계산 ⑤ 그 밖은 가정. 커피·햄버거는 업소마다 종류가 달라(4,700 vs 1,800, 3,800 vs 18,000) 평균을 쓰지 않음. 표: data/processed/okpo_menu_prices.csv')}
     ${li('업종 기준가(세부 업종이 비싼지 견주는 값)', CATS.map(c => `${CFG.cats[c].ko} ${CFG.cats[c].price.toLocaleString('ko-KR')}원`).join(' · ') + (ps.meal ? ' — ' + ps.meal : ''))}
     ${li('외국인 근로자 국적', NAT.map(n => `${n[2]} ${Math.round(n[1] * 1000) / 10}%`).join(' · ') + ' — 옥포1·2동 등록 외국인 2,101명 중 베트남 576명(거제시 2026-10). 할랄 음식 찾는 국적 8%는 가정')}
     ${li('세부 업종 선호(조선소 통근자 → 고깃집·호프, 베트남 → 쌀국수, 할랄 → 돼지고기·술 피함 등)', '가정(근거 자료 없음)')}
@@ -490,7 +490,7 @@ MP.infoExtra = (b, bi) => {
       <label>자리<input id="x-seats" type="number" min="2" max="200" step="1"></label>
     </div>
     <div class="x-menu" id="x-menu"></div>
-    <button id="x-run" class="btn-primary">하루 돌려 보기 <span>평일·주말 각 ${RUNS}번</span></button>
+    <button id="x-run" class="btn-primary">이 가게 손님 세어 보기 <span>평일·주말 각 ${RUNS}번</span></button>
     <div id="x-out" aria-live="polite"></div>
   </div>`;
 };
@@ -510,7 +510,7 @@ function fillDefaults() {
   $('x-seats').value = sb.seats;
   $('x-menu').innerHTML = `<p class="x-menu-h">대표 메뉴 <span>가격 × 1인 수량</span></p>${sb.menus.map((m, i) => `
     <div class="m-row" data-i="${i}" title="${esc(m.src || '')}">
-      <div class="m-name"><b>${esc(m.n)}</b><span class="u">${esc(m.unit)}</span><span class="src ${m.ok ? 'ok' : 'guess'}">${m.ok ? '확인' : '가정'}</span></div>
+      <div class="m-name"><b>${esc(m.n)}</b><span class="u">${esc(m.unit)}</span><span class="src ${m.lvl || (m.ok ? 'okpo' : 'guess')}">${esc(m.badge || (m.ok ? '확인' : '가정'))}</span></div>
       <div class="m-calc"><input class="m-p" type="number" min="0" step="500" value="${m.price}" aria-label="${esc(m.n)} 가격(원)"><span class="op">원 ×</span>
         <input class="m-q" type="number" min="0" step="0.05" value="${fmtQ(m.qty * m.share)}" aria-label="${esc(m.n)} 1인 수량"><span class="op">=</span><span class="m-s"></span></div>
     </div>`).join('')}
@@ -518,7 +518,12 @@ function fillDefaults() {
     <p class="x-menu-note">1인 수량 = 한 사람이 평균으로 시키는 양(2~3명이 한 접시를 나누면 0.4). 근거: ${esc(menuSrcShort(sb))}</p>`;
   updateBasket();
 }
-function menuSrcShort(sb) { const ok = sb.menus.filter(m => m.ok).length; return ok ? `${ok}/${sb.menus.length}개 메뉴는 거제시 개인서비스 가격동향(2026-11-26, 옥포1·2동) 또는 카드 건당 금액, 나머지는 가정. 메뉴에 마우스를 올리면 출처` : '가격 자료를 찾지 못해 모두 가정'; }
+// 근거 수준 배지: 옥포(옥포 업소 가격) · 거제(옥포 밖 거제·옆 동) · 전국/경남(정가·평균) · 카드(카드 결제 건당으로 계산) · 가정
+const LVL_KO = { okpo: '옥포 업소 가격', geoje: '옥포 밖 거제 값', wide: '전국 정가·경남 평균', card: '카드 결제 건당으로 계산', guess: '가정' };
+function menuSrcShort(sb) {
+  const c = {}; for (const m of sb.menus) c[m.lvl || 'guess'] = (c[m.lvl || 'guess'] || 0) + 1;
+  return Object.keys(LVL_KO).filter(k => c[k]).map(k => `${LVL_KO[k]} ${c[k]}개`).join(', ') + '. 옥포 업소 가격은 거제시 개인서비스 가격동향(2026-11-26)과 옥포 업체 공개 가격(당근, 2026-11 확인). 메뉴에 마우스를 올리면 출처';
+}
 function readMenus() {
   const sb = SUB[$('x-cat').value];
   return [...document.querySelectorAll('#x-menu .m-row')].map(tr => { const m = sb.menus[+tr.dataset.i];
