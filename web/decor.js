@@ -322,15 +322,18 @@ function hideTreesNear(x, z, r) {
     // 잎 덩이 모양은 세 가지(흔드는 씨앗이 다름)를 나무마다 돌려 쓴다 → 같은 공을 돌려 쓴 티가 덜 난다
     // 색은 11월 말(자료를 모은 때): 상록 위주에 일부만 물든다(장식).
     //   주황·빨강은 '가게 없는 층'·'문 닫은 가게' 색이라 단풍에도 쓰지 않는다
-    const NV = 3, cnt = [0, 0, 0];
-    broad.forEach((t, i) => cnt[i % NV]++);
-    const leafs = [0, 1, 2].map(v => mk(mottle(shade(lumpy(new THREE.IcosahedronGeometry(1, 1), 0.15, v + 1), 0.62, 1.08), 0.09, v), '#ffffff', cnt[v] * 3, true));
-    const at = [0, 0, 0];
+    // 숲(wood·forest) 나무는 대개 멀리서 보이니 면이 적은 잎 덩이(20면)를, 공원·놀이터 나무는 80면을 쓴다.
+    // 나무가 지도 전체 삼각형의 59%(129만)였다(2026-11-27, CPU 만으로 그리는 PC 에서 한 장 0.2~0.7초)
+    const NV = 3, WOODK = new Set(['wood', 'forest']), set = (t) => WOODK.has(t[4]) ? 1 : 0, cnt = [[0, 0, 0], [0, 0, 0]];
+    broad.forEach((t, i) => cnt[set(t)][i % NV]++);
+    const leafGeo = (detail, amp, v) => mottle(shade(lumpy(new THREE.IcosahedronGeometry(1, detail), amp, v + 1), 0.62, 1.08), detail ? 0.09 : 0.11, v);
+    const leafs = [0, 1].map(st => [0, 1, 2].map(v => mk(leafGeo(st ? 0 : 1, st ? 0.2 : 0.15, v), '#ffffff', cnt[st][v] * 3, true)));
+    const at = [[0, 0, 0], [0, 0, 0]];
     const GINKGO = ['#c4b452', '#cfbd5f', '#b9a84c'].map(h => new THREE.Color(h));
     const OLIVE = ['#8e9a4c', '#9c9a52'].map(h => new THREE.Color(h));
     const pick = (A) => A[Math.floor(rand() * A.length)].clone();
-    broad.forEach(([x, z, h, rr], i) => {
-      const v = i % NV, leaf = leafs[v], b = at[v]++ * 3;
+    broad.forEach((t, i) => {
+      const [x, z, h, rr] = t, st = set(t), v = i % NV, leaf = leafs[st][v], b = at[st][v]++ * 3;
       const g0 = GH(x, z), r = h * rr, k = Math.floor(rand() * LEAF.length), green = LEAF[k].clone().lerp(LEAF[Math.min(LEAF.length - 1, k + 1)], rand() * 0.5);
       const u = rand();
       // 공원·숲: 초록 72% · 올리브 18% · 노랑 10%. 노랑은 초록빛 쪽으로 낮췄다(햇빛과 곱해지면 주황으로 보이고, '고른 거리' 노란 선과 섞였다)
@@ -350,7 +353,7 @@ function hideTreesNear(x, z, r) {
       }
       treeRefs[broadIdx[i]].parts.push([leaf, b], [leaf, b + 1], [leaf, b + 2]);
     });
-    meshes.push(...leafs);
+    meshes.push(...leafs[0], ...leafs[1]);
   }
   if (cone.length) {
     // 침엽: 원뿔 두 단(아래가 넓고 위가 좁게)
@@ -367,7 +370,7 @@ function hideTreesNear(x, z, r) {
     meshes.push(needle);
   }
   if (shrubs.length) {
-    const bush = mk(mottle(shade(lumpy(new THREE.IcosahedronGeometry(1, 1), 0.16), 0.66, 1.06), 0.1), '#ffffff', shrubs.length, true);
+    const bush = mk(mottle(shade(lumpy(new THREE.IcosahedronGeometry(1, 0), 0.18), 0.66, 1.06), 0.11), '#ffffff', shrubs.length, true);   // 관목은 작아서 20면이면 충분
     shrubs.forEach(([x, z, sz], i) => {
       q.setFromAxisAngle(up, rand() * Math.PI * 2);
       pos.set(x, GH(x, z) + sz * 0.38, z); scl.set(sz * 0.6, sz * 0.45, sz * 0.6); mtx.compose(pos, q, scl); bush.setMatrixAt(i, mtx);
