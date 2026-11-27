@@ -150,21 +150,35 @@ function drawBand(s) {
   band.children.forEach(m => { m.frustumCulled = false; });
   scene.add(band);
 }
-function fly(toT, toC, dur = 900) {
-  const cam = M.camera, ctl = M.controls, t0 = performance.now(), fC = cam.position.clone(), fT = ctl.target.clone();
-  (function f(now) { const k = Math.min(1, (now - t0) / dur), e = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
-    cam.position.lerpVectors(fC, toC, e); ctl.target.lerpVectors(fT, toT, e); ctl.update(); need(); if (k < 1) requestAnimationFrame(f); })(t0);
+// 카메라 옮기기. 목표 둘레의 구면 좌표(거리·높이각·방위)로 섞어 곡선으로 날아간다(직선 섞기는 가까워질 때 화면이 쏠림).
+// 새 비행이 시작되면 앞 비행은 멈춘다(flyTok). onEnd(완료 true/끊김 false)
+let flyTok = 0;
+const ease3 = (k) => k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+function fly(toT, toC, dur = 900, onEnd) {
+  const cam = M.camera, ctl = M.controls, t0 = performance.now(), fT = ctl.target.clone(), tok = ++flyTok;
+  const s0 = new THREE.Spherical().setFromVector3(cam.position.clone().sub(fT)), s1 = new THREE.Spherical().setFromVector3(toC.clone().sub(toT));
+  let dth = s1.theta - s0.theta; dth = Math.atan2(Math.sin(dth), Math.cos(dth));   // 짧은 쪽으로 돌기
+  const sp = new THREE.Spherical(), tt = new THREE.Vector3();
+  (function f(now) {
+    if (tok !== flyTok) { onEnd && onEnd(false); return; }
+    const k = Math.min(1, (now - t0) / dur), e = dur > 1500 ? ease3(k) : (k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2);
+    tt.lerpVectors(fT, toT, e);
+    sp.set(s0.radius * Math.pow(s1.radius / s0.radius, e), s0.phi + (s1.phi - s0.phi) * e, s0.theta + dth * e);
+    cam.position.setFromSpherical(sp).add(tt); ctl.target.copy(tt); ctl.update(); need();
+    if (k < 1) requestAnimationFrame(f); else onEnd && onEnd(true);
+  })(t0);
 }
-function flyStreet(s) {
+function streetPose(s) {
   const p = s.p, a = p[0], b = p[p.length - 1], mx = (a[0] + b[0]) / 2, mz = (a[1] + b[1]) / 2;
   const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1, nx = -dz / l, nz = dx / l;
   const side = nz > 0 ? 1 : -1;   // 남쪽에서 북쪽을 보게(화면 위가 북쪽 쪽)
-  const D = Math.max(200, s.len * 0.68);
-  fly(new THREE.Vector3(mx, 0, mz), new THREE.Vector3(mx + nx * side * D * 0.9, D * 0.72, mz + nz * side * D * 0.9));
+  const D = Math.max(200, s.len * 0.68), g = M.hAt(mx, mz);
+  return { t: new THREE.Vector3(mx, g, mz), c: new THREE.Vector3(mx + nx * side * D * 0.9, g + D * 0.72, mz + nz * side * D * 0.9) };
 }
+function flyStreet(s, dur, onEnd) { const P = streetPose(s); fly(P.t, P.c, dur, onEnd); }
 function flyBuilding(bi) {
   const b = B[bi]; let x = 0, z = 0; for (const q of b.p) { x += q[0]; z += q[1]; } x /= b.p.length; z /= b.p.length;
-  fly(new THREE.Vector3(x, 0, z), new THREE.Vector3(x + 60, 55 + b.h, z + 95), 700); M.select(bi);
+  const g = M.hAt(x, z); fly(new THREE.Vector3(x, g, z), new THREE.Vector3(x + 60, g + 55 + b.h, z + 95), 700); M.select(bi);
 }
 
 // ── 패널 ─────────────────────────────────────────────
@@ -314,7 +328,7 @@ function streetUI(on) {
     saved = null; if (window.__syncCard) window.__syncCard();
   }
 }
-function choose(id) {
+function choose(id, noFly) {
   const s = ST.find(x => x.id === id) || null; cur = s;
   tabs.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.id === (s ? s.id : ''))));
   document.body.classList.toggle('street-mode', !!s);
@@ -325,11 +339,34 @@ function choose(id) {
   }
   M.select(-1);
   M.tint(new Set(s.slots.map(x => x.b)), 0.62);   // 거리 밖 건물은 더 흐리게
-  drawBand(s); flyStreet(s); panel.hidden = false; render(s); need();
+  drawBand(s); if (!noFly) flyStreet(s); panel.hidden = false; render(s); need();
 }
 tabs.onclick = (e) => { const b = e.target.closest('button'); if (b) choose(b.dataset.id); };
-const q = new URLSearchParams(location.search).get('street');
-choose(q === null ? 'light' : q);   // 기본: 거제시 공식 구간 '빛의 거리'
+const QS = new URLSearchParams(location.search), q = QS.get('street');
+// ── 첫 화면 연출: 상권 전체를 비스듬히 내려다보다가 기본 거리('빛의 거리')로 3.4초 동안 내려앉는다.
+// 주소에 보기 설정(street·cam·t·#해시)이 있거나 움직임 줄이기 설정이면 건너뜀. ?intro=1 강제, ?intro=0 끔.
+// 지도를 누르거나 휠·키를 쓰면 그 자리에서 멈추고 바로 조작. 끝나면 window.__introDone = true + 'intro-done' 이벤트(seohogyun-20 요청)
+const introOn = QS.get('intro') === '1' || (QS.get('intro') !== '0' && q === null && !QS.has('cam') && !QS.has('t') && !location.hash
+  && !matchMedia('(prefers-reduced-motion: reduce)').matches);
+function introDone() { if (window.__introDone) return; window.__introDone = true; document.dispatchEvent(new CustomEvent('intro-done')); }
+const first = q === null ? 'light' : q;   // 기본: 거제시 공식 구간 '빛의 거리'
+choose(first, introOn);
+if (!introOn) introDone();
+else {
+  const s0 = ST.find(x => x.id === first);
+  // 시작 자리: 상권 전체 보기(HOME)에서 서쪽으로 40° 돌리고 조금 더 멀리 — 바다(옥포만)와 상권이 한눈에
+  const t0 = M.HOME.t.clone(), off = M.HOME.c.clone().sub(t0).applyAxisAngle(new THREE.Vector3(0, 1, 0), -0.7).multiplyScalar(1.15);
+  M.camera.position.copy(t0).add(off); M.controls.target.copy(t0); M.controls.update(); need();
+  const cvs = document.getElementById('c'), stop = () => { flyTok++; };   // 사용자가 손대면 비행 멈춤(그 자리에서 조작)
+  const opts = { capture: true, passive: true };
+  const off2 = () => { cvs.removeEventListener('pointerdown', stop, opts); cvs.removeEventListener('wheel', stop, opts); removeEventListener('keydown', stop, opts); };
+  cvs.addEventListener('pointerdown', stop, opts); cvs.addEventListener('wheel', stop, opts); addEventListener('keydown', stop, opts);
+  const go = () => { if (!window.__ready) { requestAnimationFrame(go); return; }
+    // 로딩 가림막이 걷히는 0.3초 + 잠깐 전체를 보여 준 뒤 출발
+    const tok = flyTok; setTimeout(() => { if (tok !== flyTok) { off2(); introDone(); return; }
+      flyStreet(s0, 3400, () => { off2(); introDone(); }); }, 700); };
+  go();
+}
 // 밤에는 거리 층 띠도 제 색 그대로(floors.js 와 같게)
 document.addEventListener('map-light', (e) => { if (!sBands) return; const n = e.detail.night >= 0.5, basic = sBands.material.isMeshBasicMaterial;
   if (n !== basic) { sBands.material.dispose(); sBands.material = n ? new THREE.MeshBasicMaterial({ vertexColors: true }) : new THREE.MeshLambertMaterial({ vertexColors: true }); need(); } });
