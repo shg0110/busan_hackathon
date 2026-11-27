@@ -1,0 +1,3 @@
+출처: https://www.data.go.kr/data/15101972/openapi.do
+API: https://apis.data.go.kr/B551011/DataLabService/locgoRegnVisitrDDList
+받은 날짜: 2026-11-27

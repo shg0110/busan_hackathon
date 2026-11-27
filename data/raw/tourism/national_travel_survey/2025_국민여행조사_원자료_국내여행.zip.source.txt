@@ -1,0 +1,5 @@
+데이터명: 2025년 국민여행조사 원자료(국내여행)
+기관: 문화체육관광부·한국문화관광연구원 (관광지식정보시스템)
+페이지: https://know.tour.go.kr/stat/nRawDataDownloadDis19Re.do
+받은 날짜: 2026-11-27
+비고: 약 328MB, .gitignore(data/raw/**/*.zip)로 커밋 제외. 다른 사람은 위 페이지에서 직접 받기.
