@@ -588,6 +588,8 @@ canvas.addEventListener('pointerup', (e) => {
   ndc.set((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1);
   ray.setFromCamera(ndc, camera);
   const hit = ray.intersectObject(bMesh, false)[0];
+  // 가상 시민(점)을 눌렀으면 그 사람 페르소나(sim.js). 건물보다 뒤에 가려진 사람은 고르지 않음
+  if (window.__map.pickAt && window.__map.pickAt(e.clientX, e.clientY, hit ? hit.distance : Infinity)) return;
   select(hit ? triOwner[hit.faceIndex] : -1);
 });
 

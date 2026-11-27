@@ -2180,6 +2180,10 @@ with open(WEB_DATA_OUT, 'w', encoding='utf-8') as f:
     json.dump(web_payload, f, ensure_ascii=False, separators=(',', ':'))
     f.write(';\n')
 
+# 화면에서 가상 시민을 눌렀을 때 보여 줄 속성 번들(같은 순서). personas.jsonl·위 번들을 다 쓴 뒤에 만든다
+import persona_profiles_web
+persona_profiles_web.main()
+
 
 def html_table(head, rows):
     h = ''.join(f'<th>{html.escape(str(x))}</th>' for x in head)

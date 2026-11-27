@@ -12,13 +12,13 @@ NAME = sys.argv[1]
 P = os.path.join(ROOT, 'data', 'processed')
 M = json.load(open(os.path.join(P, f'{NAME}_menu.json'), encoding='utf-8'))
 SUB_KO = {s['ko']: s['id'] for s in M['subs']}
-SUB_KO.update({'목욕탕': 'sauna', '호프·요리주점': 'hof', '할랄·중앙아시아': 'halal'})
+SUB_KO.update({'목욕탕': 'sauna', '호프·요리주점': 'hof', '할랄·중앙아시아': 'halal', '경양식·피자·버거': 'western'})   # 가격표의 옛 업종 이름(버거를 떼기 전)
 # 우리 메뉴 이름 → 가격표 (메뉴, 단위). 단위가 None 이면 단위는 보지 않는다. 없으면 같은 이름
 MAP = {('baekban', '김치찌개백반'): ('김치찌개백반', None), ('hoe', '광어회'): ('실속 광어회', None), ('hoe', '매운탕'): ('매운탕', '1냄비'),
        ('hof', '안주'): ('대표 안주', None), ('noraebang', '노래방 1시간'): ('노래방 이용료', None), ('viet', '분짜·반미'): ('분짜 또는 반미', None),
        ('halal', '나시고랭·플로프'): ('나시고랭 또는 플로프', None)}
-# 평균이 대표값이 아닌 것: 커피(프랜차이즈 4,700 vs 저가 1,800), 햄버거(단품 3,800 vs 레스토랑 18,000)
-NO_OVERRIDE = {('cafe', '커피'), ('western', '햄버거')}
+# 평균이 대표값이 아닌 것: 커피(프랜차이즈 4,700 vs 저가 1,800). 햄버거는 '버거' 업종으로 떼어 프랜차이즈 정가로 둔다
+NO_OVERRIDE = {('cafe', '커피')}
 DRINKS = {'소주', '병맥주', '생맥주'}
 
 def level(r):
@@ -63,6 +63,8 @@ for s in M['subs']:
             m['lvl'], m['badge'] = 'card', '카드'
         elif m.get('src', '가정').startswith('가정'):
             m['lvl'], m['badge'] = 'guess', '가정'
+        elif m['src'].startswith('전국'):   # 프랜차이즈 전국 정가(예: 버거 단품)
+            m['lvl'], m['badge'] = 'wide', '전국'
         else:   # menu.json 에 직접 적은 근거(예: 카페 아메리카노 옥포1동 4,700)
             m['lvl'], m['badge'] = 'okpo', '옥포'
         m['ok'] = m['lvl'] != 'guess'
