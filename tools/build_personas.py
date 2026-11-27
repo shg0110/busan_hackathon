@@ -1,12 +1,15 @@
-"""옥포 가상 시민 실규모(약 2.8만~2.9만 명, 1:1) 생성기 (v0.4.0 — 유동인구·일자리·국민여행조사 다중 보정).
+"""옥포 가상 시민 실규모(하루 다녀간 약 2.4만 명, 1:1) 생성기 (v0.6.0 — 유동인구·일자리·국민여행조사 다중 보정).
 
 방법:
-  1) 후보 풀(50,000명)을 옥포1동 실측 인구·외국인·일자리(4,538개)·시외유입 거주지×성연령·국민여행조사(거제 378건)·경남 고용구조에서 생성
+  1) 후보 풀(50,000명)을 옥포1동 실측 인구·외국인(체류자격 → 성별 → 국적)·일자리(4,538개)·시외유입 거주지×성연령·
+     국민여행조사(거제 378건)·경남 고용구조에서 생성. 도착 시각은 근무 시간·자주 가는 업종 영업시간 안에서만 고른다
   2) 후보마다 24시간 동 체류 벡터 p_i(h) 와 상권 거리 체류 벡터 s_i(h) 를 구성
-  3) 다중 주변합 반복 비례 맞춤(raking)으로 C1~C7·C11(생활인구 24시간 곡선 8,894명, 성연령, 시외유입 3,417명, 동내 일자리 4,538개, 상권 시간 비율) 동시 보정
-  4) 보정으로 도출된 옥포1동 하루 순유동 인원 N = round(Σw) (약 2.8만~2.9만 명) 전원을 1:1 가중치(1 페르소나 = 실제 1명)로 체계 추출(PPS) 후 미세 보정
-  5) 카드 결제(하루 5,624건·시간대 비율·업종 비중·외지 비중)를 별도 보정하고, 보정에 쓰지 않은 독립 자료 8종(V1~V8)으로 검증
-  6) 3D 웹 시뮬레이션(web/sim.js)이 전원 1:1로 직접 구동할 수 있도록 경량 번들(web/data/okpo_personas.js)도 함께 출력
+  3) 다중 주변합 반복 비례 맞춤(raking)으로 C1~C6·C11(생활인구 24시간 곡선 8,894명의 평균과 모양, 성연령, 시외유입 3,417명,
+     동내 일자리 4,538개, 상권 시간 비율) 동시 보정
+  4) 보정으로 도출된 하루 순유동 인원 N = round(Σw) 전원을 1:1 가중치(1 페르소나 = 실제 1명)로 체계 추출(PPS) 후 미세 보정
+  5) 카드 결제(하루 5,624건·시간대 비율·업종 비중·외지 비중)를 별도 보정하고, 보정에 쓰지 않은 독립 자료(V1~V10)로 검증
+  6) 3D 웹 시뮬레이션(web/sim.js)이 전원 1:1로 직접 구동할 수 있도록 경량 번들(web/data/okpo_personas.js)도 함께 출력.
+     시뮬에서 실제로 나오는 결제·시간대·외국인 지출은 tools/sim_persona_check.js 로 따로 확인한다
 
 실행: python3 -I tools/build_personas.py
 출력:
@@ -23,7 +26,7 @@ OUT = os.path.join(ROOT, 'data', 'processed', 'personas')
 WEB_DATA_OUT = os.path.join(ROOT, 'web', 'data', 'okpo_personas.js')
 M_POOL = 50000
 SEED = 20261127
-VERSION = '0.5.0'
+VERSION = '0.6.0'
 GEN_DATE = '2026-11-27'
 
 # ── 데이터 없는 곳에만 남긴 최소 가정값 + 현장 상인 인터뷰(2026-11) 구조 보정값 ──
@@ -40,6 +43,15 @@ ASSUMED = {
     'foreign_mart_pref_scale': 1.45,           # 외국인 근로자 식자재·편의점 장보기 후 숙소 조리·모임 선호 반영
     'foreign_intl_meal_split': 0.34,           # 외국인 외식 중 다국적·고향 음식점 선호 비중
     'subcontract_pub_pref_scale': 0.72,        # 현장 인터뷰 반영: 조선소 협력사 내·외국인 혼성 근무 및 경기 체감으로 단체 회식 축소
+    'expat_budget_scale': 1.30,                # 선주 감독관·외국 기술자(D-9-3 등) 1회 예산 배수. 소비 자료 없음 — 해외 본사 급여·체류비를 받는 고소득층(시나리오 조절용)
+    'expat_family_budget_scale': 1.15,
+    'expat_pub_pref_scale': 1.60,              # 옛 '옥포 이태원' 펍·바의 주 고객(머니투데이 2017-04-03 「불꺼진 '옥포 이태원', 선주의 빈자리」)
+    'expat_weekday_arrival_mode': {'morning': 0.05, 'lunch': 0.12, 'after': 0.83, 'shift': 0.0},
+    'sex_male_by_visa_class': {                # 체류자격 부류별 남성 비율(가정). 결과는 옥포1동 등록외국인 남성 비율 실측과 독립 비교(V9)
+        'worker': 0.97, 'dongpo_worker': 0.70, 'expat': 0.93, 'expat_family': 0.30, 'marriage': 0.18,
+        'family': 0.35, 'student': 0.55, 'e6': 0.15, 'general': 0.60, 'other': 0.70,
+    },
+    'lunch_out_from_outside_job': 0.25,        # 동 밖 직장인이 평일 점심에 옥포1동 상권으로 오는 정도(근처 직장일 때만, 12시 칸만)
     'foreign_paid_tx_factor': 1.0,             # 외국인 결제 빈도 배수(내국인 = 1.0). 0.52였으나 예산 배수와 같은 절약 성향을 두 번 곱해 R1이 0.15배로 지나치게 낮아져 1.0으로 둠(시나리오 조절용으로 남김)
     'foreign_budget_scale': {                  # 외국인 1회 예산 배수(내국인 = 1.0)
         'E-9·E-8·H-2': 0.50,                   # 고용허가제: 소득의 56.5%를 송금(전체 외국인 25.5%), 76.7%가 무상 거처 — 2025 이민자 체류실태(22_foreign_spending_survey.csv)
@@ -70,6 +82,7 @@ ASSUMED_SOURCES = {
     'foreign_mart_pref_scale': 'assumption', 'foreign_intl_meal_split': 'assumption',
     'foreign_budget_scale': 'survey', 'foreign_active_daily_share': 'assumption',
     'design_tech_street_out_prob': 'interview+data', 'design_tech_lunch_boost': 'interview+data',
+    'expat_pub_pref_scale': 'press+data', 'expat_budget_scale': 'assumption', 'expat_family_budget_scale': 'assumption',
     'criteria_base_krei': 'survey',
 }
 ASSUMED_SOURCES = {k: ASSUMED_SOURCES.get(k, 'assumption') for k in ASSUMED}
@@ -90,7 +103,7 @@ SEG_KO = {
     'foreign_resident': '옥포 거주 외국인',
     'okpo1_worker': '옥포1동 상권·사업체 근무자',
     'stayer': '시외 체류·숙소형 유입',
-    'commuter': '시외 당일 통근·업무 유입',
+    'commuter': '시외 주간 유입(통근·출장)',
     'geoje_visitor': '거제 타동 방문객',
     'tourist': '관광객',
 }
@@ -171,6 +184,37 @@ n_intl_stores = sum(1 for r in stores_raw if r['상권업종대분류명'] == '�
     r['상권업종중분류명'] in ('동남아시아', '기타 외국식') or
     re.search(r'베트남|태국|인도|네팔|우즈벡|몽골|필리핀|스리랑카|할랄|케밥|쌀국수', r['상권업종소분류명'] + r['상호명'])))
 INTL_STORE_RATIO = n_intl_stores / max(n_meal_stores, 1)  # ~0.0184
+
+# 업종별 영업시간(세부 업종 대표 영업시간의 합집합, okpo_menu.json — 3D 시뮬레이션과 같은 값).
+# 도착 시각을 고를 때 '이 사람이 주로 가는 업종이 문 연 시간'만 쓴다(예전엔 낮에 술집, 이른 아침에 식당으로 와서 시뮬에서 헛걸음)
+MENU_SUBS = json.load(open(os.path.join(ROOT, 'data', 'processed', 'okpo_menu.json'), encoding='utf-8'))['subs']
+CAT_OPEN = {c: (min(x['open'] for x in MENU_SUBS if x['cat'] == c), max(x['close'] for x in MENU_SUBS if x['cat'] == c)) for c in CATS}
+
+
+def cat_open_hour(c, h):
+    o, cl = CAT_OPEN[c]
+    return any(o <= m < cl - 10 for m in (h * 60 + 30, h * 60 + 30 + 1440))
+
+
+CAT_HOUR_MASK = {c: [1.0 if cat_open_hour(c, h) else 0.0 for h in range(24)] for c in CATS}
+
+
+def read_js_json(path):
+    t = open(path, encoding='utf-8').read()
+    return json.loads(t[t.index('{'):t.rindex('}') + 1])
+
+
+# 업종별 가게 1인 지출(시뮬과 같은 단위): 세부 업종 대표 메뉴 바구니(web/data/okpo_menu.js) × 옥포 가게 수(web/data/okpo_sim.js).
+# 페르소나의 '예산'은 카드 결제 1건(일행 몫 포함) 단위라 시뮬의 1인 가격과 단위가 다르다. 업종 지출 비중(C9)·성연령 매출(V6)·
+# 외국인 지출 비교(R1)는 시뮬과 같게 '결제 1건 = 그 시각에 연 업종의 1인 가격 × 이 사람의 지출 배수'로 계산한다
+_menu_js = read_js_json(os.path.join(ROOT, 'web', 'data', 'okpo_menu.js'))
+_sim_js = read_js_json(os.path.join(ROOT, 'web', 'data', 'okpo_sim.js'))
+_sub_n = _sim_js['counts']['by_sub']
+CAT_PRICE = {}
+for c in CATS:
+    subs = [x for x in _menu_js['subs'] if x['cat'] == c]
+    n = sum(_sub_n.get(x['id'], 0) for x in subs)
+    CAT_PRICE[c] = (sum(x['basket'] * _sub_n.get(x['id'], 0) for x in subs) / n) if n else sum(x['basket'] for x in subs) / len(subs)
 
 # 옥포1동 기술센터(대우조선 복합업무지원단지, 옥포동 1991-9, 18층): 설계·엔지니어링 업체와 사내식당(웰리브)이 한 건물에 있음
 # → 설계·기술직 점심을 건물 안 구내식당에서 해결한다는 상인회 인터뷰(2026-11-27)의 근거
@@ -259,10 +303,6 @@ visa_okpo1 = Counter({r['체류자격']: int(r['옥포1동']) for r in visa_rows
 visa_all = Counter({r['체류자격']: int(r['합계']) for r in visa_rows if int(r['합계']) > 0})
 fd1 = params['foreign']['by_dong']['옥포1동']
 fd2 = params['foreign']['by_dong']['옥포2동']
-nat_okpo1 = Counter(fd1['top'])
-nat_okpo1['기타'] = fd1['total'] - sum(nat_okpo1.values())
-nat_geoje = Counter(params['foreign']['top'])
-nat_geoje['기타'] = params['foreign']['geoje_total'] - sum(nat_geoje.values())
 
 for_age_raw = targets_json['foreign_age_by_nationality_geoje']
 NAT_KEY_MAP = {'타이': '타이', '베트남': '베트남', '필리핀': '필리핀', '프랑스': '프랑스', '네팔': '네팔',
@@ -279,6 +319,76 @@ for d in for_age_raw.values():
     for k, v in d.items():
         if k in AGE5_BOUNDS:
             foreign_age_global[k] += v
+
+# 거제 국적 분포(외국인주민현황 2026-10-31, 20명 이상 국적 전부). 예전엔 상위 5~6개국 밖을 모두 '기타'로 뭉쳐 외국인의 47%가 '기타'였다
+GEOJE_NAT = Counter({n: sum(v for k, v in d.items() if k in AGE5_BOUNDS) for n, d in for_age_raw.items()})
+NAT_ALIAS = {'러시아': '러시아(연방)'}
+
+
+def nat_allowed(n, allowed):
+    if allowed is None:
+        return True
+    if allowed == 'non_expat':
+        return n not in NAT_SETS['expat'] or n in ('인도', '러시아(연방)', '말레이시아', '튀르키예')
+    return n in allowed
+
+
+NAT_JOINT = {}
+
+
+def nat_joint(dong, visa_counts):
+    """동의 국적 × 체류자격 표. 씨앗 = 거제 국적 분포 × '그 체류자격에 나올 수 있는 국적'. 체류자격별 인원(열)과
+    동 상위 5개국 인원·나머지 합(행)에 함께 맞춘다(반복 비례 맞춤). 예전엔 국적을 체류자격과 따로 뽑아 E-9 프랑스인 등이 나왔다."""
+    if dong in NAT_JOINT:
+        return NAT_JOINT[dong]
+    bd = params['foreign']['by_dong'].get(dong)
+    top = {NAT_ALIAS.get(k, k): v for k, v in bd['top'].items()} if bd else {}
+    nats = sorted(set(GEOJE_NAT) | set(top))   # 정렬: 집합 순서는 실행마다 달라져(문자열 해시) 같은 seed 에서도 결과가 바뀐다
+    cols = {}
+    for lab, c in visa_counts.items():
+        _o, code, cls = visa_job(lab)
+        allowed = nat_set_for(cls, code)
+        col = {n: float(GEOJE_NAT.get(n, 1)) for n in nats if nat_allowed(n, allowed)} or {n: float(GEOJE_NAT.get(n, 1)) for n in nats}
+        if code in cols:
+            cols[code][0] += c
+        else:
+            cols[code] = [float(c), col]
+    rest_tgt = (bd['total'] - sum(top.values())) if bd else None
+    for _ in range(80):
+        for c, col in cols.values():
+            sm = sum(col.values()) or 1.0
+            for n in col:
+                col[n] *= c / sm
+        if top:
+            rows = Counter()
+            for _c, col in cols.values():
+                for n, v in col.items():
+                    rows[n] += v
+            rest_cur = sum(v for n, v in rows.items() if n not in top) or 1.0
+            for _c, col in cols.values():
+                for n in col:
+                    col[n] *= (top[n] / max(rows[n], 1e-9)) if n in top else (rest_tgt / rest_cur)
+    NAT_JOINT[dong] = {code: col for code, (_c, col) in cols.items()}
+    return NAT_JOINT[dong]
+
+
+def pick_nationality(rng, dong, cls, code):
+    counts = visa_okpo1 if dong == '옥포1동' else visa_by_dong.get(dong)
+    if counts:
+        col = nat_joint(dong, counts).get(code)
+        if col:
+            return pick(rng, col)
+    w = {n: v for n, v in GEOJE_NAT.items() if nat_allowed(n, nat_set_for(cls, code))}
+    return pick(rng, w or GEOJE_NAT)
+
+
+def pick_visa_given_sex(rng, visa_counts, sex):
+    """체류자격 인원 × 그 부류의 성비로, 이미 정해진 성별에 맞는 체류자격을 뽑는다."""
+    ws = {}
+    for v, c in visa_counts.items():
+        pm = SEX_MALE_BY_CLASS[visa_job(v)[2]]
+        ws[v] = c * (pm if sex == '남' else 1.0 - pm)
+    return pick(rng, ws)
 
 # 시외 유입 (거주지 × 성 × 연령, 2026년 1~9월 옥포1동 시각평균 3,416.74명)
 SA_COLS = [('남', '10대', '남10대'), ('남', '20대', '남20대'), ('남', '30대', '남30대'), ('남', '40대', '남40대'),
@@ -302,6 +412,7 @@ for r in inflow_rows:
             else:
                 inflow_cells_prov[('기타 시도', bd, sx)] += v * 0.68
                 inflow_cells_gn[('경남 기타', bd, sx)] += v * 0.32
+GN_NAMES = {k[0] for k in inflow_cells_gn}   # 경남 시군(‘경남 기타’ 포함)
 
 # 거제 다른 동 방문객 출발지 가중치 (옥포1동과의 인접성 × 동 규모 반영)
 NEAR_FACTOR = {'옥포2동': 4.0, '아주동': 3.5, '장승포동': 2.2, '능포동': 1.8, '연초면': 1.6,
@@ -323,7 +434,6 @@ foreign_home_weights = {d: sum(c.values()) * NEAR_FACTOR.get(d, 0.5) for d, c in
 # 카드매출 (옥포1·2동 개인 상세 `07`, 옥포1동 단독 비중도 별도 집계)
 card = defaultdict(lambda: defaultdict(lambda: [0.0, 0.0]))
 card_okpo1_cat = Counter()
-card_okpo1_age_tx = Counter()
 card_okpo1_outside_tx = [0.0, 0.0]  # [외지건수, 전체건수]
 for r in card_detail:
     if r['연령대'] == '기업':
@@ -339,7 +449,6 @@ for r in card_detail:
         card[key][c][1] += cnt * w_dong
     if r['동'] == '옥포1동':
         card_okpo1_cat[c] += amt
-        card_okpo1_age_tx[(r['연령대'], r['성별'])] += cnt
         card_okpo1_outside_tx[1] += cnt
         if o == 'outside':
             card_okpo1_outside_tx[0] += cnt
@@ -347,19 +456,9 @@ for r in card_detail:
 OKPO1_OUTSIDE_TX_SHARE = card_okpo1_outside_tx[0] / max(card_okpo1_outside_tx[1], 1.0)  # 0.1059
 OKPO1_CARD_PERSONAL_DAILY_REF = sum(float(r['추정이용건수']) for r in card_detail if r['동'] == '옥포1동' and r['연령대'] != '기업') / 59.0  # 2025년 1~2월 59일 기준
 
-# 연령×성별 상권 방문 대비 카드 결제 성향 배율 (카드 건수 비중 ÷ 상권 유동 성연령 비중)
 comm_sa_raw = targets_json['okpo1_street_flow_benchmarks']['commercial_sex_age_share_2026']
 comm_sa_10p_tot = sum(v for k, v in comm_sa_raw.items() if not k.startswith('0대'))
 COMM_SA_10P = {k: v / comm_sa_10p_tot for k, v in comm_sa_raw.items() if not k.startswith('0대')}
-tx_tot_1 = sum(card_okpo1_age_tx.values()) or 1.0
-PAY_PROPENSITY_BY_SA = {}
-for k, fl_sh in COMM_SA_10P.items():
-    bd, sx = k.split('|')
-    if bd == '10대':
-        PAY_PROPENSITY_BY_SA[k] = 0.22  # 학생·10대 소액/무결제 비중 반영
-    else:
-        tx_sh = card_okpo1_age_tx[(bd, sx)] / tx_tot_1
-        PAY_PROPENSITY_BY_SA[k] = max(0.35, min(2.2, tx_sh / max(fl_sh, 1e-4)))
 
 # 요일별 방문자 주말/평일 비 (관광데이터랩 `10`)
 vis_by_type = defaultdict(lambda: {'wd': [], 'we': []})
@@ -405,8 +504,7 @@ def card_pref(band, sex, origin):
 
 
 def sample_foreign_age(rng, nationality, min_age=15):
-    nk = NAT_KEY_MAP.get(nationality)
-    dist = for_age_raw.get(nk) or foreign_age_global
+    dist = for_age_raw.get(nationality) or for_age_raw.get(NAT_KEY_MAP.get(nationality)) or foreign_age_global
     weights = {}
     for k, v in dist.items():
         if k in AGE5_BOUNDS and v > 0:
@@ -419,22 +517,83 @@ def sample_foreign_age(rng, nationality, min_age=15):
     return rng.randint(lo, hi)
 
 
+EXPAT_OCC = '선주 감독관·외국 기술자'
+EXPAT_FAM_OCC = '감독관·기술자 가족'
+F3_EXPAT = {'F-3-7', 'F-3-8', 'F-3-9'}   # 주재(D-7)·기업투자(D-8)·무역경영(D-9)의 배우자·미성년자녀
+
+
+def visa_code_of(v):
+    # 가족 체류자격은 이름에 주 체류자격이 먼저 나온다: '무역경영(D-9)의 배우자·미성년자녀(F-3-9)' → 마지막 괄호가 본인 체류자격
+    return v[v.rfind('(') + 1:v.rfind(')')] if '(' in v else v
+
+
 def visa_job(v):
-    code = v[v.find('(') + 1:v.find(')')] if '(' in v else v
-    if code.startswith(('E-7', 'E-9', 'D-9', 'E-8', 'H-2', 'E-10')):
-        return '외국인 조선·제조 근로자', code
-    if code.startswith(('F-6', 'F-1')):
-        return '결혼이민·가사', code
+    """체류자격 → (직업, 코드, 부류). 부류는 성비·국적·예산 조건에 쓴다."""
+    code = visa_code_of(v)
+    if code.startswith(('D-9', 'E-7-1', 'E-7-S', 'D-7', 'D-8', 'E-4', 'E-5')):
+        # 선박설비(D-9-3) = 선주사 감독관(옥포1동 157명). 전문인력·주재·투자도 같은 고소득 외국 기술자층
+        return EXPAT_OCC, code, 'expat'
+    if code in F3_EXPAT:
+        return EXPAT_FAM_OCC, code, 'expat_family'
+    if code.startswith(('E-7', 'E-9', 'E-8', 'E-10')):
+        return '외국인 조선·제조 근로자', code, 'worker'
+    if code.startswith('H-2'):
+        return '외국인 조선·제조 근로자', code, 'dongpo_worker'
+    if code.startswith(('F-6', 'F-1', 'F-5-2')):
+        return '결혼이민·가사', code, 'marriage'
     if code.startswith(('D-2', 'D-4')):
-        return '유학생', code
+        return '유학생', code, 'student'
     if code.startswith('F-3'):
-        return '동반 가족', code
-    if code.startswith(('F-2', 'F-5', 'F-4', 'E-2', 'D-7', 'D-8', 'E-4', 'E-6')):
-        return '일반 직장(외국인)', code
-    return '기타(구직·난민 등)', code
+        return '동반 가족', code, 'family'
+    if code.startswith('E-6'):
+        return '일반 직장(외국인)', code, 'e6'
+    if code.startswith(('F-2', 'F-5', 'F-4', 'E-2')):
+        return '일반 직장(외국인)', code, 'general'
+    return '기타(구직·난민 등)', code, 'other'
+
+
+# 체류자격 부류별 남성 비율(가정: 출입국 통계의 일반적 구성 — 조선·제조 취업 비자는 거의 남성, 결혼이민·동반 가족은 여성 중심)
+# 결과는 옥포1동 등록외국인 남성 비율 실측(679/1,049 = 64.7%)과 독립 비교한다(V9)
+SEX_MALE_BY_CLASS = ASSUMED['sex_male_by_visa_class']
+# 체류자격별로 나올 수 있는 국적(거제 국적 분포에서 이 안에서만 뽑는다)
+EPS_NATS = {'베트남', '인도네시아', '우즈베키스탄', '네팔', '스리랑카', '미얀마', '타이', '필리핀', '중국', '캄보디아', '방글라데시',
+            '파키스탄', '몽골', '키르기즈', '티모르민주공화국', '타지키스탄', '라오스'}   # 고용허가제(E-9) 송출국
+NAT_SETS = {
+    'worker': EPS_NATS | {'인도', '카자흐스탄'},
+    'dongpo': {'한국계중국인', '한국계러시아인', '우즈베키스탄', '카자흐스탄', '러시아(연방)', '키르기즈'},
+    'expat': {'프랑스', '일본', '미국', '영국', '그리스', '이탈리아', '캐나다', '오스트레일리아', '노르웨이', '독일', '네덜란드', '덴마크',
+              '스웨덴', '핀란드', '스페인', '벨기에', '싱가포르', '타이완', '튀르키예', '인도', '러시아(연방)', '크로아티아', '루마니아',
+              '폴란드', '말레이시아', '우크라이나'},
+    'english': {'미국', '캐나다', '영국', '오스트레일리아', '뉴질랜드', '남아프리카공화국', '아일랜드'},
+    'marriage': {'베트남', '중국', '한국계중국인', '필리핀', '캄보디아', '타이', '일본', '우즈베키스탄', '몽골', '인도네시아', '네팔',
+                 '러시아(연방)', '미국', '캐나다', '미얀마', '라오스', '카자흐스탄'},
+    'e6': {'필리핀', '러시아(연방)', '우즈베키스탄', '카자흐스탄', '키르기즈', '몽골', '타이'},
+}
+
+
+def nat_set_for(cls, code):
+    if code.startswith('E-9'):
+        return EPS_NATS
+    if cls == 'worker' or code in ('F-3-17', 'F-3-74'):
+        return NAT_SETS['worker']
+    if cls == 'dongpo_worker' or code.startswith(('F-4', 'F-5-6', 'F-5-7', 'F-5-14', 'F-3-19')):
+        return NAT_SETS['dongpo']
+    if cls in ('expat', 'expat_family'):
+        return NAT_SETS['expat']
+    if code.startswith(('E-2', 'F-3-12')):
+        return NAT_SETS['english']
+    if cls in ('marriage', 'e6'):
+        return NAT_SETS[cls]
+    if cls == 'other':
+        return 'non_expat'
+    return None   # 제한 없음
 
 
 SHIP = {'조선소 직영', '조선소 협력사', '외국인 조선·제조 근로자'}
+YARD = SHIP | {EXPAT_OCC}   # 낮에 조선소 안에서 일하는 사람(선주 감독관 포함)
+VISIT_OCC = '가족·지인 방문'
+# 매일 오갈 수 없는 먼 시도(부산·울산·경남 밖). 이곳 사람이 낮에만 옥포1동에 있으면 당일 통근이 아니라 출장
+FAR_PROV = ('서울', '경기', '인천', '충청', '전라', '전북', '강원', '제주', '대전', '광주', '세종', '경상북도', '대구', '기타 시도')
 STUDENT = {'초등학생': '초', '중학생': '중', '고등학생': '고'}
 
 
@@ -492,47 +651,78 @@ def industry_shift_minutes(rng, ind):
     return rng.randint(560, 640), rng.randint(460, 540)              # 미용·부동산·여가 등 09:20~10:40 출근
 
 
-def pick_arrival_hour_weighted(rng, allowed_hours, extra_boost=None):
-    """직업별 가능한 시간대(allowed_hours) 안에서 상권 유동 실측 비율(COMM_HOUR_SHARE)에 비례해 도착 시각 선택."""
-    ws = {}
-    for h in allowed_hours:
-        hm = h % 24
-        b = (extra_boost or {}).get(hm, 1.0)
-        ws[hm] = max(COMM_HOUR_SHARE[hm] * b, 1e-4)
-    h = pick(rng, ws)
-    return h * 60 + rng.choice(range(0, 60, 5))
+def pick_arrival_hour_weighted(rng, allowed_hours, extra_boost=None, mask=None):
+    """직업별 가능한 시간대(allowed_hours) 안에서 상권 유동 실측 비율(COMM_HOUR_SHARE)에 비례해 도착 시각 선택.
+    mask(0~1, 24칸): 근무 중인 시간(동 밖 근무면 0)·고른 업종이 문 닫은 시간(0)을 뺀다. 모두 막히면 mask 없이 고른다."""
+    for m in (mask, None):
+        ws = {}
+        for h in allowed_hours:
+            hm = h % 24
+            b = (extra_boost or {}).get(hm, 1.0) * (m[hm] if m else 1.0)
+            if b > 0:
+                ws[hm] = max(COMM_HOUR_SHARE[hm] * b, 1e-4)
+        if ws:
+            h = pick(rng, ws)
+            return h * 60 + rng.choice(range(0, 60, 5))
+    return allowed_hours[0] % 24 * 60
 
 
-def arrival_times(rng, seg, occ, top_cat, ends=None, work_span=None, work_ind=None, is_for=False):
-    """(평일 도착 분, 주말 도착 분, 방학 도착 분)."""
+def schedule_mask(span, leak=0.0, lunch=0.0, pad=0):
+    """근무 구간(시작 분, 길이 분) 동안 상권에 나올 수 있는 정도. leak = 근무 중에도 잠깐 나올 수 있는 정도, lunch = 12시 점심."""
+    m = [1.0] * 24
+    if not span:
+        return m
+    a0, a1 = span[0] - pad, span[0] + span[1] + pad
+    for h in range(24):
+        if overlap_hour(a0, a1, h) >= 0.5:
+            m[h] = leak
+    if lunch and overlap_hour(a0, a1, 12) >= 0.5:
+        m[12] = max(m[12], lunch)
+    return m
+
+
+def mask_mul(*ms):
+    return [math.prod(m[h] for m in ms if m) for h in range(24)]
+
+
+YARD_MODE_HOURS = {
+    'morning': ([5, 6, 7], None), 'lunch': ([12], None),
+    'after': ([17, 18, 19, 20, 21, 22], {17: 1.35, 18: 1.55, 19: 1.45, 20: 1.25}),
+    'shift': ([0, 1, 2, 3, 4, 22, 23], None),
+}
+
+
+def arrival_times(rng, seg, occ, top_cat, ends=None, work_span=None, work_ind=None, is_for=False, wd_mask=None, we_mask=None):
+    """(평일 도착 분, 주말 도착 분, 방학 도착 분). wd_mask·we_mask = 근무 시간 × 고른 업종 영업시간."""
+    open_m = CAT_HOUR_MASK[top_cat]
     if occ in STUDENT:
         lv = STUDENT[occ]
         e_min = int(sum(ends.values()) / len(ends))
         e_hr = max(13, (e_min + 15) // 60)
         hi_hr = {'초': 18, '중': 19, '고': 21}[lv]
         wd_h = list(range(e_hr, hi_hr + 1))
-        wd_t = max(e_min + 10, pick_arrival_hour_weighted(rng, wd_h))
-        we_t = pick_arrival_hour_weighted(rng, list(range(11, hi_hr + 1)))
-        va_t = pick_arrival_hour_weighted(rng, list(range(10, hi_hr + 1)))
+        wd_t = max(e_min + 10, pick_arrival_hour_weighted(rng, wd_h, mask=open_m))
+        we_t = pick_arrival_hour_weighted(rng, list(range(11, hi_hr + 1)), mask=open_m)
+        va_t = pick_arrival_hour_weighted(rng, list(range(10, hi_hr + 1)), mask=open_m)
         return wd_t % 1440, we_t % 1440, va_t % 1440
 
-    if top_cat == 'pub':
-        wd_t = pick_arrival_hour_weighted(rng, [17, 18, 19, 20, 21, 22, 23, 0, 1], {18: 1.3, 19: 1.5, 20: 1.4, 21: 1.3})
-        we_t = pick_arrival_hour_weighted(rng, [17, 18, 19, 20, 21, 22, 23, 0, 1], {19: 1.4, 20: 1.5, 21: 1.3})
+    if occ in YARD:
+        # 한화오션(08:00~17:00 기준, 현장 인터뷰 반영): 점심은 대부분 사내식당에서 해결해 외출 극소(2%), 퇴근 후 저녁(17~21시, 70%) 집중
+        # 선주 감독관은 조선소 안 사무실에서 일하고 퇴근 뒤 외국인거리 이용(가정)
+        modes = ASSUMED['expat_weekday_arrival_mode'] if occ == EXPAT_OCC else ASSUMED['shipyard_weekday_arrival_mode']
+        ok = {k: v for k, v in modes.items() if v > 0 and any(open_m[h] for h in YARD_MODE_HOURS[k][0])}
+        mode = pick(rng, ok or modes)
+        if mode == 'lunch':
+            wd_t = 12 * 60 + rng.choice([0, 5, 10, 15, 20, 25])
+        else:
+            hrs, boost = YARD_MODE_HOURS[mode]
+            wd_t = pick_arrival_hour_weighted(rng, hrs, boost, mask=open_m)
+        we_t = pick_arrival_hour_weighted(rng, list(range(9, 23)), {17: 1.3, 18: 1.4, 19: 1.4} if is_for else None, mask=we_mask)
         return wd_t, we_t, None
 
-    if occ in SHIP:
-        # 한화오션(08:00~17:00 기준, 현장 인터뷰 반영): 점심은 대부분 사내식당에서 해결해 외출 극소(2%), 퇴근 후 저녁(17~21시, 70%) 집중
-        mode = pick(rng, ASSUMED['shipyard_weekday_arrival_mode'])
-        if mode == 'morning':
-            wd_t = pick_arrival_hour_weighted(rng, [5, 6, 7])
-        elif mode == 'lunch':
-            wd_t = 12 * 60 + rng.choice([0, 5, 10, 15, 20, 25])
-        elif mode == 'after':
-            wd_t = pick_arrival_hour_weighted(rng, [17, 18, 19, 20, 21, 22], {17: 1.35, 18: 1.55, 19: 1.45, 20: 1.25})
-        else:
-            wd_t = pick_arrival_hour_weighted(rng, [0, 1, 2, 3, 4, 22, 23])
-        we_t = pick_arrival_hour_weighted(rng, list(range(9, 23)), {17: 1.3, 18: 1.4, 19: 1.4} if is_for else None)
+    if top_cat == 'pub':
+        wd_t = pick_arrival_hour_weighted(rng, [17, 18, 19, 20, 21, 22, 23, 0, 1], {18: 1.3, 19: 1.5, 20: 1.4, 21: 1.3}, mask=wd_mask)
+        we_t = pick_arrival_hour_weighted(rng, [17, 18, 19, 20, 21, 22, 23, 0, 1], {19: 1.4, 20: 1.5, 21: 1.3}, mask=we_mask)
         return wd_t, we_t, None
 
     if seg == 'okpo1_worker' and work_span:
@@ -540,38 +730,38 @@ def arrival_times(rng, seg, occ, top_cat, ends=None, work_span=None, work_ind=No
         if work_ind == '전문 과학 및 기술 서비스업':
             # 외부 설계동 한화오션 사내 이전·구내식당 식사 반영: 12시 점심 외출 실종, 퇴근길 위주
             cand = [max(0, (ws0 - 20) // 60), (ws0 + wlen) // 60 % 24, 18, 19]
-            wd_t = pick_arrival_hour_weighted(rng, cand + [12], {12: ASSUMED['design_tech_lunch_boost'], 18: 1.45, 19: 1.25})
+            wd_t = pick_arrival_hour_weighted(rng, cand + [12], {12: ASSUMED['design_tech_lunch_boost'], 18: 1.45, 19: 1.25}, mask=wd_mask)
         else:
             # 일반 상권·서비스 사업체: 출근길·점심(11~13시)·퇴근 직후 중 상권 이용
             cand = [max(0, (ws0 - 20) // 60), 12, (ws0 + wlen) // 60 % 24]
-            wd_t = pick_arrival_hour_weighted(rng, cand + [11, 13, 18], {12: 1.45, 18: 1.25})
-        we_t = pick_arrival_hour_weighted(rng, list(range(9, 21)))
+            wd_t = pick_arrival_hour_weighted(rng, cand + [11, 13, 18], {12: 1.45, 18: 1.25}, mask=wd_mask)
+        we_t = pick_arrival_hour_weighted(rng, list(range(9, 21)), mask=we_mask)
         return wd_t, we_t, None
 
     if is_for:
         # 타동·옥포 거주 외국인(비조선소·가족·유학생·일반직 등)도 저녁 시간대 옥포 국제시장·다국적식당·식자재마트 방문 비중이 높음
-        wd_t = pick_arrival_hour_weighted(rng, list(range(8, 23)), {17: 1.45, 18: 1.85, 19: 2.0, 20: 1.9, 21: 1.6, 22: 1.3})
-        we_t = pick_arrival_hour_weighted(rng, list(range(10, 23)), {16: 1.25, 17: 1.45, 18: 1.6, 19: 1.6, 20: 1.4})
+        wd_t = pick_arrival_hour_weighted(rng, list(range(8, 23)), {17: 1.45, 18: 1.85, 19: 2.0, 20: 1.9, 21: 1.6, 22: 1.3}, mask=wd_mask)
+        we_t = pick_arrival_hour_weighted(rng, list(range(10, 23)), {16: 1.25, 17: 1.45, 18: 1.6, 19: 1.6, 20: 1.4}, mask=we_mask)
         return wd_t, we_t, None
 
-    if occ in ('전업주부', '은퇴', '결혼이민·가사', '동반 가족'):
-        wd_t = pick_arrival_hour_weighted(rng, list(range(6, 20)), {9: 1.2, 10: 1.3, 11: 1.3, 14: 1.2, 15: 1.2, 16: 1.2})
-        we_t = pick_arrival_hour_weighted(rng, list(range(8, 20)))
+    if occ in ('전업주부', '은퇴', '결혼이민·가사', '동반 가족', VISIT_OCC):
+        wd_t = pick_arrival_hour_weighted(rng, list(range(6, 20)), {9: 1.2, 10: 1.3, 11: 1.3, 14: 1.2, 15: 1.2, 16: 1.2}, mask=wd_mask)
+        we_t = pick_arrival_hour_weighted(rng, list(range(8, 20)), mask=we_mask)
         return wd_t, we_t, None
 
     if occ == '자영업':
-        wd_t = pick_arrival_hour_weighted(rng, [7, 8, 11, 14, 15, 16, 21, 22])
-        we_t = pick_arrival_hour_weighted(rng, list(range(10, 22)))
+        wd_t = pick_arrival_hour_weighted(rng, [7, 8, 11, 14, 15, 16, 21, 22], mask=wd_mask)
+        we_t = pick_arrival_hour_weighted(rng, list(range(10, 22)), mask=we_mask)
         return wd_t, we_t, None
 
     if seg == 'tourist':
-        wd_t = pick_arrival_hour_weighted(rng, list(range(9, 21)), {11: 1.2, 12: 1.3, 13: 1.2, 14: 1.2, 18: 1.2})
-        we_t = pick_arrival_hour_weighted(rng, list(range(9, 22)))
+        wd_t = pick_arrival_hour_weighted(rng, list(range(9, 21)), {11: 1.2, 12: 1.3, 13: 1.2, 14: 1.2, 18: 1.2}, mask=wd_mask)
+        we_t = pick_arrival_hour_weighted(rng, list(range(9, 22)), mask=we_mask)
         return wd_t, we_t, None
 
-    # 일반 직장·대학생·구직·거제 타동 방문 등: 전 시간대에 걸쳐 실측 상권 비율 반영
-    wd_t = pick_arrival_hour_weighted(rng, list(range(0, 24)))
-    we_t = pick_arrival_hour_weighted(rng, list(range(7, 23)))
+    # 일반 직장·대학생·구직·거제 타동 방문 등: 실측 상권 비율 반영(동 밖에서 일하는 시간은 wd_mask 로 빠짐)
+    wd_t = pick_arrival_hour_weighted(rng, list(range(0, 24)), mask=wd_mask)
+    we_t = pick_arrival_hour_weighted(rng, list(range(7, 23)), mask=we_mask)
     return wd_t, we_t, None
 
 
@@ -583,7 +773,7 @@ TRAVEL_WEIGHTS = {i: max(float(r['가중치']), 1.0) for i, r in enumerate(trave
 
 # ── 3. 후보 1명 생성 ────────────────────────────────────────────────────────
 def make_candidate(rng, seg):
-    nationality, visa_code = '한국', None
+    nationality, visa_code, vcls = '한국', None, None
     work_ind = None
     lodging = None
     in_dong_work = False
@@ -602,18 +792,25 @@ def make_candidate(rng, seg):
 
     elif seg == 'foreign_resident':
         home = '옥포1동'
-        sx = '남' if rng.random() < fd1['male'] / fd1['total'] else '여'
-        nationality = pick(rng, nat_okpo1)
+        # 체류자격 → 성별(부류별 성비) → 국적(체류자격에 맞는 국적만) 순서로 뽑는다. 예전엔 셋을 따로 뽑아 여성 용접공·남성 결혼이민이 많았다
         v_full = pick(rng, visa_okpo1)
-        occ, visa_code = visa_job(v_full)
-        min_a = 19 if occ in ('외국인 조선·제조 근로자', '결혼이민·가사', '일반 직장(외국인)') else 10
+        occ, visa_code, vcls = visa_job(v_full)
+        sx = '남' if rng.random() < SEX_MALE_BY_CLASS[vcls] else '여'
+        nationality = pick_nationality(rng, '옥포1동', vcls, visa_code)
+        min_a = 25 if occ == EXPAT_OCC else (19 if occ in ('외국인 조선·제조 근로자', '결혼이민·가사', '일반 직장(외국인)') else 10)
         age = sample_foreign_age(rng, nationality, min_age=min_a)
         if occ == '유학생' and not 18 <= age <= 34:
             age = rng.randint(19, 29)
-        if occ in ('일반 직장(외국인)',) and rng.random() < 0.45:
+        if vcls == 'e6' and rng.random() < 0.80:
+            in_dong_work = True                   # 호텔유흥(E-6-2): 옥포 외국인거리 주점·숙박업소 근무
+            work_ind = '숙박 및 음식점업'
+        elif occ == '일반 직장(외국인)' and rng.random() < 0.45:
             in_dong_work = True
             work_ind = pick(rng, JOBS_OKPO1)
-        lodging = '기숙사' if (occ in SHIP and rng.random() < params['foreign']['dorm_share']) else '자가·전월세'
+        if occ in (EXPAT_OCC, EXPAT_FAM_OCC):
+            lodging = '아파트·레지던스'
+        else:
+            lodging = '기숙사' if (occ in SHIP and rng.random() < params['foreign']['dorm_share']) else '자가·전월세'
 
     elif seg == 'okpo1_worker':
         home = pick(rng, other_dong_weights)
@@ -632,13 +829,16 @@ def make_candidate(rng, seg):
             home, bd, sx = pick(rng, inflow_cells_prov)
         else:
             home, bd, sx = pick(rng, inflow_cells_gn)
-        lo = 70 if bd == '70대이상' else max(int(bd[:2]), 18)
+        lo = 70 if bd == '70대이상' else (13 if bd == '10대' else int(bd[:2]))
         hi = 79 if bd == '70대이상' else int(bd[:2]) + 9
         age = rng.randint(lo, hi)
-        for_st_p = 0.24 if (sx == '남' and 20 <= age <= 54) else (0.08 if 20 <= age <= 49 else 0.0)
+        for_st_p = 0.24 if (sx == '남' and 20 <= age <= 54) else (0.02 if (sx == '여' and 20 <= age <= 49) else 0.0)
         if rng.random() < for_st_p:
-            nationality = pick(rng, nat_geoje)
-            occ, visa_code = '외국인 조선·제조 근로자', pick(rng, {'E-9-1': 0.50, 'E-7-3': 0.32, 'D-9-3': 0.18})
+            v_full = pick_visa_given_sex(rng, {'제 조 업(E-9-1)': 50, '일반기능인력(E-7-3)': 32, '선박설비(D-9-3)': 18}, sx)
+            occ, visa_code, vcls = visa_job(v_full)
+            nationality = pick_nationality(rng, None, vcls, visa_code)
+        elif age < 19 or age >= 70:
+            occ = VISIT_OCC                       # 10대·70대 이상 시외 체류는 일보다 가족·지인 방문
         elif age < 20:
             occ = '대학생'
         elif sx == '남' and age <= 64 and rng.random() < 0.76:
@@ -648,7 +848,12 @@ def make_candidate(rng, seg):
             if rng.random() < 0.30:
                 in_dong_work = True
                 work_ind = pick(rng, JOBS_OKPO1)
-        lodging = '기숙사' if occ in SHIP and rng.random() < (0.62 if nationality != '한국' else 0.45) else '모텔·달방·원룸'
+        if occ == EXPAT_OCC:
+            lodging = '호텔·레지던스'
+        elif occ == VISIT_OCC:
+            lodging = '가족·지인 집'
+        else:
+            lodging = '기숙사' if occ in SHIP and rng.random() < (0.62 if nationality != '한국' else 0.45) else '모텔·달방·원룸'
 
     elif seg == 'commuter':
         # 경남 인접 시군(통영·김해·진해 등 68%) + 부산·울산 등(32%) 당일 통근·업무 체류 (외국인 협력사 통근 포함)
@@ -656,12 +861,16 @@ def make_candidate(rng, seg):
             home, bd, sx = pick(rng, inflow_cells_gn)
         else:
             home, bd, sx = pick(rng, inflow_cells_prov)
-        lo = 70 if bd == '70대이상' else max(int(bd[:2]), 19)
+        lo = 70 if bd == '70대이상' else (13 if bd == '10대' else int(bd[:2]))
         hi = 78 if bd == '70대이상' else int(bd[:2]) + 9
         age = rng.randint(lo, hi)
+        far_home = home.startswith(FAR_PROV)
         if sx == '남' and 20 <= age <= 49 and rng.random() < 0.10:
-            nationality = pick(rng, nat_geoje)
-            occ, visa_code = '외국인 조선·제조 근로자', pick(rng, {'E-9-1': 0.55, 'E-7-3': 0.30, 'H-2': 0.15})
+            v_full = pick_visa_given_sex(rng, {'제 조 업(E-9-1)': 55, '일반기능인력(E-7-3)': 30, '방문취업(H-2)': 15}, sx)
+            occ, visa_code, vcls = visa_job(v_full)
+            nationality = pick_nationality(rng, None, vcls, visa_code)
+        elif age < 19 or age >= 70:
+            occ = VISIT_OCC                       # 10대·70대 이상 낮 시간 유입은 가족·지인·병원 방문
         elif rng.random() < 0.30 and age <= 68:
             occ = '일반 직장(업무 방문)'
             in_dong_work = True
@@ -671,6 +880,10 @@ def make_candidate(rng, seg):
             occ = '조선소 직영' if rng.random() < w['direct'] / w['total'] else '조선소 협력사'
         else:
             occ = '일반 직장(업무 방문)'
+        if far_home and occ != VISIT_OCC:
+            lodging = '거제 다른 동 숙소(출장)'    # 서울·경기 등에서 매일 오갈 수는 없음: 낮에만 옥포1동에 있는 출장 인력
+        elif far_home:
+            lodging = '가족·지인 집'
 
     elif seg == 'geoje_visitor':
         home = pick(rng, other_dong_weights)  # 외국인이면 아래에서 외국인 분포로 다시 뽑음
@@ -680,10 +893,10 @@ def make_candidate(rng, seg):
         for_p = 0.52 if (sx == '남' and bd in ('20대', '30대')) else (
             0.30 if (sx == '남' and bd == '40대') else (0.18 if (sx == '여' and bd in ('20대', '30대')) else 0.06))
         if rng.random() < for_p:
-            nationality = pick(rng, nat_geoje)
             home = pick(rng, foreign_home_weights)
-            v_full = pick(rng, visa_by_dong[home])
-            occ, visa_code = visa_job(v_full)
+            v_full = pick_visa_given_sex(rng, visa_by_dong[home], sx)
+            occ, visa_code, vcls = visa_job(v_full)
+            nationality = pick_nationality(rng, home, vcls, visa_code)
             lo = 70 if bd == '70대이상' else max(int(bd[:2]), 18)
             hi = 75 if bd == '70대이상' else int(bd[:2]) + 9
             age = rng.randint(lo, hi)
@@ -729,7 +942,7 @@ def make_candidate(rng, seg):
         we_p = (1.0 - WK5_SHARE['자영업']) if occ == '자영업' else (1.0 - WK5_SHARE['임금근로'])
         if rng.random() < we_p:
             work_span_we = work_span_wd
-    elif occ in SHIP:
+    elif occ in YARD:
         # 한화오션 거제사업장 기본 08:00~17:00(퇴근 직후 인접 옥포1동 10~15분 내 복귀) + 일부 잔업(18:00)
         st = rng.choice([455, 465, 475, 480, 495, 520])
         end_work = rng.choice([1020, 1020, 1030, 1045, 1065, 1090])
@@ -750,17 +963,21 @@ def make_candidate(rng, seg):
         work_span_wd = (rng.randint(540, 660), rng.randint(240, 390))
 
     # 업종 선호 및 예산 (카드매출 `07` + 국민여행조사 `19` + 다국적 점포 공급 비중 `INTL_STORE_RATIO`)
-    is_outside_gn = seg in ('stayer', 'commuter', 'tourist') and not (
-        str(home).endswith(('시', '군', '구', '동', '면')) and any(
-            str(home).startswith(k) for k in ('통영', '김해', '진주', '창원', '사천', '고성', '양산', '밀양', '거창', '함안', '합천', '남해', '하동', '산청', '함양', '의령', '창녕', '경남')))
+    # 경남 밖 거주 여부: 시외유입 표의 경남 시군 이름(‘경남 기타’ 포함)이면 경남. 예전엔 이름 끝 글자로 판정해 ‘경남 기타’가 경남 밖이 됐다
+    is_outside_gn = seg in ('stayer', 'commuter', 'tourist') and home not in GN_NAMES
     org_type = 'outside' if is_outside_gn else 'local'
     share, per_tx = card_pref(band, sx, org_type)
     share = dict(share)
     is_for = nationality != '한국'
-    intl_split = ASSUMED['foreign_intl_meal_split'] if is_for else max(0.008, INTL_STORE_RATIO * 0.65)
+    is_expat = occ in (EXPAT_OCC, EXPAT_FAM_OCC)
+    intl_split = (0.05 if is_expat else ASSUMED['foreign_intl_meal_split']) if is_for else max(0.008, INTL_STORE_RATIO * 0.65)
     share['intl'] = share['meal'] * intl_split
     share['meal'] -= share['intl']
-    if is_for:
+    if is_expat:
+        # 선주 감독관·외국 기술자: 인터뷰의 '외국인 저소비·회식 축소'는 근로자 이야기라 적용하지 않음. 옛 외국인거리 펍·바 손님
+        if occ == EXPAT_OCC:
+            share['pub'] *= ASSUMED['expat_pub_pref_scale']
+    elif is_for:
         # 현장 인터뷰 반영: 외국인 근로자는 회식·고단가 주점 소비가 극히 적고 식자재·편의점 장보기 및 다국적 식당 위주
         share['pub'] *= ASSUMED['foreign_pub_pref_scale']
         share['mart'] *= ASSUMED['foreign_mart_pref_scale']
@@ -781,7 +998,23 @@ def make_candidate(rng, seg):
     pref = {c: pref.get(c, 0.0) for c in CATS}
 
     top = pick(rng, {c: v for c, v in pref.items() if v > 0})
-    wd_t, we_t, va_t = arrival_times(rng, seg, occ, top, ends=ends, work_span=work_span_wd, work_ind=work_ind, is_for=is_for)
+
+    # 근무 시간에는 상권에 나오지 않는다: 동 밖 근무자는 근무 시간을 빼고(근처 직장이면 12시 점심만 조금), 동 안 근무자는 자기 근무 시간을 뺀다(점심 12시는 허용)
+    out_work = bool(work_span_wd) and seg == 'stayer' and not in_dong_work and rng.random() < 0.74   # 숙소형: 낮엔 조선소·현장 출근
+    day_biz = seg == 'commuter' and not in_dong_work and rng.random() < 0.72                        # 주간 유입: 낮 동안 옥포1동 현장 업무
+    sched_wd = sched_we = None
+    if not level and occ not in YARD and work_span_wd:
+        if in_dong_work:
+            sched_wd = schedule_mask(work_span_wd, 0.0, lunch=1.0)
+            sched_we = schedule_mask(work_span_we, 0.0, lunch=1.0) if work_span_we else None
+        elif seg in ('resident', 'foreign_resident', 'geoje_visitor') or out_work or (seg == 'commuter' and not day_biz):
+            leak = 0.3 if occ == '자영업' else (0.5 if occ in ('대학생', '유학생') else 0.0)
+            sched_wd = schedule_mask(work_span_wd, leak, lunch=ASSUMED['lunch_out_from_outside_job'], pad=20)
+            sched_we = schedule_mask(work_span_we, leak, pad=20) if work_span_we else None
+    wd_mask = mask_mul(sched_wd, CAT_HOUR_MASK[top])
+    we_mask = mask_mul(sched_we, CAT_HOUR_MASK[top])
+    wd_t, we_t, va_t = arrival_times(rng, seg, occ, top, ends=ends, work_span=work_span_wd, work_ind=work_ind, is_for=is_for,
+                                     wd_mask=wd_mask, we_mask=we_mask)
 
     # 체류 시간(상권 거리·가게)
     d_lo, d_hi = ASSUMED['dwell_min_by_cat'][top]
@@ -793,7 +1026,11 @@ def make_candidate(rng, seg):
     # 1회 상한 및 예산 (카드 건당 금액 × 시간대 티켓 보정; 외국인 송금 56.5%·저소비 구조 반영; 관광객은 국민여행조사 반영)
     arr_hr = (wd_t // 60) % 24
     hr_ticket_factor = max(0.65, min(1.45, CARD_HOUR_TICKET[arr_hr] / max(CARD_MEAN_TICKET, 1)))
-    if is_for:
+    if occ == EXPAT_OCC:
+        b_scale = ASSUMED['expat_budget_scale']
+    elif occ == EXPAT_FAM_OCC:
+        b_scale = ASSUMED['expat_family_budget_scale']
+    elif is_for:
         fb = ASSUMED['foreign_budget_scale']
         b_scale = fb['E-9·E-8·H-2'] if (visa_code and visa_code.startswith(('E-9', 'E-8', 'H-2'))) else (fb['조선소(E-7 등)'] if occ in SHIP else fb['그 외'])
     elif seg == 'tourist':
@@ -806,8 +1043,9 @@ def make_candidate(rng, seg):
         if pref[c] <= 0:
             caps[c] = 0
             continue
-        if level:
-            lo_b, hi_b = ASSUMED['student_budget'][level]
+        if level or age < 19:
+            # 학생(학교 시정 자료가 없는 외국인 가족·방문 10대 포함)은 용돈 범위
+            lo_b, hi_b = ASSUMED['student_budget'][level or ('초' if age <= 12 else '중' if age <= 15 else '고')]
             caps[c] = int(round(rng.uniform(lo_b, hi_b), -2))
             continue
         base = per_tx.get(c) or params['price'].get(c) or 12000
@@ -816,10 +1054,12 @@ def make_candidate(rng, seg):
             base = base * 0.52
         caps[c] = int(max(3000, round(base * noise * b_scale * (hr_ticket_factor if c in ('meal', 'pub') else 1.0), -2)))
     exp_cap = sum(pref[c] * caps[c] for c in CATS) or 10000
+    # 1인 지출 배수: 같은 가게에서 이 사람이 내는 돈 ÷ 대표 메뉴 바구니(외국인 절약 b_scale·관광객·개인차). 시뮬이 가게 1인 가격에 곱한다
+    spend_mult = round(min(2.5, max(0.35, b_scale * noise)), 3)
     if seg == 'tourist':
         tr_spend = float(tr['1인1일_거제상권지출_원'])
         budget = int(max(12000, min(120000, round(tr_spend if tr_spend >= 8000 else exp_cap * 1.45, -3))))
-    elif level:
+    elif level or age < 19:
         budget = int(max(3000, round(max(caps.values()) * rng.uniform(1.0, 1.35), -3)))
     else:
         # 외국인의 절약 성향은 위 b_scale(이민자체류실태 근거) 하나로만 반영한다(예산 배수 이중 적용 방지)
@@ -859,7 +1099,7 @@ def make_candidate(rng, seg):
         # 동 밖 출근·등교 시간과 낮 타동/시외 외출을 뺀 시간 동안 옥포1동 안에 체류(인접 아주동 출퇴근 이동 ~15분, 상권 복귀 시간 포함)
         away_spans = []
         if work_span_wd and not in_dong_work:
-            pad = 15 if occ in SHIP else 22
+            pad = 15 if occ in YARD else 22
             away_spans.append((work_span_wd[0] - pad, work_span_wd[0] + work_span_wd[1] + pad))
         elif not work_span_wd and rng.random() < 0.30:
             # 비취업 주민 일부의 주간·오후 타동·시외 외출(병원·고현 장보기·모임 등)
@@ -873,7 +1113,6 @@ def make_candidate(rng, seg):
         work_in_wd = work_span_wd[1] if (work_span_wd and in_dong_work) else 0
     elif seg == 'stayer':
         # 옥포 내 숙소(모텔·원룸·기숙사) 야간 체류 + 주간 아주동 조선소/현장 출근(약 74%) 또는 동내 근무·휴식(26%)
-        out_work = work_span_wd and not in_dong_work and (rng.random() < 0.74)
         for h in range(24):
             if out_work:
                 aw = overlap_hour(work_span_wd[0] - 25, work_span_wd[0] + work_span_wd[1] + 25, h)
@@ -886,7 +1125,6 @@ def make_candidate(rng, seg):
     elif seg == 'commuter':
         home_wd = 0
         # 당일 시외 통근·업무자: 옥포1동 사업체 근무(in_dong_work) 또는 옥포1동 현장·협력사 주간 업무 체류(72%), 나머지(28%)는 출퇴근길 상권 방문
-        day_biz = (not in_dong_work) and (rng.random() < 0.72)
         b_span = work_span_wd if work_span_wd else (rng.randint(465, 550), rng.randint(470, 545))
         work_in_wd = work_span_wd[1] if (work_span_wd and in_dong_work) else 0
         for h in range(24):
@@ -961,14 +1199,22 @@ def make_candidate(rng, seg):
         }[seg])
         if level and transport == '자가용':
             transport = '도보' if seg == 'resident' else '버스'
+        if age < 19 and transport in ('자가용', '택시'):
+            transport = '도보' if seg in ('resident', 'foreign_resident') else '버스'   # 10대는 운전하지 않음(가족 차는 일행으로 봄)
+        if lodging == '거제 다른 동 숙소(출장)':
+            transport = pick(rng, {'자가용': 0.55, '택시': 0.25, '통근버스': 0.20})   # 먼 시도 출장자: 거제 숙소에서 차로
+        elif is_expat:
+            transport = pick(rng, {'택시': 0.40, '자가용': 0.35, '도보': 0.25})
 
     purpose = PURPOSE[top] if not (top == 'intl' and not is_for) else '다국적 음식'
+    if top == 'mart' and (level or seg in ('stayer', 'commuter', 'tourist', 'okpo1_worker')):
+        purpose = '편의점·간식'   # 학생·출장·근무자의 '장보기' 업종은 사실상 편의점
     if seg == 'tourist':
         purpose = '관광 겸 ' + purpose
     elif level:
         purpose = '하교 후 ' + purpose
 
-    p_high = 0.60 if (level or is_for or occ in ('대학생', '은퇴', '구직·기타')) else (0.20 if seg == 'tourist' else 0.35)
+    p_high = 0.15 if is_expat else (0.60 if (level or is_for or occ in ('대학생', '은퇴', '구직·기타')) else (0.20 if seg == 'tourist' else 0.35))
     sens = pick(rng, {'높음': p_high, '보통': 0.45, '낮음': max(0.55 - p_high, 0.05)})
     wait = int(max(3, rng.gauss({'tourist': 18}.get(seg, 11 if not is_for else 12) - (2 if age >= 60 else 0), 4)))
     crit = dict(ASSUMED['criteria_base_krei'])
@@ -984,7 +1230,12 @@ def make_candidate(rng, seg):
     crit = dirichlet(rng, crit, 28.0)
     korean = None
     if is_for:
-        korean = pick(rng, {'상': 0.58, '중': 0.32, '하': 0.10}) if occ in ('결혼이민·가사', '일반 직장(외국인)') else pick(rng, {'상': 0.14, '중': 0.46, '하': 0.40})
+        if is_expat:
+            korean = pick(rng, {'상': 0.05, '중': 0.20, '하': 0.75})
+        elif occ in ('결혼이민·가사', '일반 직장(외국인)'):
+            korean = pick(rng, {'상': 0.58, '중': 0.32, '하': 0.10})
+        else:
+            korean = pick(rng, {'상': 0.14, '중': 0.46, '하': 0.40})
 
     return {
         'segment': seg, 'segment_ko': SEG_KO[seg],
@@ -1001,7 +1252,7 @@ def make_candidate(rng, seg):
         'vacation_arrival': hhmm(va_t) if va_t is not None else None,
         'weekday_arrival_min': wd_t, 'weekend_arrival_min': we_t,
         'weekday_dwell_minutes_synthetic': dwell_wd, 'weekend_dwell_minutes_synthetic': dwell_we,
-        'visit_budget_krw_synthetic': budget, 'category_cap_krw_synthetic': caps,
+        'visit_budget_krw_synthetic': budget, 'category_cap_krw_synthetic': caps, 'spend_multiplier_synthetic': spend_mult,
         'price_sensitivity_synthetic': sens, 'max_wait_minutes_synthetic': wait,
         'category_preference_weights_synthetic': pref,
         'decision_criteria_weights_synthetic': crit,
@@ -1075,7 +1326,7 @@ for_occ_target = Counter()
 for r in visa_rows:
     c1 = int(r['옥포1동'])
     if c1 > 0:
-        occ_v, _ = visa_job(r['체류자격'])
+        occ_v = visa_job(r['체류자격'])[0]
         for_occ_target[occ_v] += c1
 for_occ_tot = sum(for_occ_target.values())
 for_occ_target = {k: ACTIVE_FOREIGN_RES_TARGET * v / for_occ_tot for k, v in for_occ_target.items()}
@@ -1097,6 +1348,9 @@ for ( _o, bd, sx), v in inflow_cells_gn.items():
 
 OUT_SEGS = {'stayer', 'commuter', 'tourist'}
 PROV_SET = {k[0] for k in inflow_cells_prov}
+
+
+C11_SEGS = {'stayer', 'commuter', 'geoje_visitor'}   # 주민(C1·C2)·동내 근무자(C3 일자리)·관광객(기념공원 입장객)은 인원 근거가 따로 있어 시간대로 흔들지 않음
 
 
 def rake_weights(items, weights, n_iter=35, damp=0.65):
@@ -1208,7 +1462,9 @@ def rake_weights(items, weights, n_iter=35, damp=0.65):
                 for i in ids:
                     weights[i] *= f
 
-        # 6) C11: 상권 거리 24시간 비율 보정 (거제 타동 방문객의 시간대 배분)
+        # 6) C11: 상권 거리 24시간 비율 보정 — 주민(C1·C2로 고정된 집단, 취업자 비율을 흔들지 않게) 밖의 모든 사람에게,
+        #    상권에 있는 시간대의 배율을 그 시간 비중으로 가중 평균(기하)해 곱한다. 구분별 합계(C3 일자리·C4/C5 시외)는 다음 반복이 다시 맞춘다.
+        #    예전엔 거제 타동 방문객만 움직였는데, 직장인이 근무 시간에 못 오게 하자 저녁이 넘쳐 그것만으로는 맞지 않았다
         cur_s = [0.0] * 24
         for i, x in enumerate(items):
             wi = weights[i]
@@ -1216,19 +1472,26 @@ def rake_weights(items, weights, n_iter=35, damp=0.65):
             for h in range(24):
                 cur_s[h] += wi * sv[h]
         tot_s = sum(cur_s) or 1.0
-        hr_s_mult = [(COMM_HOUR_SHARE[h] / max(cur_s[h] / tot_s, 1e-5)) ** (damp * 0.60) for h in range(24)]
+        log_s = [math.log(max(COMM_HOUR_SHARE[h], 1e-6) / max(cur_s[h] / tot_s, 1e-6)) for h in range(24)]
         for i, x in enumerate(items):
-            if x['segment'] == 'geoje_visitor':
-                ah = (x['weekday_arrival_min'] // 60) % 24
-                weights[i] *= max(0.5, min(2.0, hr_s_mult[ah]))
+            sv = x['_s_vec']
+            ssum = sum(sv)
+            if ssum > 0 and x['segment'] in C11_SEGS:
+                weights[i] *= max(0.5, min(2.0, math.exp(damp * 0.6 * sum(sv[h] * log_s[h] for h in range(24)) / ssum)))
 
-        # 7) C6: 옥포1동 24시간 동시 체류 인원 곡선 T1_HOURLY(평균 8,893.67명) 맞춤
+        # 7) C6: 옥포1동 24시간 동시 체류 인원 곡선 T1_HOURLY — 모양(시간대 배율, 체류 시간 가중 기하평균)과 평균(거제 타동 방문객 규모)
         cur_h = [0.0] * 24
         for i, x in enumerate(items):
             wi = weights[i]
             pv = x['_p_vec']
             for h in range(24):
                 cur_h[h] += wi * pv[h]
+        log_h = [math.log(T1_HOURLY[h] / max(cur_h[h], 1e-6)) for h in range(24)]
+        for i, x in enumerate(items):
+            pv = x['_p_vec']
+            psum = sum(pv)
+            if psum > 0:
+                weights[i] *= max(0.7, min(1.4, math.exp(damp * 0.8 * sum(pv[h] * log_h[h] for h in range(24)) / psum)))
         non_gv_mean = sum(weights[i] * p_bar[i] for i in range(m) if items[i]['segment'] != 'geoje_visitor')
         gv_mean = sum(weights[i] * p_bar[i] for i in range(m) if items[i]['segment'] == 'geoje_visitor')
         gv_target_mean = max(350.0, T1_MEAN - non_gv_mean)
@@ -1309,6 +1572,21 @@ card_okpo1_sa_amt['10대|여'] = sum(card_okpo1_sa_amt.values()) * 0.0015
 card_okpo1_sa_tot = sum(card_okpo1_sa_amt.values()) or 1.0
 TARGET_PORTAL_SA_AMT = {k: v / card_okpo1_sa_tot for k, v in card_okpo1_sa_amt.items()}
 
+def eff_pref(p):
+    """평일 도착 시각에 문 연 업종만 남긴 업종 선호(시뮬이 업종을 고르는 방식과 같음)."""
+    h = (p['weekday_arrival_min'] // 60) % 24
+    pr = p['category_preference_weights_synthetic']
+    e = {c: pr[c] * CAT_HOUR_MASK[c][h] for c in CATS}
+    t = sum(e.values())
+    return {c: v / t for c, v in e.items()} if t > 0 else pr
+
+
+def tx_spend(p):
+    """결제 1건당 기대 지출(시뮬 단위): Σ 업종 선호(문 연 업종) × 업종 1인 가격 × 1인 지출 배수."""
+    e = eff_pref(p)
+    return p['spend_multiplier_synthetic'] * sum(e[c] * CAT_PRICE[c] for c in CATS)
+
+
 raw_tx = []
 for i, p in enumerate(people):
     exp_cap = sum(p['category_preference_weights_synthetic'][c] * max(p['category_cap_krw_synthetic'][c], 4000) for c in CATS) or 15000
@@ -1318,19 +1596,15 @@ for i, p in enumerate(people):
     raw_tx.append(base_n)
 
 # C9b(공공데이터 2025 옥포1동 성×연령 금액 비중) + C10(외지 건수 비중 10.59%) + C8(시간대 비율) 반복 보정
-pay_hours = []
-for i, p in enumerate(people):
-    st_m = p['weekday_street_minutes_synthetic']
-    a_m = p['weekday_arrival_min']
-    cand_h = sorted({((a_m + dt) // 60) % 24 for dt in range(0, max(st_m, 15), 15)}) or [(a_m // 60) % 24]
-    ph = pick(rng, {h: max(CARD_HOUR_SHARE[h], 1e-4) for h in cand_h})
-    pay_hours.append(ph)
+# 결제 시각 = 상권 도착 + 걸어서 약 5분(3D 시뮬이 첫 가게에 들어가 결제하는 시각과 같게). 예전엔 머무는 시간 중 아무 시각에
+# 결제를 놓고 맞춰, 시뮬에서는 결제가 한 시간쯤 앞당겨졌다(평일 8시 +2.7%p, 9시 −2.1%p)
+pay_hours = [((p['weekday_arrival_min'] + 5) // 60) % 24 for p in people]
 
 for _ in range(8):
     # 성×연령 금액 비중(2025 공공데이터 카드매출)
     cur_sa_sp = Counter()
     for i, p in enumerate(people):
-        cur_sa_sp[f"{p['age_band']}|{p['sex']}"] += w_10k[i] * raw_tx[i] * p['visit_budget_krw_synthetic']
+        cur_sa_sp[f"{p['age_band']}|{p['sex']}"] += w_10k[i] * raw_tx[i] * tx_spend(p)
     tot_sa_sp = sum(cur_sa_sp.values()) or 1.0
     for i, p in enumerate(people):
         k = f"{p['age_band']}|{p['sex']}"
@@ -1365,12 +1639,13 @@ raw_tx = [v * tx_scale for v in raw_tx]
 # C9: 업종별 지출 금액 비중(카드매출 옥포1동 개인 기준, intl 은 점포 공급 비중 ~1.84% 유지) 미세 보정
 card_cat_tot = sum(card_okpo1_cat.values()) or 1.0
 TARGET_CAT_SHARE = {c: card_okpo1_cat[c] / card_cat_tot for c in ('meal', 'pub', 'cafe', 'mart', 'life')}
-for _ in range(6):
+for _ in range(14):
     cur_spend = Counter()
     for i, p in enumerate(people):
-        wt_spend = w_10k[i] * raw_tx[i] * p['visit_budget_krw_synthetic']
+        wt_spend = w_10k[i] * raw_tx[i] * p['spend_multiplier_synthetic']
+        e = eff_pref(p)
         for c in CATS:
-            cur_spend['meal' if c == 'intl' else c] += wt_spend * p['category_preference_weights_synthetic'][c]
+            cur_spend['meal' if c == 'intl' else c] += wt_spend * e[c] * CAT_PRICE[c]
     tot_sp = sum(cur_spend.values()) or 1.0
     factors = {c: (TARGET_CAT_SHARE[c] / max(cur_spend[c] / tot_sp, 1e-5)) ** 0.75 for c in TARGET_CAT_SHARE}
     factors['intl'] = factors['meal']
@@ -1407,7 +1682,7 @@ ORDER = [
     'visit_purpose_synthetic', 'party_size_synthetic', 'with_child_synthetic', 'transport_synthetic',
     'weekday_arrival', 'weekend_arrival', 'vacation_arrival', 'weekday_arrival_min', 'weekend_arrival_min',
     'weekday_dwell_minutes_synthetic', 'weekend_dwell_minutes_synthetic',
-    'visit_budget_krw_synthetic', 'category_cap_krw_synthetic',
+    'visit_budget_krw_synthetic', 'category_cap_krw_synthetic', 'spend_multiplier_synthetic',
     'expected_card_tx_weekday_synthetic', 'expected_total_tx_weekday_synthetic', 'payment_hour_weekday',
     'price_sensitivity_synthetic', 'max_wait_minutes_synthetic',
     'category_preference_weights_synthetic', 'decision_criteria_weights_synthetic',
@@ -1421,7 +1696,7 @@ ORDER = [
     'weekday_expansion_weight', 'weekend_expansion_weight', 'description_synthetic',
 ]
 
-# ── 8. 보정 적합도(Calibration Fit) 및 독립 검증(Independent Validation V1~V8) ──
+# ── 8. 보정 적합도(Calibration Fit) 및 독립 검증(Independent Validation V1~V10) ──
 def shares(counter):
     t = sum(counter.values()) or 1.0
     return {k: round(v / t, 4) for k, v in counter.items()}
@@ -1479,7 +1754,6 @@ add_dist_check('calibration', 'C6c. 옥포1동 생활인구 성×연령 비중',
                targets_json['okpo1_living_pop_2026']['sex_age_share'], shares(life_sa_got), 0.025,
                'gnhub_okpo_sexage.csv 2026 동 생활인구')
 
-res_sa_got = Counter(f"{p['age_band']}|{p['sex']}" for p in people if p['segment'] == 'resident')
 res_sa_w = Counter()
 for p in people:
     if p['segment'] == 'resident':
@@ -1525,17 +1799,19 @@ add_dist_check('calibration', 'C8b. 카드 결제 24시간 비율',
 
 spend_cat_got = Counter()
 for p in people:
-    wt_sp = p['weekday_expansion_weight'] * p['expected_card_tx_weekday_synthetic'] * p['visit_budget_krw_synthetic']
+    wt_sp = p['weekday_expansion_weight'] * p['expected_card_tx_weekday_synthetic'] * p['spend_multiplier_synthetic']
+    e = eff_pref(p)
     for c in CATS:
-        spend_cat_got['meal' if c == 'intl' else c] += wt_sp * p['category_preference_weights_synthetic'][c]
+        spend_cat_got['meal' if c == 'intl' else c] += wt_sp * e[c] * CAT_PRICE[c]
 add_dist_check('calibration', 'C9. 업종별 지출 금액 비중(옥포1동 카드매출 대비)',
-               TARGET_CAT_SHARE, shares(spend_cat_got), 0.03, '07_card_detail.csv 옥포1동 개인(다국적은 식사에 합산)')
+               TARGET_CAT_SHARE, shares(spend_cat_got), 0.03,
+               '07_card_detail.csv 옥포1동 개인(다국적은 식사에 합산). 지출 = 결제 × 도착 시각에 연 업종의 1인 가격 × 지출 배수(시뮬과 같은 단위)')
 
 tx_out_gn_got = sum(p['weekday_expansion_weight'] * p['expected_card_tx_weekday_synthetic'] for p in people if p['_is_outside_gn'])
 add_range_check('calibration', 'C10. 경남 밖 거주자 카드 결제 건수 비중(목표 10.6%)',
                 tx_out_gn_got / max(tx_tot_got, 1.0), 0.08, 0.13, '07_card_detail.csv 옥포1동 외지 비중 0.1059')
 
-# [독립 검증: 보정에 전혀 쓰지 않은 외부·교차 지표 V1 ~ V8]
+# [독립 검증: 보정에 전혀 쓰지 않은 외부·교차 지표 V1 ~ V10]
 daily_unique_wd = sum(p['weekday_expansion_weight'] for p in people)
 daily_unique_we = sum(p['weekend_expansion_weight'] for p in people)
 add_range_check('independent', 'V1. 하루 다녀간 순인원 Σw vs 거제시월보(29,067)·소상공인365(29,264)',
@@ -1567,7 +1843,7 @@ add_dist_check('independent', 'V5. 상권 거리 체류 성×연령 vs 상권 �
 spend_sa_got = Counter()
 for p in people:
     spend_sa_got[f"{p['age_band']}|{p['sex']}"] += (
-        p['weekday_expansion_weight'] * p['expected_card_tx_weekday_synthetic'] * p['visit_budget_krw_synthetic'])
+        p['weekday_expansion_weight'] * p['expected_card_tx_weekday_synthetic'] * tx_spend(p))
 add_dist_check('independent', 'V6. 성×연령별 매출 비중 vs NH카드(2026, 다른 카드사·연도)',
                targets_json['okpo1_card_benchmarks']['nh_sex_age_amount_share_2026'], shares(spend_sa_got), 0.045,
                '공공데이터(2025)로만 보정한 뒤 경남빅데이터허브 NH카드(2026) 성연령 매출과 독립 비교')
@@ -1588,7 +1864,7 @@ for p in people:
             sido_k = '경북'
         elif '대구' in p['home_area']:
             sido_k = '대구'
-        outside_sido_spend[sido_k] += p['weekday_expansion_weight'] * p['expected_card_tx_weekday_synthetic'] * p['visit_budget_krw_synthetic']
+        outside_sido_spend[sido_k] += p['weekday_expansion_weight'] * p['expected_card_tx_weekday_synthetic'] * tx_spend(p)
 top1_sido = outside_sido_spend.most_common(1)[0][0] if outside_sido_spend else ''
 busan_share_out = outside_sido_spend['부산'] / max(sum(outside_sido_spend.values()), 1.0)
 add_range_check('independent', f'V7. 경남 밖 매출 1위 시도 일치({top1_sido}=부산) 및 부산 비중',
@@ -1598,6 +1874,23 @@ add_range_check('independent', f'V7. 경남 밖 매출 1위 시도 일치({top1_
 add_range_check('independent', 'V8. 하루 카드 결제 건수 ÷ 공공데이터 옥포1동 개인 카드 일평균(~6,286건)',
                 tx_tot_got / OKPO1_CARD_PERSONAL_DAILY_REF, 0.80, 1.20,
                 '07_card_detail.csv 옥포1동 개인 결제 건수(2개월 집계 일평균)와 교차 검증')
+
+# V9·V10: 옥포1동 등록외국인 성별·국적 — 체류자격 → 성비(가정) → 국적(체류자격에 맞는 국적만) 순서로 뽑은 결과를 실측과 비교(보정에 안 씀)
+fr_w = Counter(); fr_nat = Counter()
+for p in people:
+    if p['segment'] == 'foreign_resident':
+        fr_w[p['sex']] += p['weekday_expansion_weight']
+        fr_nat[p['nationality']] += p['weekday_expansion_weight']
+add_range_check('independent', 'V9. 옥포1동 등록외국인 남성 비율 vs 실측(679/1,049 = 64.7%)',
+                fr_w['남'] / max(sum(fr_w.values()), 1.0), fd1['male'] / fd1['total'] - 0.05, fd1['male'] / fd1['total'] + 0.05,
+                '체류자격별 성비 가정(sex_male_by_visa_class)으로 만든 성별을 동 실측 성비와 독립 비교')
+nat_top_tgt = {k: v / fd1['total'] for k, v in fd1['top'].items()}
+nat_top_tgt['그 밖'] = 1.0 - sum(nat_top_tgt.values())
+fr_tot = sum(fr_nat.values()) or 1.0
+nat_top_got = {k: fr_nat[k] / fr_tot for k in fd1['top']}
+nat_top_got['그 밖'] = 1.0 - sum(nat_top_got.values())
+add_dist_check('independent', 'V10. 옥포1동 등록외국인 상위 5개국 비중 vs 실측(거제시 2026-10)', nat_top_tgt, nat_top_got, 0.04,
+               '국적은 체류자격에 맞는 나라 안에서만 뽑으므로(예: E-9는 고용허가제 송출국) 동 실측 국적 비중이 유지되는지 확인')
 
 # 내부 작업용 키 제거 및 정렬
 clean_people = [{k: p[k] for k in ORDER} for p in people]
@@ -1618,7 +1911,7 @@ for p in clean_people:
 
 out_geoje_persons = sum(p['weekday_expansion_weight'] for p in clean_people if p['segment'] in OUT_SEGS)
 val['scale'] = {
-    'definition': '다중 주변합 보정(raking): 옥포1동 24시간 동시 체류 인원(평균 8,894명, C6), 내·외국인 주민(C1·C2), 동내 일자리 4,538개(C3), 시외 체류 3,417명(C4·C5), 상권 시간 비율(C11)을 동시에 만족하도록 후보 4만 명에서 PPS 추출',
+    'definition': '다중 주변합 보정(raking): 옥포1동 24시간 동시 체류 인원(평균 8,894명, C6), 내·외국인 주민(C1·C2), 동내 일자리 4,538개(C3), 시외 체류 3,417명(C4·C5), 상권 시간 비율(C11)을 동시에 만족하도록 후보 5만 명에서 PPS 추출',
     'mean_simultaneous_weekday': round(mean_sim_got, 1),
     'daily_unique_weekday': round(daily_unique_wd),
     'daily_unique_weekend': round(daily_unique_we),
@@ -1644,15 +1937,15 @@ val['scale'] = {
 }
 # [참고 비교 R1] 보정·합격 판정에 쓰지 않음: 모델 속 외국인 1인당 하루 지출 ÷ 내국인 vs 조사에서 나온 국내 지출 몫
 def _spend(p):
-    return p['expected_card_tx_weekday_synthetic'] * p['visit_budget_krw_synthetic']
+    return p['expected_card_tx_weekday_synthetic'] * tx_spend(p)
 _kr = [_spend(p) for p in people if p['nationality'] == '한국' and p['age'] >= 19]
-_fx = [_spend(p) for p in people if p['nationality'] != '한국' and p['age'] >= 19]
+_fx = [_spend(p) for p in people if p['nationality'] != '한국' and p['age'] >= 19 and p['occupation_synthetic'] not in (EXPAT_OCC, EXPAT_FAM_OCC)]
 _e9 = [_spend(p) for p in people if p['nationality'] != '한국' and str(p.get('visa') or '').startswith(('E-9', 'E-8', 'H-2'))]
 _kr_m = sum(_kr) / max(len(_kr), 1)
 _r_all = sum(_fx) / max(len(_fx), 1) / max(_kr_m, 1e-9)
 _r_e9 = sum(_e9) / max(len(_e9), 1) / max(_kr_m, 1e-9) if _e9 else None
 val['reference'] = [{
-    'name': 'R1. 외국인 1인당 하루 상권 지출 ÷ 내국인(성인)',
+    'name': 'R1. 외국인(선주 감독관·가족 제외) 1인당 하루 상권 지출 ÷ 내국인(성인)',
     'all_foreign': round(_r_all, 3), 'all_foreign_range': list(R1_RANGE_ALL),
     'all_foreign_in_range': R1_RANGE_ALL[0] <= _r_all <= R1_RANGE_ALL[1],
     'e9_e8_h2': round(_r_e9, 3) if _e9 else None, 'e9_e8_h2_range': list(R1_RANGE_E9),
@@ -1675,14 +1968,14 @@ val['summary'] = {
     'weekday_simultaneous_mean': round(mean_sim_got, 1),
     'weekday_visitors_weighted': round(daily_unique_wd),
     'weekend_visitors_weighted': round(daily_unique_we),
-    'note': '보정 항목(calibration)은 생성 규칙이 맞춘 목표이고, 독립 검증(independent, V1~V8)은 보정에 쓰지 않은 외부 통계와 비교한 시험 결과다.',
+    'note': '보정 항목(calibration)은 생성 규칙이 맞춘 목표이고, 독립 검증(independent, V1~V10)은 보정에 쓰지 않은 외부 통계와 비교한 시험 결과다.',
 }
 
 # ── 9. 파일 출력 ─────────────────────────────────────────────────────────────
 os.makedirs(OUT, exist_ok=True)
 SOURCES = [
     {'name': '거제시 면동별 연령분포·거주구분·생산가능·65세이상 인구 (2026-10-31)', 'use': '옥포1동 실거주 내국인(7,120명) 1세 단위 성×연령(C1), 아이 동반율', 'file': 'data/processed/okpo/01, 17, 18'},
-    {'name': '거제시 체류자격별 외국인·외국인주민현황·거주외국인 통계 (2026-10)', 'use': '옥포1동 등록외국인(1,049명) 비자→직업(C2), 국적×5세 연령', 'file': 'data/processed/okpo/03, 17'},
+    {'name': '거제시 체류자격별 외국인·외국인주민현황·거주외국인 통계 (2026-10)', 'use': '옥포1동 등록외국인(1,049명) 체류자격→직업(C2)·성비(V9), 동 상위 5개국 + 거제 국적 분포(20명 이상 국적 전부)·국적×5세 연령(V10)', 'file': 'data/processed/okpo/03, 17'},
     {'name': '거제시 산업별 사업체수 및 종사자수 (2024-12-31)', 'use': '옥포1동 내 16개 산업 일자리 4,538개(C3, 제조업 89·숙박음식 924·사업지원 975 등)', 'file': 'data/processed/okpo/09_businesses_by_industry.csv'},
     {'name': '경남빅데이터허브 유동·생활인구·주요상권·소비동향 (2023-01~2026-09, SKT·NH카드)', 'use': '옥포1동 24시간 생활인구 평균 8,894명(C6), 시외유입 3,417명 거주지×성연령(C4·C5), 상권 유동 24시간 비율(C11), 카드 결제 5,624건·시간대(C8), 독립검증(V2·V3·V5·V6·V7)', 'file': 'data/processed/okpo/14~17'},
     {'name': '거제시 빅데이터 지역현황 월보(2026-10) · 소상공인365(2026-08)', 'use': '독립 검증 V1(하루 다녀간 인원 29,067 / 29,264명) 및 V4(방문자 연령 구성)', 'file': 'data/processed/okpo/17_flow_targets.json'},
@@ -1696,6 +1989,7 @@ SOURCES = [
     {'name': '2025 이민자체류실태 및 고용조사 — 소득과 소비 (국가데이터처·법무부)', 'use': f'외국인 총소득 중 국내 지출(생활비+기타) {FOREIGN_LOCAL_SPEND_SHARE:.1%}, E-9 송금 {E9_REMIT_SHARE:.1%}·무상 거처 76.7% → 외국인 예산 배수 근거, R1 참고 비교', 'file': 'data/processed/okpo/22_foreign_spending_survey.csv'},
     {'name': '옥포1동 기술센터(대우조선 복합업무지원단지) 입주 점포', 'use': f"설계·엔지니어링 {TECH_CENTER['engineering_firms']}곳과 사내식당(웰리브) {TECH_CENTER['cafeteria']}곳이 한 건물 → 설계·기술직 점심 외출 축소 근거", 'file': 'data/processed/okpo_stores.csv (지번 옥포동 1991-9)'},
     {'name': '거제시 읍면동별 체류자격별 외국인 현황 (2026-10-31)', 'use': '타동에서 옥포로 오는 외국인의 사는 곳(동별 등록외국인 × 거리)·체류자격', 'file': 'data/processed/okpo/21_foreign_by_dong_visa.csv'},
+    {'name': '머니투데이 「[르포]불꺼진 \'옥포 이태원\', 선주의 빈자리」(2017-04-03)', 'use': '선박설비(D-9-3) 선주 감독관·가족을 저소비 근로자와 나눠 외국인거리 펍·바 손님으로 둠(expat_pub_pref_scale)', 'file': 'docs/okpo-evidence.md'},
     {'name': '옥포 상인회 인터뷰 녹취 (2026-11-27)', 'use': '① 저녁·주말 외국인 유입 증가 및 저소비(무소비 산책·송금) ② 한화오션 외부 설계동 사내 이전 및 사내식당 식사로 인한 평일 점심 외출 실종 ③ 외국인 비중 증가·혼성 근무로 인한 저녁 회식(주점) 수요 축소 반영', 'file': 'docs/persona-plan.md'},
 ]
 
@@ -1815,29 +2109,39 @@ with open(os.path.join(OUT, 'personas.csv'), 'w', encoding='utf-8-sig', newline=
 
 # 3D 웹 시뮬레이션(web/sim.js)용 1:1 전수 경량 번들 생성
 SIM_GROUPS_ORDER = ['worker', 'foreign', 'resident', 'tourist']
-WKEYS_ORDER = ['worker', 'resident', 'tourist', 'foreign.vn', 'foreign.halal', 'foreign.etc']
+WKEYS_ORDER = ['worker', 'resident', 'tourist', 'foreign.vn', 'foreign.halal', 'foreign.etc', 'foreign.expat']
+# 선주 감독관·외국 기술자 세부 업종 선호(가정): 'foreign' 부류 값(쌀국수·편의점·휴대폰 높음, 호프·회 낮음)을 되돌려 양식·호프·바 쪽으로
+SUB_PREFS_EXPAT = {'western': 2.0, 'burger': 1.3, 'hof': 3.0, 'yuheung': 4.0, 'hoe': 3.0, 'gogi': 1.5, 'cafe': 1.4, 'bakery': 1.3,
+                   'viet': 0.35, 'halal': 0.3, 'bunsik': 0.6, 'conv': 0.6, 'phone': 0.4, 'grocery': 0.7}
+MULTI_EXTRA = 0.28   # 다중 방문 성향(bit3)인 사람이 한 번 나올 때 두 번째 가게까지 들를 확률. 시뮬(sim.js)도 이 값을 번들에서 읽는다
 GRP_IDX = {g: i for i, g in enumerate(SIM_GROUPS_ORDER)}
 WKEY_IDX = {k: i for i, k in enumerate(WKEYS_ORDER)}
 SEG_IDX = {s: i for i, s in enumerate(SEGMENTS)}
-HALAL_NATS = {'인도네시아', '우즈베키스탄', '파키스탄', '방글라데시'}
+HALAL_NATS = {'인도네시아', '우즈베키스탄', '파키스탄', '방글라데시', '말레이시아', '타지키스탄', '키르기즈', '카자흐스탄',
+              '튀니지', '모로코', '이집트', '예멘공화국', '투르크메니스탄'}
 web_records = []
 for p in clean_people:
     g_idx = GRP_IDX[p['sim_group']]
     s_idx = SEG_IDX[p['segment']]
     if p['sim_group'] == 'foreign':
-        wk_name = 'foreign.vn' if p['nationality'] == '베트남' else ('foreign.halal' if p['nationality'] in HALAL_NATS else 'foreign.etc')
+        if p['occupation_synthetic'] in (EXPAT_OCC, EXPAT_FAM_OCC):
+            wk_name = 'foreign.expat'
+        else:
+            wk_name = 'foreign.vn' if p['nationality'] == '베트남' else ('foreign.halal' if p['nationality'] in HALAL_NATS else 'foreign.etc')
     else:
         wk_name = p['sim_group']
     wk_idx = WKEY_IDX[wk_name]
     # flags: bit0=조선소 출퇴근 게이트 경유, bit1=원룸·단독·숙소 선호, bit2=동 밖(정류장·경계) 진입, bit3=다중 방문 성향
-    f_ship = 1 if (p['occupation_synthetic'] in SHIP and not p['workplace_in_okpo1_synthetic']) else 0
-    f_house = 2 if (p['sim_group'] == 'foreign' or p['lodging_type_synthetic'] in ('기숙사', '모텔·달방·원룸')) else 0
+    f_ship = 1 if (p['occupation_synthetic'] in YARD and not p['workplace_in_okpo1_synthetic']) else 0
+    f_house = 2 if ((p['sim_group'] == 'foreign' and wk_name != 'foreign.expat') or p['lodging_type_synthetic'] in ('기숙사', '모텔·달방·원룸')) else 0
     f_ext = 4 if p['segment'] in ('geoje_visitor', 'commuter', 'tourist', 'okpo1_worker') else 0
     f_multi = 8 if p['expected_total_tx_weekday_synthetic'] >= 0.45 else 0
     flags = f_ship | f_house | f_ext | f_multi
-    # 상권에 나왔을 때 실제 유료 점포 소비로 이어질 확률(0~100): 거리에 사람은 많아도 지출이 적은 구조 반영
-    wd_vp = max(p['weekday_visit_prob_synthetic'], 0.05)
-    pay_prob = max(8, min(98, int(round((p['expected_total_tx_weekday_synthetic'] / wd_vp) * 100))))
+    # 상권에 나왔을 때 유료 가게 결제로 이어질 확률(천분율 0~1000). 시뮬의 하루 기대 결제 = 외출확률 × 이 값 × (1 + 두 번째 가게)
+    # 가 보정한 결제 수(expected_total_tx, 현금 포함)와 같도록 두 번째 가게 몫을 미리 나눈다. 예전엔 8% 하한·다중 방문이 더해져 결제가 부풀었다
+    wd_vp = p['weekday_visit_prob_synthetic']
+    stops_per_pay = 1.0 + (MULTI_EXTRA if f_multi else 0.0)
+    pay_prob = 0 if wd_vp <= 0 else max(0, min(1000, int(round(p['expected_total_tx_weekday_synthetic'] / (wd_vp * stops_per_pay) * 1000))))
     cw = [max(0, int(round(p['category_preference_weights_synthetic'][c] * 100))) for c in CATS]
     if sum(cw) == 0:
         cw[0] = 100
@@ -1850,6 +2154,7 @@ for p in clean_people:
         int(round(p['weekend_visit_prob_synthetic'] * 100)),
         int(round(WE_SEG_MULT[p['segment']] * 100)),
         flags, cw, wk_idx, pay_prob,
+        int(round(p['spend_multiplier_synthetic'] * 100)),   # 15: 1인 지출 배수(%) — 가게 1인 가격에 곱함
     ])
 
 os.makedirs(os.path.dirname(WEB_DATA_OUT), exist_ok=True)
@@ -1864,6 +2169,10 @@ web_payload = {
     'wkeys': WKEYS_ORDER,
     'segments': SEGMENTS,
     'cats': CATS,
+    'pay_unit': 1000,
+    # 부류(+국적) 키별 세부 업종 선호 배수(시뮬이 MENU.prefs 에 없는 키만 여기서 읽음). 'foreign' 부류 값에 한 번 더 곱한다. 가정
+    'sub_prefs': {'foreign.expat': SUB_PREFS_EXPAT},
+    'multi_extra': MULTI_EXTRA,
     'p': web_records,
 }
 with open(WEB_DATA_OUT, 'w', encoding='utf-8') as f:
@@ -1897,7 +2206,7 @@ th{{background:#f3f5f7}}.note{{background:#fff7e6;border-left:4px solid #f0a020;
 <h2>1. 다중 보정 결과 요약 (1 페르소나 = 실제 약 1.0명)</h2>
 <p>옥포1동 그 시각 평균 체류 인원 <b>{mean_sim_got:,.1f}명</b>(실측 8,893.7명)에 맞춰 후보 5만 명을 다중 보정(raking)한 뒤, 도출된 하루 순유동 인원 그대로 <b>{N:,}개 페르소나(1:1 실규모)</b>를 생성했습니다(실측 비교치: 거제시 월보 29,067명 · 소상공인365 29,264명). 페르소나 1개는 실제 사람 약 <b>{daily_unique_wd / N:.2f}명</b>을 나타내며 <code>web/data/okpo_personas.js</code>를 통해 3D 시뮬레이션에서 전원이 1:1로 구동됩니다.</p>
 {html_table(['구분', 'sim_group', '페르소나 수', '평일 순인원(Σw)', '평일 동시체류 평균'], seg_rows)}
-<h2>2. 독립 검증 (보정에 쓰지 않은 외부 통계 V1~V8 비교: {val['summary']['independent_pass']})</h2>
+<h2>2. 독립 검증 (보정에 쓰지 않은 외부 통계 V1~V10 비교: {val['summary']['independent_pass']})</h2>
 {html_table(['검증 항목', '생성값/차이', '기준 범위', '결과', '비고'], ind_rows)}
 <h2>3. 보정 적합도 (목표 주변합 C1~C11: {val['summary']['calibration_pass']})</h2>
 {html_table(['보정 항목', '생성값/차이', '허용 범위', '결과', '근거'], cal_rows)}

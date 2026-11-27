@@ -33,7 +33,7 @@ const CFG0 = {
   },
   upperFloor: 0.7,   // 2층 이상 가게가 눈에 띄는 정도(1층 = 1). 가정
   // 가격 민감도: 업종 기준가보다 비싸면 (기준가/가격)^탄력 만큼 덜 고른다. 가정
-  priceElastic: { worker: 0.9, foreign: 1.6, resident: 1.0, tourist: 0.5 },
+  priceElastic: { worker: 0.9, foreign: 1.6, resident: 1.0, tourist: 0.5, 'foreign.expat': 0.6 },   // 선주 감독관·외국 기술자는 고소득(가정)
   walk: 70,          // 걷는 속도 m/분. 가정
 };
 const CFG = window.PERSONA_CFG ? deepMerge(CFG0, window.PERSONA_CFG) : CFG0;
@@ -52,7 +52,8 @@ const basketOf = (menus) => Math.round(menus.reduce((a, m) => a + m.price * m.qt
 // 외국인 근로자 국적: 옥포1·2동 등록 외국인 2,101명 중 베트남 576명(27.4%) — 거제시 행정동별 외국인 2026-10.
 // 할랄 음식을 찾는 국적(인도네시아·우즈베키스탄 등)은 두 동 상위 5개국 밖(동마다 57명 미만)이라 8%로 둠(가정, 상한 약 10%)
 const NAT = [['vn', 0.274, '베트남'], ['halal', 0.08, '인도네시아·우즈베키스탄 등'], ['etc', 0.646, '그 밖']];
-const WKEYS = GROUPS.flatMap(g => g === 'foreign' ? NAT.map(n => 'foreign.' + n[0]) : [g]);   // 외국인 근로자 하루 쓸 돈 기준
+// 가게 무게를 미리 계산할 부류(+국적) 키: 페르소나 번들이 있으면 그 키 전부(선주 감독관 'foreign.expat' 포함)
+const WKEYS = [...new Set([...GROUPS.flatMap(g => g === 'foreign' ? NAT.map(n => 'foreign.' + n[0]) : [g]), ...((window.PERSONAS && window.PERSONAS.wkeys) || [])])];
 const T0 = 300, T1 = 1560;   // 05:00 ~ 26:00(다음 날 02:00)
 
 // ── 난수(시드 고정) ─────────────────────────────────────
@@ -158,7 +159,7 @@ const SHOPS = SD.shops.map((s, i) => {
 });
 const BYCAT = {}; for (const c of CATS) BYCAT[c] = SHOPS.filter(s => s.c === c);
 
-// ── 사람 만들기 (window.PERSONAS 가 있으면 약 2.8만 명 1:1 실규모 전원 구동) ───────
+// ── 사람 만들기 (window.PERSONAS 가 있으면 페르소나 전원 1:1 실규모 구동) ───────
 const PD = window.PERSONAS;
 const HOMES = SD.homes.map(h => ({ ...h, node: nearest(h.x, h.z) }));
 const GATES = (SD.gates.length ? SD.gates : [{ x: 0, z: 0, n: '입구' }]).map(g => ({ ...g, node: nearest(g.x, g.z) }));
@@ -175,16 +176,22 @@ function pickHome(key, w, r) {
 }
 const AGENTS_MAX = PD ? Math.max(36000, Math.ceil(PD.n * 1.25)) : 2400;
 
-function pickCatFromWeights(cw, cats, r, forbid) {
+// 업종별 문 여는 시간(그 업종 가게 중 가장 이른 개점 ~ 가장 늦은 마감). 문 닫은 업종은 고르지 않는다
+// (예전엔 업종을 시각과 상관없이 뽑아 낮에 술집, 이른 아침에 식당으로 가서 평일 약 590건이 헛걸음이 됐다)
+const CAT_WIN = {};
+for (const s of SHOPS) { const w = CAT_WIN[s.c] || (CAT_WIN[s.c] = [Infinity, -Infinity]); w[0] = Math.min(w[0], s.open); w[1] = Math.max(w[1], s.close); }
+const catOpen = (c, t) => { const w = CAT_WIN[c]; return !!w && t + 5 >= w[0] && t + 5 < w[1] - 10; };
+function pickCatFromWeights(cw, cats, r, forbid, t) {
   let s = 0;
-  for (let i = 0; i < cw.length; i++) if (cats[i] !== forbid) s += cw[i];
-  if (s <= 0) return cats[0];
+  const ok = (i) => cats[i] !== forbid && (t === undefined || catOpen(cats[i], t));
+  for (let i = 0; i < cw.length; i++) if (ok(i)) s += cw[i];
+  if (s <= 0) return null;
   let u = r() * s;
   for (let i = 0; i < cw.length; i++) {
-    if (cats[i] === forbid) continue;
+    if (!ok(i)) continue;
     u -= cw[i]; if (u <= 0) return cats[i];
   }
-  return cats[0];
+  return null;
 }
 function normSimMin(m, r) {
   const j = Math.round((r() - 0.5) * 18);
@@ -192,10 +199,19 @@ function normSimMin(m, r) {
   if (t < 150) t += 1440; // 자정~02시 심야 방문은 24~26시 구간으로 매핑
   return Math.max(T0, Math.min(T1 - 45, t));
 }
+// 유료 방문 가게 목록: 첫 가게는 그 시각에 연 업종 중에서, 다중 방문 성향이면 두 번째 가게(약 45분 뒤 연 업종)
+function payStops(cw, cats, r, t, multi, multiP) {
+  const c1 = pickCatFromWeights(cw, cats, r, null, t);
+  if (!c1) return [];
+  if (multi && r() < multiP) { const c2 = pickCatFromWeights(cw, cats, r, c1, t + 45); if (c2) return [c1, c2]; }
+  return [c1];
+}
 // 1:1 페르소나 레코드 → 하루 외출 일정 변환 (현장 인터뷰 반영: 사내식당 점심 해결·저녁 외국인 무소비 산책·회식 축소)
-// rec: [0:gIdx, 1:segIdx, 2:wdArr, 3:weArr, 4:wdDwell, 5:weDwell, 6:budget, 7:maxWait, 8:wdProb, 9:weProb, 10:weScale, 11:flags, 12:cw, 13:wkIdx, 14:payProb]
+// rec: [0:gIdx, 1:segIdx, 2:wdArr, 3:weArr, 4:wdDwell, 5:weDwell, 6:budget, 7:maxWait, 8:wdProb, 9:weProb, 10:weScale, 11:flags, 12:cw, 13:wkIdx, 14:payProb(천분율), 15:1인 지출 배수(%)]
+// 하루 기대 결제 = 외출확률 × payProb × (1 + 두 번째 가게 확률) = 페르소나가 보정한 결제 수(현금 포함). 시뮬에만 있는 추가 결제는 두지 않는다
 function makeDayFromPersona(rec, we, r) {
-  const g = PD.groups[rec[0]], flags = rec[11], cw = rec[12], cats = PD.cats, payProb = rec[14] ?? 45;
+  const g = PD.groups[rec[0]], flags = rec[11], cw = rec[12], cats = PD.cats;
+  const PU = PD.pay_unit || 100, payProb = rec[14] ?? 0.45 * PU, multiP = PD.multi_extra ?? 0.28;
   const shipGate = (flags & 1) !== 0, housePref = (flags & 2) !== 0, extEntry = (flags & 4) !== 0, multi = (flags & 8) !== 0;
   const baseNode = extEntry ? ENTRIES[Math.floor(r() * ENTRIES.length)].node
     : (housePref ? pickHome('foreign', h => h.w * (h.k === 'house' ? 3 : 0.4), r)
@@ -208,25 +224,25 @@ function makeDayFromPersona(rec, we, r) {
     const tin = Math.round(405 + r() * 75);
     const wdArr = rec[2];
     const visitToday = (r() * 100 < visitProb);
-    const willPay = visitToday && (r() * 100 < payProb);
-    const c1 = pickCatFromWeights(cw, cats, r, null);
-    const c2 = pickCatFromWeights(cw, cats, r, c1);
-    const rMulti = r(), rMorn = r(), rMornCat = r(), rTout = r();
+    const willPay = visitToday && (r() * PU < payProb);
+    const rTout = r();
     if (visitToday && wdArr < 600) {
       // 출근길 편의점·카페 방문 후 조선소 입문, 퇴근길은 곧장 귀가
-      out.push({ t: Math.max(T0, tin - 25), from: baseNode, stops: willPay ? [c1] : [], to: gate.node, budget: rec[6] });
+      const t = Math.max(T0, tin - 25);
+      out.push({ t, from: baseNode, stops: willPay ? payStops(cw, cats, r, t, false, 0) : [], to: gate.node, budget: rec[6] });
       out.push({ t: Math.round(1025 + rTout * 95), from: gate.node, stops: [], to: baseNode, budget: 0 });
     } else if (visitToday && wdArr >= 660 && wdArr < 840) {
       // 극소수(2%) 점심 외출자(대부분은 한화오션 사내식당에서 식사)
+      const t = normSimMin(wdArr, r);
       out.push({ t: Math.max(T0, tin - 20), from: baseNode, stops: [], to: gate.node, budget: 0 });
-      out.push({ t: normSimMin(wdArr, r), from: gate.node, stops: willPay ? [c1] : [], to: gate.node, budget: rec[6] });
+      out.push({ t, from: gate.node, stops: willPay ? payStops(cw, cats, r, t, false, 0) : [], to: gate.node, budget: rec[6] });
       out.push({ t: Math.round(1030 + rTout * 90), from: gate.node, stops: [], to: baseNode, budget: 0 });
     } else {
       // 아침 출근 → 사내 근무·점심 사내식당 → 저녁 퇴근 후 상권 경유(유료 방문 또는 무소비 거리 이동)
-      out.push({ t: Math.max(T0, tin - 20), from: baseNode, stops: rMorn < 0.08 ? [rMornCat < 0.6 ? 'mart' : 'cafe'] : [], to: gate.node, budget: 6000 });
+      out.push({ t: Math.max(T0, tin - 20), from: baseNode, stops: [], to: gate.node, budget: 0 });
       if (visitToday) {
-        const stops = willPay ? ((multi && rMulti < 0.30) ? [c1, c2] : [c1]) : [];
-        out.push({ t: normSimMin(wdArr, r), from: gate.node, stops, to: baseNode, budget: willPay ? rec[6] : 0 });
+        const t = normSimMin(wdArr, r);
+        out.push({ t, from: gate.node, stops: willPay ? payStops(cw, cats, r, t, multi, multiP) : [], to: baseNode, budget: willPay ? rec[6] : 0 });
       } else {
         out.push({ t: Math.round(1025 + rTout * 95), from: gate.node, stops: [], to: baseNode, budget: 0 });
       }
@@ -235,13 +251,11 @@ function makeDayFromPersona(rec, we, r) {
   }
 
   if (r() * 100 >= visitProb) return null;
-  const willPay = r() * 100 < payProb;
-  const c1 = pickCatFromWeights(cw, cats, r, null);
-  const c2 = pickCatFromWeights(cw, cats, r, c1);
-  const rMulti = r(), rSpot = r();
+  const willPay = r() * PU < payProb;
+  const rSpot = r();
   const arr = normSimMin(we ? rec[3] : rec[2], r);
-  if (willPay) {
-    const stops = (multi && rMulti < 0.28) ? [c1, c2] : [c1];
+  const stops = willPay ? payStops(cw, cats, r, arr, multi, multiP) : [];
+  if (stops.length) {
     out.push({ t: arr, from: baseNode, stops, to: baseNode, budget: rec[6] });
   } else {
     // 무소비 거리 유동(아이쇼핑·만남·산책 — 특히 저녁 외국인 유입층이 거리에 많아도 매출로 이어지지 않는 현상 재현)
@@ -297,7 +311,7 @@ function makeDay(g, we, r) {
   return { home: null, out };
 }
 
-// ── 하루 계산 (시간 버킷 + 활동 에이전트 분리로 ~2.8만 명 1:1 실시간 구동) ─────────
+// ── 하루 계산 (시간 버킷 + 활동 에이전트 분리로 페르소나 전원 1:1 실시간 구동) ─────────
 // 상태: 0 집/밖(안 보임) 1 걷는 중 2 가게 안 3 자리 기다림
 let A = [], ACTIVE = [], BUCKETS = null, SHOP_ST = null, STATS = null, W = 1, TOTAL_POP = 0, TOTAL_SPENT = 0, scen = 'wd', seedNow = 0;
 let FULL = false;   // true 면 가게 실험·자리 순위 고속 계산 모드
@@ -342,7 +356,7 @@ function populate(we, seed) {
         const ag = {
           g, wk, out: effOut, oi: 0, st: 0, _ai: -1, x: 0, z: 0, jit: (r() - 0.5) * 3,
           path: null, pd: null, t0: 0, t1: 0, goalNode: 0, stops: null, si: 0,
-          wallet: 0, until: 0, shop: -1, waitEnd: 0,
+          wallet: 0, until: 0, shop: -1, waitEnd: 0, sm: (rec[15] ?? 100) / 100,
           dwell: we ? rec[5] : rec[4], maxWait: rec[7] || (g === 'foreign' ? 8 : 12),
           visits: [], spent: 0, r: rng(seed * 104729 + TOTAL_POP * 31 + 7),
         };
@@ -373,7 +387,8 @@ function reset(we, seed) {
   populate(we, seed);
   SHOP_ST = SHOPS.map(() => ({ occ: [] }));
   STATS = { visits: new Float32Array(SHOPS.length), spend: new Float32Array(SHOPS.length), byHour: Array.from({ length: SHOPS.length }, () => null),
-    byGroup: Array.from({ length: SHOPS.length }, () => null), lost: new Float32Array(SHOPS.length), noMoney: 0 };
+    byGroup: Array.from({ length: SHOPS.length }, () => null), lost: new Float32Array(SHOPS.length), noMoney: 0,
+    noShop: 0, byKey: {} };   // noShop: 그 업종에 갈 수 있는(열린·가까운) 가게가 없음, byKey: 부류+국적 키별 [결제 수, 매출](tools/sim_persona_check.js)
 }
 const live = (s) => !s.off;
 function seatFree(si, t) { const o = SHOP_ST[si].occ; let n = 0; for (let k = o.length - 1; k >= 0; k--) { if (o[k] > t) n++; else o.splice(k, 1); } return n < SHOPS[si].seats; }
@@ -384,7 +399,7 @@ function openAt(s, t) { return t >= s.open && t < s.close - 10; }
 function staticWeights(s) {
   const catRef = CFG.cats[s.c].price, ref = s.ref || catRef, w = {};
   for (const k of WKEYS) {
-    const g = k.split('.')[0], e = CFG.priceElastic[g] ?? 1, P = MENU.prefs;
+    const g = k.split('.')[0], e = CFG.priceElastic[k] ?? CFG.priceElastic[g] ?? 1, P = { ...((window.PERSONAS && window.PERSONAS.sub_prefs) || {}), ...MENU.prefs };
     const pref = ((P[g] || {})[s.sub] ?? 1) * (k !== g ? ((P[k] || {})[s.sub] ?? 1) : 1);
     const tier = Math.min(1.6, Math.max(0.25, Math.pow(catRef / ref, e * 0.5)));
     w[k] = s.attract * pref * tier * Math.pow(ref / s.price, e);
@@ -393,20 +408,25 @@ function staticWeights(s) {
 }
 for (const s of SHOPS) staticWeights(s);
 const LAM = { pub: 420, mart: 220 };
+const NO_MONEY = { noMoney: true };
+// 이 사람이 이 가게에서 내는 돈 = 가게 1인 가격 × 1인 지출 배수(페르소나: 외국인 절약·개인차. 없으면 1)
+const payOf = (a, s) => a.sm && a.sm !== 1 ? Math.max(500, Math.round(s.price * a.sm / 100) * 100) : s.price;
 function chooseShop(a, cat, t, nodeFrom) {
   // 직선거리로 고른다(빠름). 실제 이동 시간은 길 거리로 계산. 거리 무게가 1/400 아래(약 6λ 밖)면 건너뛴다
+  // 가진 돈(이번 나들이 예산) 안의 가게만 고른다: 예산이 적은 사람은 싼 가게로 간다. 열린 가게가 있는데 모두 비싸면 NO_MONEY
   const list = BYCAT[cat], fx = NX[nodeFrom], fz = NZ[nodeFrom], lam = LAM[cat] || 300, far2 = (6 * lam) ** 2, g = a.wk;
-  let n = 0, sum = 0;
+  let n = 0, sum = 0, pricey = 0;
   const cw = CW.length >= list.length ? CW : (CW = new Float64Array(list.length * 2)), ci = CI.length >= list.length ? CI : (CI = new Int32Array(list.length * 2));
   for (let i = 0; i < list.length; i++) {
     const s = list[i];
     if (s.off || !openAt(s, t + 5)) continue;
     const dx = s.x - fx, dz = s.z - fz, d2 = dx * dx + dz * dz;
     if (d2 > far2) continue;
-    const w = s.wg[g] * Math.exp(-Math.sqrt(d2) / lam);
+    if (payOf(a, s) > a.wallet) { pricey++; continue; }
+    const w = (s.wg[g] ?? s.wg[a.g]) * Math.exp(-Math.sqrt(d2) / lam);
     if (w > 1e-4) { sum += w; cw[n] = sum; ci[n] = i; n++; }
   }
-  if (!n) return null;
+  if (!n) return pricey ? NO_MONEY : null;
   const u = a.r() * sum;
   let lo = 0, hi = n - 1; while (lo < hi) { const m = (lo + hi) >> 1; if (cw[m] < u) lo = m + 1; else hi = m; }
   return list[ci[lo]];
@@ -423,8 +443,8 @@ function nextStop(a, t, render) {
   while (a.si < a.stops.length) {
     const cat = a.stops[a.si++];
     const s = chooseShop(a, cat, t, a.cur);
-    if (!s) continue;
-    if (a.wallet < s.price) { STATS.noMoney += W; continue; }   // 돈이 모자라면 기다리지 않고 다음으로
+    if (!s) { STATS.noShop += W; continue; }
+    if (s === NO_MONEY) { STATS.noMoney += W; continue; }   // 돈 안에서 갈 가게가 없으면 기다리지 않고 다음으로
     a.shop = s.i; startTrip(a, a.cur, s.node, t, render); return;
   }
   a.shop = -1;
@@ -473,10 +493,12 @@ function enter(a, s, t) {
   const baseStay = a.dwell ? (a.dwell * 0.45 + s.stay * 0.55) : s.stay;
   const stay = Math.max(5, baseStay * (0.75 + 0.5 * a.r()));
   a.st = 2; a.until = t + stay; SHOP_ST[s.i].occ.push(a.until);
-  a.wallet -= s.price; a.spent += s.price; TOTAL_SPENT += s.price * W; a.visits.push([s.i, t]);
-  STATS.visits[s.i] += W; STATS.spend[s.i] += s.price * W;
+  const pay = payOf(a, s);
+  a.wallet -= pay; a.spent += pay; TOTAL_SPENT += pay * W; a.visits.push([s.i, t]);
+  STATS.visits[s.i] += W; STATS.spend[s.i] += pay * W;
   const h = Math.floor(t / 60) % 24; (STATS.byHour[s.i] || (STATS.byHour[s.i] = new Float32Array(24)))[h] += W;
   (STATS.byGroup[s.i] || (STATS.byGroup[s.i] = {}))[a.g] = ((STATS.byGroup[s.i] || {})[a.g] || 0) + W;
+  const bk = STATS.byKey[a.wk] || (STATS.byKey[a.wk] = [0, 0]); bk[0] += W; bk[1] += pay * W;
 }
 // 재생 화면의 상태(사람·가게 자리·통계)를 잠시 비켜 두고 다른 하루를 계산한 뒤 돌려놓는다.
 function swapState(st) {
@@ -597,15 +619,21 @@ const assumed = GROUPS.filter(g => CFG.groups[g].src === '가정' || /가정/.te
   const li = (k, v) => `<li><b>${k}</b> ${esc(String(v))}</li>`;
   const sh = (t) => `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
   const ps = CFG.price_src || {};
+  // 페르소나 번들로 돌 때는 번들 인원을 보여 준다(예전엔 옛 가정 인원 — 조선소 통근자 평일 2,983명 등 — 이 그대로 나왔다)
+  const pdCount = (key) => { const c = {}; if (PD) for (const r of PD.p) { const k = key(r); c[k] = (c[k] || 0) + 1; } return c; };
+  const pdG = pdCount(r => PD.groups[r[0]]), pdW = pdCount(r => PD.wkeys[r[13]]);
+  const WK_KO = { 'foreign.vn': '베트남', 'foreign.halal': '할랄 음식 국적', 'foreign.etc': '그 밖 근로자·가족', 'foreign.expat': '선주 감독관·외국 기술자와 가족' };
   $('sim-src').innerHTML = `<ul>
-    ${GROUPS.map(g => li(CFG.groups[g].ko + ` (평일 ${CFG.groups[g].wd.toLocaleString('ko-KR')}명·주말 ${CFG.groups[g].we.toLocaleString('ko-KR')}명)`, CFG.groups[g].src)).join('')}
+    ${PD ? li(`가상 시민 ${PD.n.toLocaleString('ko-KR')}명(1:1, v${PD.version})`, GROUPS.map(g => `${CFG.groups[g].ko} ${(pdG[g] || 0).toLocaleString('ko-KR')}명`).join(' · ') + ' — data/processed/personas (tools/build_personas.py). 주말 인원은 구분별 주말 배율로 늘고 줄어듦')
+      : GROUPS.map(g => li(CFG.groups[g].ko + ` (평일 ${CFG.groups[g].wd.toLocaleString('ko-KR')}명·주말 ${CFG.groups[g].we.toLocaleString('ko-KR')}명)`, CFG.groups[g].src)).join('')}
     ${CFG.scale ? li('규모 맞춤(모든 부류 × ' + CFG.scale.v + ')', CFG.scale.src) : li('규모 비교', '상권 안 하루 가게 방문(가상) 약 5,500건 ↔ 옥포1동 상권 카드 거래 환산 약 3,900건(경남빅데이터허브 2026년 9월, 카드 전체 추정 × 시뮬레이션 업종 비율). 같은 규모라 따로 맞추지 않음(행정동과 상권 경계가 달라서)')}
     ${li('교대 시간', `출근 ${sh(CFG.shift.in[0])}~${sh(CFG.shift.in[1])}, 퇴근 ${sh(CFG.shift.out[0])}~${sh(CFG.shift.out[1])} — ${CFG.shift_src || CFG.shift.src || '가정'}`)}
     ${CFG.foreignDaily ? li('외국인 하루 쓸 돈', CFG.foreignDaily.src) : ''}
     ${li('세부 업종별 1인 지출(대표 메뉴 × 1인 수량)', MENU.subs.map(x => `${x.ko} ${x.basket.toLocaleString('ko-KR')}원(근거 ${x.confirmed[0]}/${x.confirmed[1]})`).join(' · '))}
     ${li('메뉴 가격 근거', '① 옥포: 거제시 「개인서비스품목 가격동향」 2026-11-26 옥포1·2동 업소 가격(동마다 1곳, 두 동 평균)과 옥포 업체 공개 가격(당근 동네업체 페이지, 2026-11-27 확인) ② 옥포에 없으면 거제 다른 동·옆 동(아주동) 값 ③ 편의점은 전국 정가, 세탁은 경남 평균 ④ 유흥주점·식료품·미용·사우나는 옥포1·2동 카드 결제 건당 금액(2025-02)으로 계산 ⑤ 그 밖은 가정. 커피·햄버거는 업소마다 종류가 달라(4,700 vs 1,800, 3,800 vs 18,000) 평균을 쓰지 않음. 표: data/processed/okpo_menu_prices.csv')}
     ${li('업종 기준가(세부 업종이 비싼지 견주는 값)', CATS.map(c => `${CFG.cats[c].ko} ${CFG.cats[c].price.toLocaleString('ko-KR')}원`).join(' · ') + (ps.meal ? ' — ' + ps.meal : ''))}
-    ${li('외국인 근로자 국적', NAT.map(n => `${n[2]} ${Math.round(n[1] * 1000) / 10}%`).join(' · ') + ' — 옥포1·2동 등록 외국인 2,101명 중 베트남 576명(거제시 2026-10). 할랄 음식 찾는 국적 8%는 가정')}
+    ${PD ? li('외국인 구성(페르소나)', Object.keys(WK_KO).map(k => `${WK_KO[k]} ${(pdW[k] || 0).toLocaleString('ko-KR')}명`).join(' · ') + ' — 체류자격(거제시 2026-10) → 성별 → 국적 순서로 뽑음')
+      : li('외국인 근로자 국적', NAT.map(n => `${n[2]} ${Math.round(n[1] * 1000) / 10}%`).join(' · ') + ' — 옥포1·2동 등록 외국인 2,101명 중 베트남 576명(거제시 2026-10). 할랄 음식 찾는 국적 8%는 가정')}
     ${li('세부 업종 선호(조선소 통근자 → 고깃집·호프, 베트남 → 쌀국수, 할랄 → 돼지고기·술 피함 등)', '가정(근거 자료 없음)')}
     ${li('조선소 쪽 입구', 'OSM 조선소 서쪽 경계 차단기(34.88789, 128.69100), 문별 출퇴근 인원 미확인')}
     ${li('가게', `소상공인시장진흥공단 상가정보 2026-09 영업 중 가게 ${SHOPS.length.toLocaleString('ko-KR')}곳, 소분류로 세부 업종 ${MENU.subs.length}개에 나눔`)}
@@ -626,8 +654,8 @@ function snap(t) {
   const from = Math.max(T0, Math.floor(t) + 1);
   return { A: A.map(cloneAgent), act: ACTIVE.map(a => a._k), bFrom: from, bk: BUCKETS.slice(from).map(b => b.length ? b.map(a => a._k) : null),
     TOTAL_POP, TOTAL_SPENT, SHOP_ST: SHOP_ST.map(o => ({ occ: o.occ.slice() })), W,
-    STATS: { visits: STATS.visits.slice(), spend: STATS.spend.slice(), lost: STATS.lost.slice(), noMoney: STATS.noMoney,
-      byHour: STATS.byHour.map(h => h && h.slice()), byGroup: STATS.byGroup.map(g => g && { ...g }) } };
+    STATS: { visits: STATS.visits.slice(), spend: STATS.spend.slice(), lost: STATS.lost.slice(), noMoney: STATS.noMoney, noShop: STATS.noShop,
+      byHour: STATS.byHour.map(h => h && h.slice()), byGroup: STATS.byGroup.map(g => g && { ...g }), byKey: copyKeys(STATS.byKey) } };
 }
 function restoreSnap(k) {
   A = k.A.map(cloneAgent); for (const a of A) a._ai = -1;
@@ -636,9 +664,10 @@ function restoreSnap(k) {
   k.bk.forEach((l, j) => { if (l) BUCKETS[k.bFrom + j] = l.map(i => A[i]); });
   TOTAL_POP = k.TOTAL_POP; TOTAL_SPENT = k.TOTAL_SPENT;
   SHOP_ST = k.SHOP_ST.map(o => ({ occ: o.occ.slice() })); W = k.W;
-  const S = k.STATS; STATS = { visits: S.visits.slice(), spend: S.spend.slice(), lost: S.lost.slice(), noMoney: S.noMoney,
-    byHour: S.byHour.map(h => h && h.slice()), byGroup: S.byGroup.map(g => g && { ...g }) };
+  const S = k.STATS; STATS = { visits: S.visits.slice(), spend: S.spend.slice(), lost: S.lost.slice(), noMoney: S.noMoney, noShop: S.noShop,
+    byHour: S.byHour.map(h => h && h.slice()), byGroup: S.byGroup.map(g => g && { ...g }), byKey: copyKeys(S.byKey) };
 }
+function copyKeys(o) { const c = {}; for (const k in o) c[k] = o[k].slice(); return c; }
 // 2시간마다 저장(사람 2만 명이라 저장점 1개가 약 6MB — 1시간마다면 60MB)
 function keep(s) { if (s % 120 === 0 && CK.key === liveKey && !CK.m.has(s) && SHOP_ST.length === SHOPS.length) CK.m.set(s, snap(s)); }
 function seek(t) {
@@ -731,9 +760,12 @@ function addVirtual(bi, floor, sub, price, seats) {
   const b = MP.buildings[bi]; let cx = 0, cz = 0; for (const p of b.p) { cx += p[0]; cz += p[1]; } cx /= b.p.length; cz /= b.p.length;
   const s = { i: SHOPS.length, n: '새 가게(실험)', c: cat, sub, cs: '', x: cx, z: cz, b: bi, f: floor, node: nearest(cx, cz), ref: sb.basket,
     price, seats, open: sb.open, close: sb.close, stay: sb.stay, attract: 1.0 * (floor >= 2 ? CFG.upperFloor : 1), virtual: true };
-  staticWeights(s); SHOPS.push(s); BYCAT[cat].push(s); SHOPNODE = null; return s;
+  staticWeights(s); SHOPS.push(s); BYCAT[cat].push(s); SHOPNODE = null;
+  s._win = CAT_WIN[cat] ? CAT_WIN[cat].slice() : null;   // 새 가게 영업시간만큼 업종 문 여는 시간을 넓혔다가 지울 때 되돌림
+  CAT_WIN[cat] = [Math.min(s._win ? s._win[0] : Infinity, s.open), Math.max(s._win ? s._win[1] : -Infinity, s.close)];
+  return s;
 }
-function removeVirtual(s) { SHOPS.pop(); BYCAT[s.c].splice(BYCAT[s.c].indexOf(s), 1); SHOPNODE = null; }
+function removeVirtual(s) { SHOPS.pop(); BYCAT[s.c].splice(BYCAT[s.c].indexOf(s), 1); SHOPNODE = null; if (s._win) CAT_WIN[s.c] = s._win; else delete CAT_WIN[s.c]; }
 function neighbors(s, R) { return SHOPS.filter(o => !o.virtual && o.c === s.c && Math.hypot(o.x - s.x, o.z - s.z) <= R).map(o => o.i); }
 function experiment(bi, floor, sub, price, seats) {
   const s = addVirtual(bi, floor, sub, price, seats);
