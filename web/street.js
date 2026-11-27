@@ -19,21 +19,68 @@ document.body.appendChild(panel);
 
 // 거리 띠(땅 위 옅은 노란 길)
 let band = null;
-function drawBand(p) {
-  if (band) { scene.remove(band); band.geometry.dispose(); band = null; }
-  if (!p) return;
-  // 가게 위치로 만든 중심선은 조금 지그재그라 두 번 부드럽게(Chaikin) 다듬은 뒤 가는 선(폭 1.6m)으로
+// 거리 강조: 노면 전체 노랑 띠(길 폭) + 양쪽 가장자리선 + 시작·끝 표지 + 거리 이름표 + 길가 건물 윤곽선
+const END_NAMES = { light: ['KB국민은행', '수협'] };   // 빛의 거리 공식 구간 "국민은행~수협"(거제저널 2024-11-22)
+let streetLabels = [];
+function smooth(p) {
   let q = p.map(v => v.slice());
   for (let k = 0; k < 3; k++) { const r = [q[0]]; for (let i = 0; i < q.length - 1; i++) { const [ax, az] = q[i], [bx, bz] = q[i + 1];
     r.push([ax * 0.75 + bx * 0.25, az * 0.75 + bz * 0.25], [ax * 0.25 + bx * 0.75, az * 0.25 + bz * 0.75]); } r.push(q[q.length - 1]); q = r; }
-  const pos = [];
+  return q;
+}
+function laneStrip(q, half, off, y, out) {   // 선을 따라 [off-half, off+half] 너비의 띠
   for (let i = 0; i < q.length - 1; i++) {
-    const [ax, az] = q[i], [bx, bz] = q[i + 1], dx = bx - ax, dz = bz - az, l = Math.hypot(dx, dz) || 1, nx = -dz / l * 0.7, nz = dx / l * 0.7;
-    pos.push(ax + nx, 0, az + nz, bx + nx, 0, bz + nz, ax - nx, 0, az - nz, ax - nx, 0, az - nz, bx + nx, 0, bz + nz, bx - nx, 0, bz - nz);
+    const [ax, az] = q[i], [bx, bz] = q[i + 1], dx = bx - ax, dz = bz - az, l = Math.hypot(dx, dz) || 1, nx = -dz / l, nz = dx / l;
+    const a0 = off - half, a1 = off + half;
+    out.push(ax + nx * a1, y, az + nz * a1, bx + nx * a1, y, bz + nz * a1, ax + nx * a0, y, az + nz * a0,
+             ax + nx * a0, y, az + nz * a0, bx + nx * a1, y, bz + nz * a1, bx + nx * a0, y, bz + nz * a0);
   }
+}
+function meshOf(pos, color, opacity, order) {
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  band = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: '#343a40', transparent: true, opacity: 0.75, depthWrite: false, side: THREE.DoubleSide }));
-  band.renderOrder = 9.6; scene.add(band);
+  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, side: THREE.DoubleSide }));
+  m.renderOrder = order; return m;
+}
+function addLabel(text, cls, x, y, z) {
+  const el = document.createElement('div'); el.className = 'lbl place ' + cls; el.textContent = text;
+  document.getElementById('labels').appendChild(el);
+  const L = { el, x, y, z, pri: 11, kind: 'place', w: 0, h: 0 }; M.labels.unshift(L); streetLabels.push(L);
+}
+function clearLabels() {
+  for (const L of streetLabels) { L.el.remove(); const i = M.labels.indexOf(L); if (i >= 0) M.labels.splice(i, 1); }
+  streetLabels = [];
+}
+function drawBand(s) {
+  if (band) { scene.remove(band); band.traverse(o => o.geometry && o.geometry.dispose()); band = null; }
+  clearLabels();
+  if (!s) return;
+  const q = smooth(s.p);
+  band = new THREE.Group();
+  const fill = [], edge = [];
+  laneStrip(q, 6, 0, 0.07, fill);                       // 노면(길 폭 약 12m)
+  laneStrip(q, 0.35, 6.2, 0.09, edge); laneStrip(q, 0.35, -6.2, 0.09, edge);   // 양쪽 가장자리선
+  band.add(meshOf(fill, '#ffd43b', 0.42, 9.3), meshOf(edge, '#e0a800', 0.95, 9.65));
+  // 시작·끝 표지: 원판 + 이름표
+  const ends = [q[0], q[q.length - 1]], names = END_NAMES[s.id];
+  const mid = q[Math.floor(q.length / 2)];
+  ends.forEach((e, k) => {
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(4.2, 28), new THREE.MeshBasicMaterial({ color: '#212529', depthWrite: false }));
+    disc.rotation.x = -Math.PI / 2; disc.position.set(e[0], 0.1, e[1]); disc.renderOrder = 9.7; band.add(disc);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(4.2, 5.4, 28), new THREE.MeshBasicMaterial({ color: '#ffd43b', depthWrite: false }));
+    ring.rotation.x = -Math.PI / 2; ring.position.set(e[0], 0.11, e[1]); ring.renderOrder = 9.7; band.add(ring);
+    const dir = (() => { const dx = e[0] - mid[0], dz = e[1] - mid[1]; return Math.abs(dx) > Math.abs(dz) ? (dx > 0 ? '동쪽' : '서쪽') : (dz > 0 ? '남쪽' : '북쪽'); })();
+    addLabel(names ? `${k ? '끝' : '시작'} · ${names[k]}` : `${dir} 끝`, 'street-end', e[0], 3, e[1]);
+  });
+  addLabel(`${s.ko.split(' (')[0]} · ${s.len}m`, 'street-name', mid[0], 18, mid[1]);
+  // 길가 건물 윤곽선
+  const lp = [];
+  for (const x of s.slots) { const b = B[x.b]; if (!b) continue; const y1 = (b.b || 0) + b.h + 0.08;
+    for (let i = 0; i < b.p.length; i++) { const a = b.p[i], c = b.p[(i + 1) % b.p.length]; lp.push(a[0], y1, a[1], c[0], y1, c[1], a[0], y1, a[1], a[0], 0.1, a[1]); } }
+  const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3));
+  const lines = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: '#3b3f45', transparent: true, opacity: 0.7 })); lines.renderOrder = 12;
+  band.add(lines);
+  band.children.forEach(m => { m.frustumCulled = false; });
+  scene.add(band);
 }
 function fly(toT, toC, dur = 900) {
   const cam = M.camera, ctl = M.controls, t0 = performance.now(), fC = cam.position.clone(), fT = ctl.target.clone();
@@ -201,8 +248,8 @@ function choose(id) {
     M.camera.position.copy(M.HOME.c); M.controls.target.copy(M.HOME.t); M.controls.update(); need(); return;
   }
   M.select(-1);
-  M.tint(new Set(s.slots.map(x => x.b)));
-  drawBand(s.p); flyStreet(s); panel.hidden = false; render(s); need();
+  M.tint(new Set(s.slots.map(x => x.b)), 0.62);   // 거리 밖 건물은 더 흐리게
+  drawBand(s); flyStreet(s); panel.hidden = false; render(s); need();
 }
 tabs.onclick = (e) => { const b = e.target.closest('button'); if (b) choose(b.dataset.id); };
 const q = new URLSearchParams(location.search).get('street');

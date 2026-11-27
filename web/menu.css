@@ -1,0 +1,4 @@
+/* 거리 강조 이름표(3D 위 글자) — 화면 껍데기 스타일은 app.css(seohogyun-20 담당), 이 파일은 3D·실험 쪽 추가분 */
+.lbl.street-name { font-size: 15px; font-weight: 800; color: #212529; background: #ffd43b; border-radius: 8px; padding: 3px 10px; text-shadow: none;
+  box-shadow: 0 2px 6px rgba(0,0,0,.18); }
+.lbl.street-end { font-size: 12px; font-weight: 700; color: #fff; background: #212529; border-radius: 6px; padding: 2px 8px; text-shadow: none; }
