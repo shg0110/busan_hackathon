@@ -44,6 +44,58 @@ const lockFloors = () => { const on = document.body.classList.contains('street-m
 new MutationObserver(lockFloors).observe(document.body, { attributes: true, attributeFilter: ['class'] });
 lockFloors();
 
+// ── 시연장 대비(2026-11-27): 3D 를 못 그리는 브라우저·느린 컴퓨터 ─────────────────────
+// ① WebGL 이 없거나 꺼져 있으면 '지도를 그리는 중…' 가림막에 갇히지 않게, 지도 자리에 까닭과 할 일을 쓰고 기록지는 보이게 둔다.
+//    WebGL 은 되는데 20초가 지나도 지도가 준비되지 않으면(다른 오류) 새로고침을 권한다
+const glOK = (() => { try { const c = document.createElement('canvas'); return !!(window.WebGLRenderingContext && (c.getContext('webgl2') || c.getContext('webgl'))); } catch (e) { return false; } })();
+function mapFail(title, body) {
+  const L = $('loading'); if (!L) return;
+  document.body.classList.add('nomap');
+  // app.js 가 3D 를 만들다 멈추면 요약 카드 숫자도 못 채운다: 숫자만이라도 STATS 에서 채운다(꺾은선 그림은 뺌)
+  if (ST && $('s-general') && $('s-general').textContent.trim() === '–') {
+    const t = (id, v) => { const e = $(id); if (e) e.textContent = v; };
+    t('s-label', ST.label); t('s-general', ST.general.toFixed(1)); t('s-quarter', ST.quarter);
+    t('s-rank', `${(ST.scope.match(/\((.+)\)/) || [0, ST.scope])[1]} ${ST.of}개 상권 중 ${ST.rank}위`);
+    t('s-large', ST.large.toFixed(1) + '%'); t('s-before', ST.series[0].v.toFixed(1) + '%'); t('s-src', `${ST.source}, ${ST.quarter}`);
+  }
+  L.classList.remove('done'); L.classList.add('fail');
+  L.innerHTML = `<div><b>${title}</b><span>${body}</span></div>`;
+}
+if (!glOK) mapFail('이 브라우저에서는 3D 지도를 그릴 수 없습니다', '크롬 최신판에서 열어 주세요. 크롬이라면 설정 → 시스템 → ‘가능한 경우 그래픽 가속 사용’을 켜고 다시 시작해 주세요. 왼쪽 기록지의 숫자는 그대로 볼 수 있습니다.');
+else setTimeout(() => { if (!window.__ready) mapFail('지도를 그리지 못했습니다', '새로고침해 주세요. 계속되면 크롬 최신판에서 열어 주세요. 왼쪽 기록지의 숫자는 그대로 볼 수 있습니다.'); }, 20000);
+
+// ② 느린 컴퓨터: 지도가 준비되고 첫 화면 연출이 끝나면 40장을 억지로 그려 한 장 시간을 잰다. 가운데 값이 40ms(초당 25장)보다 느리면 가벼운 보기로 바꾼다.
+//    ?lite=1 은 처음부터 가벼운 보기, ?lite=0 은 자동 전환을 끈다. 바뀌면 지도 왼쪽 위에 알리고 '원래대로'(?lite=0)를 준다.
+//    가벼운 보기: 녹지 나무 1/3·나무 그림자 끔(decor.js), 그 밖은 document 'map-lite' 이벤트를 듣는 쪽이 맡는다
+const liteQ = new URLSearchParams(location.search).get('lite');
+function goLite(why) {
+  if (document.body.classList.contains('lite')) return;
+  document.body.classList.add('lite');
+  const r = window.__decor && window.__decor.lite ? window.__decor.lite() : null;
+  document.dispatchEvent(new CustomEvent('map-lite', { detail: { on: true, why, trees: r } }));
+  if (liteQ !== '1') {
+    const n = document.createElement('p'); n.id = 'lite-note'; n.setAttribute('role', 'status');
+    const u = new URL(location.href); u.searchParams.set('lite', '0');
+    n.innerHTML = `이 컴퓨터에서 지도가 느려 가벼운 보기로 바꿨습니다 <a href="${u.href}">원래대로</a>`;
+    document.body.appendChild(n);
+  }
+}
+function measureThenMaybeLite() {
+  if (liteQ === '0' || !window.__map || !window.__map.need) return;
+  const t = []; let last = 0, n = 0;
+  const step = (now) => { if (last) t.push(now - last); last = now; window.__map.need(); if (++n < 42) requestAnimationFrame(step); else {
+    t.sort((a, b) => a - b); const med = t[Math.floor(t.length / 2)]; window.__frameMs = +med.toFixed(1);
+    if (med > 40) goLite('frame ' + med.toFixed(0) + 'ms'); } };
+  requestAnimationFrame(step);
+}
+(function waitMap(k = 0) {
+  if (!glOK) return;
+  if (!window.__ready) { if (k < 400) setTimeout(() => waitMap(k + 1), 50); return; }
+  if (liteQ === '1') { goLite('param'); return; }
+  const go = () => setTimeout(measureThenMaybeLite, 400);
+  if (window.__introDone) go(); else { document.addEventListener('intro-done', go, { once: true }); setTimeout(() => { if (!window.__frameMs) measureThenMaybeLite(); }, 6000); }
+})();
+
 // ── 지도 도구: 방위표·축척 막대·키보드·주소 공유(2026-11-27) ─────────────────────
 // 지도(app.js)가 준비된 뒤에 붙는다. 카메라를 직접 만지지 않고 __map.orbit / controls 만 쓴다
 function whenReady(f, n = 0) { if (window.__ready && window.__map && window.__map.controls) f(); else if (n < 200) setTimeout(() => whenReady(f, n + 1), 50); }
