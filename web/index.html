@@ -13,38 +13,66 @@
 <canvas id="c" aria-label="거제 옥포 3D 지도"></canvas>
 <div id="labels" aria-hidden="true"></div>
 
-<!-- 요약 카드: 숫자는 모두 web/data/okpo_stats.js(R-ONE 원자료에서 자동 생성) -->
-<section id="card" aria-labelledby="card-title">
-  <div class="card-head">
-    <h1 id="card-title"><span id="s-label">거제 옥포</span> 상권<span class="mini" id="s-mini"></span></h1>
-    <button id="card-toggle" class="icon-btn" aria-expanded="true" aria-controls="card-body" title="접기">
-      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 12l5-5 5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    </button>
-  </div>
-  <div id="card-body">
-    <div class="big">
-      <span class="big-num" id="s-general">–</span><span class="big-unit">%</span>
-      <span class="badge" id="s-rank"></span>
-    </div>
-    <p class="big-cap">상가 공실률(건물 전체) · <span id="s-quarter"></span></p>
-    <dl class="kv">
-      <div><dt>큰 건물(중대형)</dt><dd id="s-large">–</dd></div>
-      <div><dt>2년 전</dt><dd id="s-before">–</dd></div>
-    </dl>
-    <figure class="spark">
-      <svg id="s-chart" viewBox="0 0 280 80" role="img" aria-label="공실률 2년 추이"></svg>
-      <figcaption id="s-legend"></figcaption>
-    </figure>
-    <p class="src">출처: <span id="s-src"></span></p>
-  </div>
-</section>
+<!-- 왼쪽 기록지: 화면의 글과 버튼을 한 장에 모은다. street.js 가 #r-where 에 구간 목록, #r-now 에 거리 기록을 넣는다(shell.js 가 옮겨 주기도 함). -->
+<aside id="rail" aria-label="옥포 상권 조사 기록">
+  <header class="r-head">
+    <h1>옥포 상권,<br>비어 있는 가게들</h1>
+    <p>거제시 옥포동 일대를 공공 자료로 다시 그린 지도입니다.<br>자료는 2026년 11월에 모았습니다.</p>
+  </header>
 
-<!-- 보기 설정 -->
-<section id="layers" aria-label="보기 설정">
-  <label class="tog"><input type="checkbox" id="L-est"><span>층수 추정 건물 표시</span></label>
-  <label class="tog"><input type="checkbox" id="L-names" checked><span>지명</span></label>
-  <label class="tog"><input type="checkbox" id="L-roads" checked><span>도로 이름</span></label>
-</section>
+  <section class="r-sec" id="r-where" aria-labelledby="h-where">
+    <h2 id="h-where">어디를 볼까요</h2>
+  </section>
+
+  <section class="r-sec" id="r-now">
+    <!-- 요약: 숫자는 모두 web/data/okpo_stats.js(R-ONE 원자료에서 자동 생성) -->
+    <section id="card" aria-labelledby="card-title">
+      <div class="card-head">
+        <h2 id="card-title"><span id="s-label">거제 옥포</span> 상권<span class="mini" id="s-mini"></span></h2>
+        <button id="card-toggle" class="icon-btn" aria-expanded="true" aria-controls="card-body" title="접기">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 12l5-5 5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+      <div id="card-body">
+        <div class="big">
+          <span class="big-num" id="s-general">–</span><span class="big-unit">%</span>
+          <span class="badge" id="s-rank"></span>
+        </div>
+        <p class="big-cap"><span id="s-ratio">상가 셋 중 하나가 비어 있습니다</span>
+          <small><span id="s-quarter"></span>. 1층만이 아니라 건물 전체를 본 값입니다.</small></p>
+        <p class="kv-line">2년 전(<span id="s-q0">2024년 3분기</span>)에는 <span id="s-before">–</span>였고,<br>큰 건물만 보면 지금 <span id="s-large">–</span>입니다.</p>
+        <figure class="spark">
+          <svg id="s-chart" viewBox="0 0 280 80" role="img" aria-label="공실률 2년 추이"></svg>
+          <figcaption id="s-legend"></figcaption>
+        </figure>
+        <p class="src">자료: <span id="s-src"></span></p>
+      </div>
+    </section>
+  </section>
+
+  <section class="r-sec" id="r-layers" aria-labelledby="h-layers">
+    <h2 id="h-layers">지도에 보이는 것</h2>
+    <div id="layers" role="group" aria-labelledby="h-layers">
+      <label class="tog"><input type="checkbox" id="L-est"><span>층수를 추정한 건물</span></label>
+      <label class="tog"><input type="checkbox" id="L-names" checked><span>지명</span></label>
+      <label class="tog"><input type="checkbox" id="L-roads" checked><span>도로 이름</span></label>
+    </div>
+    <details class="key">
+      <summary>그림 읽는 법</summary>
+      <ul>
+        <li><i style="background:#f0783a"></i>주황 띠: 등록된 가게가 없는 층</li>
+        <li><i style="background:#4fa679"></i>초록 띠: 영업 중인 층(켰을 때)</li>
+        <li><i style="background:#ffe14d;border:1px solid #d6262b"></i>노란 현수막: 가게 없는 층에 붙인 ‘임대 문의’</li>
+        <li><i class="pin"></i>핀: 문 닫은 가게(인허가 폐업 기록). 빨강은 그 주소에 지금 영업 중인 가게가 없는 곳, 회색은 확실하지 않은 곳</li>
+        <li><i style="background:#ffd43b"></i>노란 길: 지금 고른 거리</li>
+        <li><i style="background:#3f6fcf"></i>파란 길: 사람 흐름, 진할수록 많이 지나감</li>
+        <li><i class="dot"></i>작은 점: 가상 손님, 색은 손님 종류</li>
+        <li><i style="background:#4a8fd8;border-radius:50%"></i>옥상 파란 통: 물탱크</li>
+      </ul>
+      <p>나무, 가로등, 벤치, 주차된 차는 분위기를 위한 그림이라 실제 위치와 다릅니다. 버스 정류장과 주차장은 실제 위치입니다.</p>
+    </details>
+  </section>
+</aside>
 
 <!-- 건물 정보 -->
 <aside id="info" aria-live="polite" hidden>
@@ -65,7 +93,7 @@
   <button data-n="h" aria-label="처음 위치로" title="처음 위치로"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 9.5L10 4l7 5.5M5.5 8v8h9V8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
 </nav>
 
-<p id="hint">끌기: 옮기기 · 오른쪽 끌기: 돌리기 · 휠: 확대 · 건물을 누르면 층별 정보</p>
+<p id="hint">지도를 끌면 옮겨지고, 오른쪽 버튼으로 끌면 돌아갑니다. 건물을 누르면 층별 정보가 나옵니다.</p>
 <footer id="credit">지도 © OpenStreetMap 기여자(ODbL) · 공실률 한국부동산원 R-ONE</footer>
 <div id="loading" role="status">지도를 그리는 중…</div>
 
@@ -88,5 +116,6 @@
 <script src="data/okpo_vacancy.js"></script>
 <script src="vacancy.js"></script>
 <script src="street.js"></script>
+<script src="shell.js"></script>
 </body>
 </html>

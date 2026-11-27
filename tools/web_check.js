@@ -35,8 +35,10 @@ fs.mkdirSync(OUT, { recursive: true });
 
     // 패널 겹침·화면 밖·글자 잘림
     const layout = await pg.evaluate(() => {
-      const ids = ['card', 'layers', 'nav', 'credit', 'hint', 'sim', 'tabs', 'street'];
-      const vis = ids.map(id => document.getElementById(id)).filter(e => e && getComputedStyle(e).display !== 'none' && !e.hidden);
+      // 기록지(#rail) 안의 요약·목록·거리 기록은 기록지를 스크롤해서 보므로 화면 밖·겹침 판정에서 빼고, 기록지 자체를 하나로 본다
+      const ids = ['rail', 'card', 'layers', 'nav', 'credit', 'hint', 'sim', 'tabs', 'street'];
+      const inRail = (e) => e.id !== 'rail' && e.closest && e.closest('#rail');
+      const vis = ids.map(id => document.getElementById(id)).filter(e => e && !inRail(e) && getComputedStyle(e).display !== 'none' && !e.hidden);
       const rect = (e) => e.getBoundingClientRect();
       const W = innerWidth, H = innerHeight, out = [], overlap = [], clipped = [];
       for (const e of vis) { const r = rect(e); if (r.left < -1 || r.top < -1 || r.right > W + 1 || r.bottom > H + 1) out.push(e.id); }
@@ -59,8 +61,10 @@ fs.mkdirSync(OUT, { recursive: true });
         if (b.a < 150) return;
         let x = 0, z = 0; for (const p of b.p) { x += p[0]; z += p[1]; } x /= b.p.length; z /= b.p.length;
         v.set(x, b.h, z).project(cam);
-        const sx = (v.x + 1) / 2 * innerWidth, sy = (1 - v.y) / 2 * innerHeight;
-        const d = Math.hypot(sx - innerWidth / 2, sy - innerHeight * 0.55);
+        // 지도는 화면 전체가 아니라 캔버스 자리(기록지 오른쪽, 폰은 위쪽 절반)에 그려진다
+        const cr = document.getElementById('c').getBoundingClientRect();
+        const sx = cr.left + (v.x + 1) / 2 * cr.width, sy = cr.top + (1 - v.y) / 2 * cr.height;
+        const d = Math.hypot(sx - (cr.left + cr.width / 2), sy - (cr.top + cr.height * 0.55));
         if (v.z < 1 && (!best || d < best.d)) best = { i, sx, sy, d };
       });
       return best;
@@ -109,10 +113,13 @@ fs.mkdirSync(OUT, { recursive: true });
     await pg.click('#nav [data-n="h"]'); await pg.waitForTimeout(400);
     const cam2 = await pg.evaluate(() => window.__map.camera.position.toArray());
     ui.home = Math.hypot(cam2[0] - cam0[0], cam2[1] - cam0[1], cam2[2] - cam0[2]) < 2;
-    await pg.click('#card-toggle'); await pg.waitForTimeout(200);
-    ui.cardToggled = await pg.evaluate(() => document.getElementById('card').classList.contains('collapsed'));
-    await shot('card-toggled');
-    await pg.click('#card-toggle');
+    // 요약 접기: 왼쪽 기록지 화면(2026-11-27~)에서는 요약이 늘 펼쳐져 있어 접기 버튼이 없다. 보일 때만 누른다.
+    if (await pg.isVisible('#card-toggle')) {
+      await pg.click('#card-toggle'); await pg.waitForTimeout(200);
+      ui.cardToggled = await pg.evaluate(() => document.getElementById('card').classList.contains('collapsed'));
+      await shot('card-toggled');
+      await pg.click('#card-toggle');
+    } else ui.cardToggled = 'no-toggle(기록지)';
 
     // 가까이 보기(골목 수준)
     await pg.evaluate(() => { const M = window.__map; const t = M.controls.target; M.camera.position.set(t.x + 90, 70, t.z + 120); M.controls.update(); M.need(); });
