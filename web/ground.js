@@ -44,6 +44,28 @@ const VEHICLE_SKIP = new Set(['service', 'footway', 'path', 'steps', 'cycleway',
 const WALK_W = 2.5;            // 인도 폭(m)
 const JUNC_CLEAR = 15;         // 교차로 앞뒤로 중앙선·차선을 비우는 길이(m)
 
+// ── 지형(terrain.js, seohogyun-31): 켜져 있으면 모든 바닥 층을 땅 높이에 붙인다. 꺼져 있으면 아래는 모두 그대로(높이 0) ──
+const TON = !!window.TERRAIN_ON, TH = (typeof window.heightAt === 'function') ? window.heightAt : () => 0;
+const LIFT = 0.05;   // 지형 면 위로 띄우는 높이(깊이 다툼 방지는 polygonOffset 이 주로 맡음)
+// 삼각형을 가장 긴 변의 가운데에서 둘로 나누기를 되풀이해 모든 변이 maxE 이하가 되게(감는 방향 유지). 6m 지형 격자 위에서 긴 삼각형이 땅을 뚫거나 뜨지 않게
+function densify(pos, maxE) {
+  const out = [], st = [];
+  for (let i = 0; i < pos.length; i += 9) st.push([pos[i], pos[i + 1], pos[i + 2], pos[i + 3], pos[i + 4], pos[i + 5], pos[i + 6], pos[i + 7], pos[i + 8]]);
+  const m2 = maxE * maxE;
+  while (st.length) {
+    const t = st.pop(), d = (a, b) => (t[a] - t[b]) ** 2 + (t[a + 2] - t[b + 2]) ** 2;
+    const e0 = d(0, 3), e1 = d(3, 6), e2 = d(6, 0), mx = Math.max(e0, e1, e2);
+    if (mx <= m2) { out.push(...t); continue; }
+    const A = t.slice(0, 3), B = t.slice(3, 6), C = t.slice(6, 9), mid = (p, q) => [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2, (p[2] + q[2]) / 2];
+    if (mx === e0) { const M2 = mid(A, B); st.push([...A, ...M2, ...C], [...M2, ...B, ...C]); }
+    else if (mx === e1) { const M2 = mid(B, C); st.push([...A, ...B, ...M2], [...A, ...M2, ...C]); }
+    else { const M2 = mid(C, A); st.push([...A, ...B, ...M2], [...M2, ...B, ...C]); }
+  }
+  return out;
+}
+// 땅 기울기에서 법선(바닥 층도 비탈에서 지형과 같은 빛을 받게)
+function terrainNormal(x, z) { const e = 3, gx = (TH(x + e, z) - TH(x - e, z)) / (2 * e), gz = (TH(x, z + e) - TH(x, z - e)) / (2 * e), l = Math.hypot(gx, 1, gz); return [-gx / l, 1 / l, -gz / l]; }
+
 // ── 도우미(decor.js 와 같은 것, 검증된 그대로 복사) ─────────────
 const key = (p) => p[0].toFixed(1) + ',' + p[1].toFixed(1);
 function inPoly(x, z, p) {
@@ -169,10 +191,12 @@ function raised(m, off, wd, H, s0, s1, pos, nrm, step = 3) {
   for (let s = s0; s <= s1 + 1e-6; s = Math.min(s1, s + step)) {
     const q = m.w.at(s), cx = q.x + q.nx * off, cz = q.z + q.nz * off, h = wd / 2;
     const cur = { i: [cx - q.nx * h, cz - q.nz * h], o: [cx + q.nx * h, cz + q.nz * h], nx: q.nx, nz: q.nz };
+    cur.hi = TH(cur.i[0], cur.i[1]) + (TON ? LIFT : 0); cur.ho = TH(cur.o[0], cur.o[1]) + (TON ? LIFT : 0);   // 지형이 꺼져 있으면 0
     if (prev) {
-      quad([prev.i[0], H, prev.i[1]], [cur.i[0], H, cur.i[1]], [cur.o[0], H, cur.o[1]], [prev.o[0], H, prev.o[1]], [0, 1, 0]);
-      quad([prev.i[0], 0, prev.i[1]], [cur.i[0], 0, cur.i[1]], [cur.i[0], H, cur.i[1]], [prev.i[0], H, prev.i[1]], [-cur.nx, 0, -cur.nz]);
-      quad([prev.o[0], 0, prev.o[1]], [cur.o[0], 0, cur.o[1]], [cur.o[0], H, cur.o[1]], [prev.o[0], H, prev.o[1]], [cur.nx, 0, cur.nz]);
+      const dn = TON ? 0.3 : 0;
+      quad([prev.i[0], prev.hi + H, prev.i[1]], [cur.i[0], cur.hi + H, cur.i[1]], [cur.o[0], cur.ho + H, cur.o[1]], [prev.o[0], prev.ho + H, prev.o[1]], [0, 1, 0]);
+      quad([prev.i[0], prev.hi - dn, prev.i[1]], [cur.i[0], cur.hi - dn, cur.i[1]], [cur.i[0], cur.hi + H, cur.i[1]], [prev.i[0], prev.hi + H, prev.i[1]], [-cur.nx, 0, -cur.nz]);
+      quad([prev.o[0], prev.ho - dn, prev.o[1]], [cur.o[0], cur.ho - dn, cur.o[1]], [cur.o[0], cur.ho + H, cur.o[1]], [prev.o[0], prev.ho + H, prev.o[1]], [cur.nx, 0, cur.nz]);
     }
     prev = cur; if (s >= s1) break;
   }
@@ -296,19 +320,28 @@ function faceUp(pos, uv) {
   }
 }
 const made = [];
+const NO_DENSIFY = new Set(['water']);   // 바다는 높이 0 이라 잘게 나눌 필요 없음
+const ROADLIKE = new Set(['foot', 'service', 'minor-edge', 'minor', 'link', 'major-edge', 'major', 'walk', 'corner', 'alley-edge']);   // 길 띠는 8m 로(삼각형 수 줄이기)
 function flat(pos, color, order, glow, name, tex) {
   if (!pos.length) return null;
   faceUp(pos);
+  const nrm = new Float32Array(TON ? 0 : pos.length);
+  if (TON) {   // 6m 이하로 나눈 뒤 꼭짓점마다 땅 높이를 더하고, 법선은 땅 기울기
+    if (!NO_DENSIFY.has(name)) pos = densify(pos, ROADLIKE.has(name) ? 8 : 6);
+    const n2 = new Float32Array(pos.length);
+    for (let i = 0; i < pos.length; i += 3) { const x = pos[i], z = pos[i + 2]; pos[i + 1] += TH(x, z) + LIFT; const n = terrainNormal(x, z); n2[i] = n[0]; n2[i + 1] = n[1]; n2[i + 2] = n[2]; }
+    var nrmT = n2;
+  } else for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1;
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  const nrm = new Float32Array(pos.length); for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1;
-  g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(TON ? nrmT : nrm, 3));
   if (tex) {   // 땅 좌표(x, z)를 그대로 질감 좌표로: 길이 이어져도 무늬가 끊기지 않는다
     const uv = new Float32Array(pos.length / 3 * 2), k = 1 / tex.userData.m;
     for (let i = 0, j = 0; i < pos.length; i += 3, j += 2) { uv[j] = pos[i] * k; uv[j + 1] = pos[i + 2] * k; }
     g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   }
-  const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color, depthWrite: false, side: THREE.DoubleSide, emissive: glow || '#000000', map: tex || null }));
+  const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color, depthWrite: false, side: THREE.DoubleSide, emissive: glow || '#000000', map: tex || null,
+    polygonOffset: TON, polygonOffsetFactor: -1, polygonOffsetUnits: -4 }));   // 지형 면(깊이 씀)보다 앞에 그려지게
   m.renderOrder = order; m.receiveShadow = true; m.name = 'ground-' + (name || order); scene.add(m); made.push(m); return m;
 }
 
@@ -338,6 +371,47 @@ function openSpans(m, clear, extra) {
 }
 const stats = { centerM: 0, laneM: 0, edgeM: 0, parking: 0 };
 
+// ── 지형 면(지형이 켜졌을 때만): 바탕을 6m 격자 지형 메시로(깊이를 써서 언덕이 뒤를 가림) ──
+// 넓은 면(토지 이용·숲·잔디·인조잔디·놀이터·주차장)은 메시로 잘게 나누면 삼각형이 100만 개를 넘어(11-27 측정), 지형 면에 입히는 그림(2048화소, 약 0.9m/화소)으로 굽는다.
+// app.js 녹지 메시는 숨긴다(ea 합의). 칠하기는 paintQ 에 순서와 함께 모았다가 맨 끝에 순서대로 칠한다
+const paintQ = [];
+let landTex = null, LC = null, toPx = null;
+if (TON && window.TERRAIN) {
+  const T = window.TERRAIN, nx = T.nx, nz = T.nz, W = (nx - 1) * T.cell, Hh = (nz - 1) * T.cell, N = 2048;
+  const cv = document.createElement('canvas'); cv.width = cv.height = N; LC = cv.getContext('2d');
+  LC.fillStyle = G.ground; LC.fillRect(0, 0, N, N);
+  toPx = (x, z) => [(x - T.x0) / W * N, (z - T.z0) / Hh * N];
+  landTex = new THREE.CanvasTexture(cv); landTex.encoding = THREE.sRGBEncoding;   // app.js 가 색 관리를 켜 두어(legacyMode false) 메시 색도 sRGB 로 읽히므로 같게
+  if (M.renderer && M.renderer.capabilities) landTex.anisotropy = Math.min(8, M.renderer.capabilities.getMaxAnisotropy());
+  const P = new Float32Array(nx * nz * 3), UV = new Float32Array(nx * nz * 2), idx = [];
+  for (let jj = 0; jj < nz; jj++) for (let ii = 0; ii < nx; ii++) {
+    const k = jj * nx + ii, x = T.x0 + ii * T.cell, z = T.z0 + jj * T.cell;
+    P[k * 3] = x; P[k * 3 + 1] = TH(x, z); P[k * 3 + 2] = z; UV[k * 2] = ii / (nx - 1); UV[k * 2 + 1] = 1 - jj / (nz - 1);
+  }
+  for (let jj = 0; jj < nz - 1; jj++) for (let ii = 0; ii < nx - 1; ii++) { const a = jj * nx + ii, b = a + 1, c = a + nx, d = c + 1; idx.push(a, c, b, b, c, d); }   // 위(+y)를 보게
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(P, 3)); g.setAttribute('uv', new THREE.BufferAttribute(UV, 2)); g.setIndex(idx); g.computeVertexNormals();
+  const tm = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: '#ffffff', map: landTex }));
+  tm.renderOrder = 0; tm.receiveShadow = true; tm.name = 'ground-terrain'; scene.add(tm); made.push(tm);
+  // 녹지(app.js 와 같은 묶음): 숲·관목 → wood, 인조잔디 → pitch, 나머지 → green
+  for (const gr of D.greens || []) {
+    if (!gr.p || gr.p.length < 3) continue;
+    const k = ['wood', 'forest', 'scrub'].includes(gr.k) ? 'wood' : gr.k === 'pitch' ? 'pitch' : 'green';
+    paintQ.push([{ wood: 1, green: 2, pitch: 3 }[k], gr.p, G[k], null]);
+  }
+  if (M.greens) for (const k of ['wood', 'green', 'pitch']) if (M.greens[k]) M.greens[k].visible = false;
+}
+// 넓은 면 칠하기(지형이 켜졌을 때). texKey 가 있으면 그 질감 무늬를 실제 크기로 곱해 겹친다
+function paintArea(p, color, texKey) {
+  LC.beginPath(); p.forEach((q, i) => { const [a, b] = toPx(q[0], q[1]); if (i) LC.lineTo(a, b); else LC.moveTo(a, b); }); LC.closePath();
+  LC.fillStyle = color; LC.fill();
+  const tx = texKey && TEX[texKey];
+  if (tx) {
+    const pat = LC.createPattern(tx.image, 'repeat'), s = tx.userData.m * (LC.canvas.width / ((window.TERRAIN.nx - 1) * window.TERRAIN.cell)) / tx.image.width;
+    pat.setTransform(new DOMMatrix().scaleSelf(s, s));
+    LC.save(); LC.clip(); LC.globalCompositeOperation = 'multiply'; LC.fillStyle = pat; LC.fillRect(0, 0, LC.canvas.width, LC.canvas.height); LC.restore();
+  }
+}
+
 // ── 토지 이용(OSM, tools/map_ground.py): 빈 땅을 쓰임새로 옅게 구분. 녹지(1~3) 아래 순서 0.5 ──
 // OSM 공사장 면은 이름 태그만 있고 지번·시작일이 없다. 그 안에 국토부·Overture 건물이 서 있어 실제와 다를 수 있으니 흙색은 아주 옅게만 칠한다.
 // 공사장(힐스테이트 거제 시그니처 등)은 흙, 조선소(한화오션 옥포조선소)는 콘크리트 판, 농지는 고랑, 아파트 단지는 조금 회색, 학교 부지는 옅은 베이지
@@ -358,7 +432,8 @@ const LANDUSE = {
     for (const t of THREE.ShapeUtils.triangulateShape(v2, [])) { const a = l.p[t[0]], b = l.p[t[1]], c = l.p[t[2]]; out.push(a[0], 0, a[1], b[0], 0, b[1], c[0], 0, c[1]); }
   }
   let n = 0;
-  for (const k of ORDER) if (by[k]) { const [col, tx] = LANDUSE[k]; flat(by[k], col, 0.5 + ORDER.indexOf(k) * 0.02, null, 'land-' + k, tx ? TEX[tx] : null); n++; }
+  if (TON && LC) { for (const l of LU) if (LANDUSE[l.k] && l.p.length >= 3) paintQ.push([0.5 + ORDER.indexOf(l.k) * 0.02, l.p, LANDUSE[l.k][0], LANDUSE[l.k][1]]); }
+  else for (const k of ORDER) if (by[k]) { const [col, tx] = LANDUSE[k]; flat(by[k], col, 0.5 + ORDER.indexOf(k) * 0.02, null, 'land-' + k, tx ? TEX[tx] : null); n++; }
   stats.landuse = LU.length;
 }
 
@@ -370,6 +445,7 @@ const LANDUSE = {
     // 800㎡ 넘는 것은 공원 전체를 놀이터로 표시한 것이라(1,509㎡ 한 곳) 통째로 갈색이 되어 흙밭처럼 보인다 → 녹지로 둔다
     let ar = 0; for (let i = 0; i < g.p.length; i++) { const a = g.p[i], b = g.p[(i + 1) % g.p.length]; ar += a[0] * b[1] - b[0] * a[1]; }
     if (Math.abs(ar) / 2 > 800) continue;
+    if (TON && LC) { paintQ.push([2.5, g.p, '#c4927d', 'dirt']); continue; }
     const v2 = g.p.map(q => new THREE.Vector2(q[0], q[1]));
     for (const t of THREE.ShapeUtils.triangulateShape(v2, [])) { const a = g.p[t[0]], b = g.p[t[1]], c = g.p[t[2]]; pos.push(a[0], 0.001, a[1], b[0], 0.001, b[1], c[0], 0.001, c[1]); }
   }
@@ -498,7 +574,8 @@ if (D.parking && D.parking.length) {
     }
   };
   for (const pk of D.parking) if (pk.p.length >= 3) tri(pk.p, 0, fill);
-  flat(fill, G.parking, 4.5, null, 'parking', TEX.asphalt);
+  if (TON && LC) for (const pk of D.parking) { if (pk.p.length >= 3) paintQ.push([4.5, pk.p, G.parking, 'asphalt']); }
+  else flat(fill, G.parking, 4.5, null, 'parking', TEX.asphalt);
   stats.parking = D.parking.length;
 }
 
@@ -570,14 +647,14 @@ if (D.parking && D.parking.length) {
       const cx = x + cell / 2;
       if (!rows.some(xs => inRow(xs, cx))) continue;
       const q = [[x, z], [x + cell, z], [x + cell, z + cell], [x, z + cell]];
-      for (const i of [0, 2, 1, 0, 3, 2]) { const [px, pz] = q[i]; pos.push(px, 0.004, pz); col.push(deep.r, deep.g, deep.b, A(px, pz)); }
+      for (const i of [0, 2, 1, 0, 3, 2]) { const [px, pz] = q[i]; pos.push(px, 0.004 + (TON ? LIFT : 0), pz); col.push(deep.r, deep.g, deep.b, A(px, pz)); }
     } }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));   // [0,2,1]·[0,3,2] 순서라 이미 위(+y)를 본다
     g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
     const nrm = new Float32Array(pos.length); for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1; g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
     // 빛을 받는 재질이라 밤(ea #63 하루 빛)에는 함께 어두워진다
-    const mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
+    const mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide, polygonOffset: TON, polygonOffsetFactor: -1, polygonOffsetUnits: -4 }));
     mesh.renderOrder = 4.1; mesh.name = 'ground-water-depth'; scene.add(mesh); made.push(mesh);
     stats.waterCells = pos.length / 18;
   }
@@ -611,8 +688,8 @@ let edgeFollow = null;
 {
   const HX = D.meta.half[0], HZ = D.meta.half[1], BAND = 160;
   const fade = (typeof M.edgeFade === 'function') ? M.edgeFade : (x, z) => { const d = Math.min(HX - Math.abs(x), HZ - Math.abs(z)); const t = Math.max(0, Math.min(1, d / BAND)); return t * t * (3 - 2 * t); };
-  const c = new THREE.Color(G.ground), pos = [], col = [], step = 20;
-  const push = (x, z) => { pos.push(x, 0.05, z); col.push(1, 1, 1, 1 - fade(x, z)); };   // 색은 재질 쪽(배경색을 따라감)
+  const c = new THREE.Color(G.ground), pos = [], col = [], step = TON ? 12 : 20;   // 지형이 켜지면 언덕을 따라가게 잘게
+  const push = (x, z) => { pos.push(x, 0.05 + (TON ? TH(x, z) + LIFT : 0), z); col.push(1, 1, 1, 1 - fade(x, z)); };   // 색은 재질 쪽(배경색을 따라감)
   const quad = (xa, za, xb, zb) => { push(xa, za); push(xb, za); push(xb, zb); push(xa, za); push(xb, zb); push(xa, zb); };
   for (let x = -HX; x < HX; x += step) for (let z = -HZ; z < HZ; z += step) {
     const xb = Math.min(HX, x + step), zb = Math.min(HZ, z + step);
@@ -622,7 +699,8 @@ let edgeFollow = null;
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
-  const mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: c, vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false }));
+  const mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: c, vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false,
+    polygonOffset: TON, polygonOffsetFactor: -1, polygonOffsetUnits: -4 }));
   mesh.renderOrder = 8.95; mesh.name = 'ground-edge-fade'; scene.add(mesh); made.push(mesh);
   // 하루 빛(ea #63): 밤에는 배경·안개가 어두워지므로 이 띠도 배경색을 따라가야 지도 끝에 흰 띠가 남지 않는다
   // 그릴 때마다 배경색을 복사한다(map-light 는 밤 정도가 0.02 넘게 바뀔 때만 와서 노을 구간의 배경 변화를 다 따라가지 못함)
@@ -684,11 +762,13 @@ if (edgeFollow) edgeFollow();   // 낮 기준 배경을 정한 다음 한 번 �
   document.addEventListener('map-light', (e) => apply(e.detail && e.detail.night));
   apply(M.night || 0);
 }
-if (M.greens) for (const k of ['wood', 'green', 'pitch']) { const g = M.greens[k]; if (g && g.material) g.material.color.set(G[k]); }
+if (M.greens) for (const k of ['wood', 'green', 'pitch']) { const g = M.greens[k]; if (g && g.material) g.material.color.set(G[k]); }   // 지형이 켜지면 위에서 새로 그린 green-* 가 대신 보인
 if (M.water && M.water.material) M.water.material.color.set(G.water);
 
 // 버스 정류장 노면 상자·가로수 보호판은 규칙으로 놓은 것이라 지웠다(11-27 "실제 자료가 아닌 거는 없애자")
 
+// 지형 그림에 넓은 면을 순서대로 칠한다(토지 이용 0.5~ → 숲 1 → 잔디 2 → 놀이터 2.5 → 인조잔디 3 → 주차장 4.5)
+if (TON && LC) { paintQ.sort((a, b) => a[0] - b[0]); for (const [, p, col, tk] of paintQ) paintArea(p, col, tk); landTex.needsUpdate = true; stats.painted = paintQ.length; }
 if (M.renderer) M.renderer.shadowMap.needsUpdate = true;
 M.need && M.need();
 
@@ -699,5 +779,6 @@ window.__ground = {
   crosswalks: stats.crosswalks || 0, tactile: stats.tactile || 0, rampCuts: [...cwOn.values()].flat().filter(c => c.ramp).length, onMajor: [...cwOn.values()].flat().length,
   parking: stats.parking, landuse: stats.landuse || 0, playgrounds: stats.playgrounds || 0, corners: stats.corners || 0,
   wornMeshes: stats.wornMeshes || 0, waterCells: stats.waterCells || 0, coastM: stats.coastM || 0,
+  terrain: TON, groundTris: made.reduce((t, m) => t + (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3, 0) | 0,
 };
 })();
