@@ -156,7 +156,7 @@ function stripe(m, off, wd, s0, s1, y, out) {
   }
 }
 // 길을 따라 솟은 띠(연석): 윗면 + 양 옆면. 삼각형마다 감는 방향을 바깥 법선에 맞춰 앞면만 그려도 되게 한다
-function raised(m, off, wd, H, s0, s1, pos, nrm) {
+function raised(m, off, wd, H, s0, s1, pos, nrm, step = 3) {
   const tri = (a, b, c, n) => {
     const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
     const cx = uy * vz - uz * vy, cy = uz * vx - ux * vz, cz = ux * vy - uy * vx;
@@ -164,7 +164,7 @@ function raised(m, off, wd, H, s0, s1, pos, nrm) {
     pos.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]); nrm.push(n[0], n[1], n[2], n[0], n[1], n[2], n[0], n[1], n[2]);
   };
   const quad = (a, b, c, d, n) => { tri(a, b, c, n); tri(a, c, d, n); };
-  const step = 3; let prev = null;
+  let prev = null;
   for (let s = s0; s <= s1 + 1e-6; s = Math.min(s1, s + step)) {
     const q = m.w.at(s), cx = q.x + q.nx * off, cz = q.z + q.nz * off, h = wd / 2;
     const cur = { i: [cx - q.nx * h, cz - q.nz * h], o: [cx + q.nx * h, cz + q.nz * h], nx: q.nx, nz: q.nz };
@@ -453,9 +453,56 @@ const LANDUSE = {
       if (ow) for (let k = 1; k < per; k++) dash(-w / 2 + k * w / per);
       else for (let k = 1; k < per; k++) for (const sgn of [1, -1]) dash(sgn * k * (w / 2) / per);
     }
-    // 연석: 길 가장자리 바로 바깥 0.35m(인도 쪽), 교차로 앞뒤 8m 는 비움
     // 연석: 차도 가장자리 바로 바깥 0.2m 폭, 15cm 솟은 상자(사람 눈높이에서 길 가장자리가 입체로 보이게). 교차로 앞뒤 8m 는 비움(횡단보도 턱 낮춤)
     if (!m.r.br) for (const [a, b] of openSpans(m, 8)) for (const sgn of [1, -1]) { raised(m, sgn * (w / 2 + 0.1), 0.2, 0.15, a, b, curb.pos, curb.nrm); stats.curbM = (stats.curbM || 0) + (b - a); }
+  }
+  // ── 교차로 모서리: 큰길끼리 만나는 모서리에서, 끊긴 연석(교차점에서 8m)을 곡선으로 잇고 곡선과 모서리 사이 쐐기는 아스팔트로 ──
+  // 예전엔 인도 모서리가 직각이고 연석이 모서리를 돌지 않았다(11-27 근접 캡처). 곡선은 두 길 가장자리선이 만나는 점을 조절점으로 한 2차 베지어
+  {
+    const CUT = 8, arms = new Map(), wedge = [];
+    for (const m of majors) if (!m.r.br && !m.ring) for (const j of m.js) {
+      if (majorAt(j.p) < 3) continue;
+      const k = key(j.p); let list = arms.get(k); if (!list) arms.set(k, list = []);
+      for (const dir of [-1, 1]) {
+        const s2 = j.s + dir * CUT; if (s2 < 0.5 || s2 > m.w.L - 0.5) continue;
+        const q = m.w.at(s2), dx = q.x - j.p[0], dz = q.z - j.p[1], l = Math.hypot(dx, dz) || 1;
+        list.push({ p: j.p, u: [dx / l, dz / l], h: m.r.w / 2 });
+      }
+    }
+    const cr = (a, b) => a[0] * b[1] - a[1] * b[0];
+    const bez = (A, C, B, n) => { const out = []; for (let i = 0; i <= n; i++) { const t = i / n, u = 1 - t; out.push([u * u * A[0] + 2 * u * t * C[0] + t * t * B[0], u * u * A[1] + 2 * u * t * C[1] + t * t * B[1]]); } return out; };
+    let nc = 0;
+    for (const list of arms.values()) {
+      if (list.length < 2) continue;
+      list.sort((a, b) => Math.atan2(a.u[1], a.u[0]) - Math.atan2(b.u[1], b.u[0]));
+      for (let i = 0; i < list.length; i++) {
+        const A = list[i], B = list[(i + 1) % list.length];
+        let d = Math.atan2(B.u[1], B.u[0]) - Math.atan2(A.u[1], A.u[0]); if (d <= 0) d += Math.PI * 2;
+        if (d < 0.35 || d > 2.97) continue;                                  // 20° 보다 좁거나 거의 일직선이면 모서리가 아님
+        const nA = [-A.u[1], A.u[0]], nB = [-B.u[1], B.u[0]];
+        const sA = (nA[0] * B.u[0] + nA[1] * B.u[1]) > 0 ? 1 : -1, sB = (nB[0] * A.u[0] + nB[1] * A.u[1]) > 0 ? 1 : -1;
+        const line = (X, n, sg, h) => [X.p[0] + n[0] * sg * h, X.p[1] + n[1] * sg * h];
+        const meet = (hA, hB) => {   // 두 가장자리선(가장자리에서 hA·hB 바깥)이 만나는 점과 각 선 위 거리
+          const oA = line(A, nA, sA, hA), oB = line(B, nB, sB, hB), dd = [oB[0] - oA[0], oB[1] - oA[1]], den = cr(A.u, B.u);
+          if (Math.abs(den) < 1e-6) return null;
+          const t = cr(dd, B.u) / den, s2 = cr(dd, A.u) / den;
+          return { C: [oA[0] + A.u[0] * t, oA[1] + A.u[1] * t], t, s: s2, oA, oB };
+        };
+        const e = meet(A.h, B.h), c = meet(A.h + 0.1, B.h + 0.1);
+        if (!e || !c || e.t <= 0 || e.s <= 0 || e.t >= CUT - 0.3 || e.s >= CUT - 0.3) continue;
+        // 아스팔트 쐐기: 모서리점 C 에서 곡선까지 부채꼴
+        const EA = [e.oA[0] + A.u[0] * CUT, e.oA[1] + A.u[1] * CUT], EB = [e.oB[0] + B.u[0] * CUT, e.oB[1] + B.u[1] * CUT];
+        const crv = bez(EA, e.C, EB, 10);
+        for (let k = 0; k < crv.length - 1; k++) wedge.push(e.C[0], 0, e.C[1], crv[k][0], 0, crv[k][1], crv[k + 1][0], 0, crv[k + 1][1]);
+        // 곡선 연석(가운데선이 가장자리에서 0.1m 바깥)
+        const CA = [c.oA[0] + A.u[0] * CUT, c.oA[1] + A.u[1] * CUT], CB = [c.oB[0] + B.u[0] * CUT, c.oB[1] + B.u[1] * CUT];
+        const pts = bez(CA, c.C, CB, 12), w2 = walker(pts);
+        raised({ w: w2 }, 0, 0.2, 0.15, 0, w2.L, curb.pos, curb.nrm, 0.5);
+        nc++;
+      }
+    }
+    flat(wedge, G.major, 7.58, null, 'corner', TEX.asphalt);
+    stats.corners = nc;
   }
   {
     const g = new THREE.BufferGeometry();
@@ -901,6 +948,28 @@ if (M.scene.background && M.scene.background.isColor) M.scene.background.set(G.g
 if (M.scene.fog) M.scene.fog.color.set(G.ground);
 if (edgeFollow) edgeFollow();   // 낮 기준 배경을 정한 다음 한 번 맞춘다(밤이면 ea 가 바꾼 뒤 map-light 로 다시 맞춤)
 
+// ── 닳은 페인트: 노면 표시(차선·중앙선·횡단보도·정지선·화살표·주차 칸·정류장 상자)에 닳음 무늬를 투명도로 입혀 군데군데 아스팔트가 비치게 ──
+// 바퀴가 지나는 자리가 더 닳는 것까지는 넣지 않았다(무늬는 3m 마다 되풀이). 투명 재질이 되어 투명 패스로 가지만, 그 뒤에 그리는 ea 띠(9.3~9.7)·흐름(9.5)도 투명이라 순서가 같다
+{
+  const worn = canvasTex(256, (g, n) => {
+    const r = rng(61); g.fillStyle = '#ffffff'; g.fillRect(0, 0, n, n);
+    // 처음 값(긁힘 1,800개·진하기 0.3~0.8)은 중간 높이에서 횡단보도가 얼룩덜룩 더러워 보여 크게 낮췄다(11-27 캡처)
+    for (let i = 0; i < 18; i++) { const x = r() * n, y = r() * n, rad = 8 + r() * 24, a = 0.12 + r() * 0.18;   // 닳아 옅어진 자리
+      const gr = g.createRadialGradient(x, y, 0, x, y, rad); gr.addColorStop(0, `rgba(0,0,0,${a})`); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, n, n); }
+    for (let i = 0; i < 500; i++) { g.fillStyle = `rgba(0,0,0,${0.15 + r() * 0.25})`; const s2 = 1 + r() * 1.5; g.fillRect(r() * n, r() * n, s2, s2); }   // 잔 긁힘
+  }, 3);
+  worn.encoding = THREE.LinearEncoding;   // 투명도로만 쓰므로 색 변환 없이
+  let nw = 0;
+  for (const nm of ['center', 'lane', 'zebra', 'stop', 'zebra-minor', 'stop-minor', 'arrow', 'stall']) {
+    const mesh = made.find(o => o.name === 'ground-' + nm); if (!mesh) continue;
+    const P = mesh.geometry.attributes.position.array, uv = new Float32Array(P.length / 3 * 2), k = 1 / worn.userData.m;
+    for (let i = 0, j = 0; i < P.length; i += 3, j += 2) { uv[j] = P[i] * k; uv[j + 1] = P[i + 2] * k; }
+    mesh.geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    mesh.material.alphaMap = worn; mesh.material.transparent = true; mesh.material.needsUpdate = true; nw++;
+  }
+  stats.wornMeshes = nw;
+}
+
 // ── 밤(ea 하루 빛 'map-light', document): 가로등을 받은 포장이 은은하게 빛나 멀리서도 도로망이 읽히게, 바다가 새까맣지 않게, 해안선이 보이게 ──
 {
   const byName = (n) => made.find(m => m.name === 'ground-' + n);
@@ -989,6 +1058,7 @@ window.__ground = {
   speedBumps: stats.speedBumps || 0, drains: stats.drains || 0, bumpAt,
   diamonds: stats.diamonds || 0, treePits: 0, diamondAt,
   landuse: stats.landuse || 0, playgrounds: stats.playgrounds || 0,
+  corners: stats.corners || 0, wornMeshes: stats.wornMeshes || 0,
   arrows: stats.arrows || 0, schoolZones: stats.schoolZones || 0, schoolTexts: stats.schoolTexts || 0, waterCells: stats.waterCells || 0, coastM: stats.coastM || 0,
   schoolSpots, arrowsAt,
 };
