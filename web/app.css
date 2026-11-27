@@ -356,4 +356,16 @@ body:has(#info:not([hidden])) #credit { display: none; }
     padding-bottom: max(16px, env(safe-area-inset-bottom)); }
   body:has(#info:not([hidden])) #sim { display: none; }
   .lbl.place { font-size: 12px; }
+  /* 폰: 주 버튼은 화면 맨 아래에 고정(화면마다 하나). 기록지 아래에는 그만큼 여백 */
+  body:not(.street-mode) #tour-btn { position: fixed; left: 12px; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); width: auto; z-index: 7; margin: 0;
+    justify-content: center; gap: 8px; min-height: 54px; background: var(--primary); color: #fff; font-size: 16.5px; box-shadow: 0 4px 16px rgba(47, 111, 237, .32); }
+  body:not(.street-mode) #tour-btn span { color: rgba(255, 255, 255, .85); }
+  body:not(.street-mode) #rail { padding-bottom: 84px; }
+  .st-rank { position: fixed; left: 0; right: 0; bottom: 0; z-index: 7; margin: 0; padding: 10px 14px max(12px, env(safe-area-inset-bottom));
+    box-shadow: 0 -4px 16px rgba(0, 20, 60, .08); border-radius: 16px 16px 0 0; }
+  .st-rank::before, .st-rank::after { display: none; }
+  .st-rank select { min-height: 44px; font-size: 15px; }
+  .st-rank #rk-run { min-height: 50px; margin-top: 8px; font-size: 16px; }
+  body.street-mode #rail { padding-bottom: 136px; }
+  body:has(#info:not([hidden])) #tour-btn, body:has(#info:not([hidden])) .st-rank { display: none; }
 }
