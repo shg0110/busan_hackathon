@@ -218,6 +218,21 @@ const tmpC = new THREE.Color();
 const wallCols = C.walls.map(h => new THREE.Color(h));
 const roofCol = new THREE.Color(C.roof), roofApt = new THREE.Color(C.roofApt);
 const roofCols = ['#d0d4da', '#d6d3cd', '#ccd2d8', '#d4d2ce', '#cfd3d7', '#d8d6d2'].map(h => new THREE.Color(h));
+// 용도별 재질(채도 낮게): 다가구·단독 = 붉은 벽돌톤, 상가(근린생활) = 베이지·회색 타일, 아파트 = 흰색, 숙박 = 크림, 공공·사무 = 차가운 회색
+const pal = (a) => a.map(h => new THREE.Color(h));
+const WALL_BY = {
+  house: pal(['#cfa792', '#c79c87', '#d6b4a0', '#bf9481', '#d2b9a6', '#c8a38f', '#d9c2ae']),
+  apartments: pal(['#f3f1ec', '#eef0f3', '#f1eee8']),
+  retail: pal(['#ece8e1', '#e3e6ea', '#eee6da', '#dde2e8', '#e8e1d5', '#e6e8eb', '#e4dccf']),
+  hotel: pal(['#efe4dd', '#ebe4ee', '#f1e8dc', '#e9e6f0']),
+  office: pal(['#e1e6ec', '#dce3ea', '#e6e9ee']), public: pal(['#e1e6ec', '#dce3ea', '#e6e9ee']),
+  school: pal(['#efe6da', '#e8e1d6']), hospital: pal(['#eef0f3', '#e6ecf1']),
+  industrial: pal(['#d9dde2', '#cfd6dc']), warehouse: pal(['#d9dde2', '#cfd6dc']), garage: pal(['#d9dde2']),
+};
+// 다가구 옥상은 초록 방수 페인트가 흔하다(일부는 회색)
+const ROOF_HOUSE = pal(['#8db59f', '#97bca9', '#86ae98', '#c9cdd2', '#9fc1ae', '#c3c8cd']);
+function wallOf(b) { const L = WALL_BY[b.k]; return L ? L[b.c % L.length] : wallCols[b.c % wallCols.length]; }
+function roofOf(b) { if (b.k === 'house') return ROOF_HOUSE[(b.c * 7 + b.lv) % ROOF_HOUSE.length]; return b.k === 'apartments' ? roofApt : roofCols[b.c % roofCols.length]; }
 const bRange = [];   // 건물별 [시작 꼭짓점, 끝 꼭짓점]
 function pushTri(a, b, c, n, col, owner) {
   bPos.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
@@ -229,7 +244,7 @@ B.forEach((b, bi) => {
   if (signedArea(p) > 0) p.reverse();          // 시계 방향으로 맞춤 → 바깥 법선 = (-dz, 0, dx)
   const y0 = b.b || 0, y1 = y0 + b.h;
   const start = bPos.length / 3;
-  const wc = wallCols[b.c % wallCols.length];
+  const wc = wallOf(b), wcTop = wc.clone().multiplyScalar(1.07);   // 맨 위 0.45m 는 한 톤 밝게(옥상 난간처럼)
   // 벽: 아래 3m 는 바닥 그늘(땅에 붙어 보이게), 그 위는 고른 색
   const wallBot = tmpC.copy(wc).multiplyScalar(0.78).clone();
   const fh = b.k === 'roof' ? 99 : (b.h - 0.6) / b.lv;   // 층고(지붕만 있는 구조물은 무늬 없음)
@@ -251,15 +266,22 @@ B.forEach((b, bi) => {
     for (const cc of [wallBot, wallBot, wc, wallBot, wc, wc]) bCol.push(cc.r, cc.g, cc.b);
     triOwner.push(bi, bi);
     if (y1 > yAO + 0.01) {
-      bPos.push(...F2, ...E2, ...Cv, ...F2, ...Cv, ...Dv);
-      bUv.push(u0, vAO, u1, vAO, u1, vTop, u0, vAO, u1, vTop, u0, vTop);
+      const yCap = b.h > 4 ? Math.max(yAO, y1 - 0.45) : y1, vCap = (yCap - y0) / fh;
+      const G2 = [c2[0], yCap, c2[1]], H2 = [a[0], yCap, a[1]];
+      bPos.push(...F2, ...E2, ...G2, ...F2, ...G2, ...H2);
+      bUv.push(u0, vAO, u1, vAO, u1, vCap, u0, vAO, u1, vCap, u0, vCap);
       for (let k = 0; k < 6; k++) { bNrm.push(...n); bCol.push(wc.r, wc.g, wc.b); }
       triOwner.push(bi, bi);
+      if (yCap < y1 - 0.01) {   // 난간 띠
+        bPos.push(...H2, ...G2, ...Cv, ...H2, ...Cv, ...Dv);
+        for (let k = 0; k < 6; k++) { bNrm.push(...n); bCol.push(wcTop.r, wcTop.g, wcTop.b); bUv.push(ROOF_UV[0], ROOF_UV[1]); }
+        triOwner.push(bi, bi);
+      }
     }
   }
   // 지붕
   const v2 = p.map(q => new THREE.Vector2(q[0], q[1]));
-  const rc = b.k === 'apartments' ? roofApt : roofCols[b.c % roofCols.length];
+  const rc = roofOf(b);
   for (const t of THREE.ShapeUtils.triangulateShape(v2, [])) {
     const a = p[t[0]], c1 = p[t[1]], c2 = p[t[2]];
     const ny = (c1[1] - a[1]) * (c2[0] - a[0]) - (c1[0] - a[0]) * (c2[1] - a[1]);
@@ -544,7 +566,7 @@ requestAnimationFrame(() => requestAnimationFrame(() => {
 }));
 
 // 점검용(자동 시험이 읽음)
-window.__map = { select, buildings: B, camera, controls, HOME, labels, need, orbit, scene, renderer, R, esc, tint,
+window.__map = { select, buildings: B, signedArea, camera, controls, HOME, labels, need, orbit, scene, renderer, R, esc, tint,
   get selected() { return selIdx; }, infoExtra: null };
 document.dispatchEvent(new Event('map-ready'));
 })();

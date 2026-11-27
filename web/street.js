@@ -165,7 +165,7 @@ function streetBands(s) {
     const fh = (b.h - 0.6) / b.lv, y00 = b.b || 0;
     for (const f of x.fl) {
       const c = C2[f[1]]; if (!c || f[0] > b.lv) continue;
-      const y0 = y00 + (f[0] - 1) * fh + 0.15, y1 = y00 + f[0] * fh - 0.15;
+      const y0 = y00 + (f[0] - 1) * fh + fh * 0.2, y1 = y00 + (f[0] - 1) * fh + fh * 0.75;
       for (let i = 0; i < p.length; i++) {
         const a = p[i], q = p[(i + 1) % p.length], dx = q[0] - a[0], dz = q[1] - a[1], l = Math.hypot(dx, dz); if (l < 0.3) continue;
         const nx = -dz / l, nz = dx / l, o = 0.14, ax = a[0] + nx * o, az = a[1] + nz * o, bx = q[0] + nx * o, bz = q[1] + nz * o;
@@ -179,6 +179,7 @@ function streetBands(s) {
   sBands = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true })); sBands.renderOrder = 11; scene.add(sBands);
 }
 function streetUI(on) {
+  for (const id of ['L-floors', 'L-open']) { const l = document.getElementById(id)?.closest('label'); if (l) l.title = on ? '거리 모드에서는 거리 건물의 층을 모두(영업 중·가게 없음) 보여 줍니다' : ''; }
   const card = document.getElementById('card'), sim = document.getElementById('sim'), F = window.__floors;
   if (on && !saved) {
     saved = { card: card.classList.contains('collapsed'), sim: sim && sim.classList.contains('folded'), bands: F ? F.mesh.visible : true, rest: F ? F.rest.visible : false };
