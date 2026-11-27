@@ -78,8 +78,9 @@ for (const r of D.roads) {
 }
 for (const r of D.roads) for (const [x, z] of r.p) { const i = KEY.get(Math.round(x * 2) + ',' + Math.round(z * 2)); if (i !== undefined) NWD[i] = Math.max(NWD[i], r.w || 6); }
 for (let i = 0; i < NWD.length; i++) if (!NWD[i]) { const A = ADJ[i]; let w = 0; for (let j = 0; j < A.length; j += 2) w = Math.max(w, NWD[A[j]]); NWD[i] = w || 6; }
-// 길 가장자리 오프셋: 8m 이상 길은 인도(가장자리 + 1.2m), 좁은 골목은 가장자리 안쪽 0.6m
-const sideOff = (w) => w >= 8 ? w / 2 + 1.2 : Math.max(0.6, w / 2 - 0.6);
+// 길 가장자리 오프셋: 8m 이상 길은 인도의 빈 띠(가장자리 + 2.25m — 0.7 가로등·1.2 기둥·1.5 가로수 줄을 피해 건물 쪽, 바닥층 ground.js 기준),
+// 인도 없는 골목은 가장자리 안쪽 0.6m
+const sideOff = (w) => w >= 8 ? w / 2 + 2.25 : Math.max(0.6, w / 2 - 0.6);
 const NN = NX.length;
 // 가장 큰 연결 덩어리만 쓴다(떨어진 길 조각에 사람이 갇히지 않게)
 const comp = new Int32Array(NN).fill(-1); let bestC = 0, bestN = 0;
