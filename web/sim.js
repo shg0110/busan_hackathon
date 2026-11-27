@@ -1055,6 +1055,9 @@ function experiment(bi, floor, sub, price, seats, hrs) {
     const sv = Array.from(sameV).sort((a, b) => a - b), q = (f) => sv.length ? sv[Math.min(sv.length - 1, Math.floor(f * sv.length))] : 0;
     res[sc].bench = { n: sv.length, med: q(0.5), p75: q(0.75), above: sv.filter(v => v > res[sc].v).length };
   }
+  // 차이의 까닭(화면 한 줄): 기존 같은 업종 가게 중 2층 이상 수, 가게 앞을 지나는 사람(가게들 평균 대비, 평일)
+  const fr = (x, z) => PASSF[0] ? (frontFlow(0, x, z) + 1) / (PASS_MEAN[0] + 1) : null, sf = same.map(i => fr(SHOPS[i].x, SHOPS[i].z)).filter(v => v != null).sort((a, b) => a - b);
+  res.why = { floor, upper: same.filter(i => (SHOPS[i].f || 1) >= 2).length, n: same.length, here: fr(s.x, s.z), sameMed: sf.length ? sf[sf.length >> 1] : null };
   removeVirtual(s);
   res.nbCount = nb.length; res.nbSub = nb.filter(i => SHOPS[i].sub === sub).length;
   // 재생 화면 상태는 runDay 가 비켜 뒀다 돌려놓으므로 다시 계산할 필요 없음
@@ -1154,7 +1157,16 @@ function benchTxt(r, k) {
   const b = r.wd.bench; if (!b || !b.n) return `옥포에 ${esc(k)} 가게가 없어 견줄 곳이 없습니다.`;
   const rank = b.above + 1, top = Math.max(1, Math.round(100 * rank / (b.n + 1)));
   return `기존 ${esc(k)} ${b.n}곳(가상, 평일): 하루 손님 중앙값 ${Math.round(b.med)}명, 위 25%는 ${Math.round(b.p75)}명 이상. ` +
-    `이 자리(${Math.round(r.wd.v)}명)는 ${b.n + 1}곳 중 위에서 ${rank}번째쯤(상위 ${top}%)입니다. 주말: ${b.n + 1}곳 중 ${r.we.bench.above + 1}번째쯤.`;
+    `이 자리(${Math.round(r.wd.v)}명)는 ${b.n + 1}곳 중 위에서 ${rank}번째쯤(상위 ${top}%)입니다. 주말: ${b.n + 1}곳 중 ${r.we.bench.above + 1}번째쯤.` + whyTxt(r.why);
+}
+// 순위 차이가 가게 실력이 아니라 자리(층·앞을 지나는 사람) 때문이라는 걸 한 줄로 밝힌다(모두 가상 인물·가정 기준)
+function whyTxt(w) {
+  if (!w || !w.n) return '';
+  const p = [];
+  if (w.upper > 0 && (w.floor || 1) < 2) p.push(`기존 ${w.n}곳 중 ${w.upper}곳이 2층 이상이라(1층의 ${CFG.upperFloor}배만 고른다고 가정) 손님이 적게 나옵니다`);
+  else if ((w.floor || 1) >= 2) p.push(`이 자리는 ${w.floor}층이라 1층의 ${CFG.upperFloor}배만 고른다고 가정했습니다`);
+  if (w.here != null && w.sameMed != null && PASSBY > 0) p.push(`이 자리 앞을 지나는 사람은 가게 평균의 ${w.here.toFixed(1)}배, 기존 가게 앞은 중앙값 ${w.sameMed.toFixed(1)}배입니다`);
+  return p.length ? `<br><span class="why">차이의 까닭: ${p.join('. ')}.</span>` : '';
 }
 function renderExp(r, sub, price, ms, bi, floor, menus, hrs) {
   const k = SUB[sub].ko;
