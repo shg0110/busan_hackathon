@@ -26,8 +26,8 @@ const G = {
   ground: '#f1efea',                             // 땅: 아주 밝은 따뜻한 회색(건물 흰 지붕과 구분, 인도보다 밝게)
   major: '#868c95', majorEdge: '#6d737c',      // 큰길 아스팔트, 가장자리(연석 쪽 어두운 띠)
   link: '#959ba3',                               // 큰길 연결로
-  minor: '#adb2b9', minorEdge: '#949aa1',        // 골목(주거 도로)
-  service: '#c3c7cc',                            // 건물 앞 진입로·주차 통로
+  minor: '#a2a7af', minorEdge: '#848a92',        // 골목(주거 도로). 위에서 볼 때 땅색과 구분되도록 한 단계 진하게(ea 점검표 ③)
+  service: '#b6bbc1',                            // 건물 앞 진입로·주차 통로
   foot: '#e4ded3',                               // 보행로·계단(보도블록)
   walk: '#ddd6ca', curb: '#5e646c',              // 인도(따뜻한 보도블록), 연석
   center: '#f2c230', lane: '#ffffff', zebra: '#fbfbf8',
@@ -166,22 +166,61 @@ function canvasTex(size, draw, metersPerTile) {
   if (M.renderer && M.renderer.capabilities) t.anisotropy = Math.min(8, M.renderer.capabilities.getMaxAnisotropy());
   t.userData.m = metersPerTile; return t;
 }
+// 사람 눈높이에서 보이도록 대비를 충분히 준다. 멀리서는 밉맵이 평균색으로 뭉개므로 반짝이거나 얼룩지지 않는다(ea 점검표 ①)
+function pixelNoise(g, n, r, amp) {   // 화소마다 밝기 ±amp(0~1)
+  const im = g.getImageData(0, 0, n, n), d = im.data;
+  for (let i = 0; i < d.length; i += 4) { const k = 1 + (r() - 0.5) * 2 * amp; d[i] = Math.min(255, d[i] * k); d[i + 1] = Math.min(255, d[i + 1] * k); d[i + 2] = Math.min(255, d[i + 2] * k); }
+  g.putImageData(im, 0, 0);
+}
 const TEX = {
-  // 아스팔트: 골재 알갱이(밝고 어두운 점)와 아주 옅은 얼룩. 8m 마다 되풀이
-  asphalt: canvasTex(256, (g, n) => {
-    const r = rng(7); g.fillStyle = '#f2f2f2'; g.fillRect(0, 0, n, n);
-    for (let i = 0; i < 14; i++) { const x = r() * n, y = r() * n, rad = 24 + r() * 50, a = 0.012 + r() * 0.02;
+  // 아스팔트(512화소 = 10m, 한 화소 약 2cm): 화소 잡음 + 골재 알갱이 + 옅은 얼룩 + 실금 + 땜질 자국 두 군데
+  asphalt: canvasTex(512, (g, n) => {
+    const r = rng(7); g.fillStyle = '#efefef'; g.fillRect(0, 0, n, n);
+    for (let i = 0; i < 10; i++) { const x = r() * n, y = r() * n, rad = 60 + r() * 120, a = 0.015 + r() * 0.02;
       const gr = g.createRadialGradient(x, y, 0, x, y, rad); gr.addColorStop(0, `rgba(0,0,0,${a})`); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, n, n); }
-    for (let i = 0; i < 2600; i++) { const v = r() < 0.5 ? 255 : 120; g.fillStyle = `rgba(${v},${v},${v},${0.06 + r() * 0.09})`; g.fillRect(r() * n, r() * n, 1 + r() * 1.4, 1 + r() * 1.4); }
-  }, 8),
-  // 보도블록: 20×20cm 블록 줄눈(어긋나게), 블록마다 밝기 조금씩. 2m 마다 되풀이
-  paver: canvasTex(256, (g, n) => {
-    const r = rng(11), cell = n / 10; g.fillStyle = '#efece6'; g.fillRect(0, 0, n, n);
-    for (let j = 0; j < 10; j++) for (let i = -1; i < 11; i++) {
-      const x = i * cell + (j % 2 ? cell / 2 : 0), y = j * cell, v = 236 + Math.floor(r() * 16);
-      g.fillStyle = `rgb(${v},${v - 2},${v - 6})`; g.fillRect(x + 1, y + 1, cell - 2, cell - 2);
+    for (let i = 0; i < 2; i++) {   // 땜질: 조금 어두운 네모 + 더 어두운 테두리
+      const x = r() * n * 0.8, y = r() * n * 0.8, w = 50 + r() * 90, h = 40 + r() * 70;
+      g.fillStyle = 'rgba(0,0,0,0.07)'; g.fillRect(x, y, w, h); g.strokeStyle = 'rgba(0,0,0,0.16)'; g.lineWidth = 1.5; g.strokeRect(x, y, w, h);
     }
+    g.strokeStyle = 'rgba(30,30,30,0.32)'; g.lineWidth = 1;
+    for (let i = 0; i < 7; i++) {   // 실금: 짧게 꺾이는 선
+      let x = r() * n, y = r() * n, a = r() * Math.PI * 2; g.beginPath(); g.moveTo(x, y);
+      for (let k = 0, m = 6 + r() * 10; k < m; k++) { a += (r() - 0.5) * 1.2; x += Math.cos(a) * 9; y += Math.sin(a) * 9; g.lineTo(x, y); }
+      g.stroke();
+    }
+    for (let i = 0; i < 9000; i++) { const v = r() < 0.45 ? 255 : 90; g.fillStyle = `rgba(${v},${v},${v},${0.12 + r() * 0.2})`; const s = 1 + r() * 1.6; g.fillRect(r() * n, r() * n, s, s); }
+    pixelNoise(g, n, r, 0.07);
+  }, 10),
+  // 보도블록(256화소 = 2m): 20×20cm 블록을 어긋나게, 줄눈 2화소(약 1.6cm) 진하게, 블록마다 밝기·잔무늬
+  paver: canvasTex(256, (g, n) => {
+    const r = rng(11), cell = n / 10; g.fillStyle = '#b9b2a6'; g.fillRect(0, 0, n, n);
+    for (let j = 0; j < 10; j++) for (let i = -1; i < 11; i++) {
+      const x = i * cell + (j % 2 ? cell / 2 : 0), y = j * cell, v = 232 + Math.floor(r() * 20);
+      g.fillStyle = `rgb(${v},${v - 3},${v - 8})`; g.fillRect(x + 1, y + 1, cell - 2, cell - 2);
+    }
+    pixelNoise(g, n, r, 0.05);
   }, 2),
+  // 공사장 흙(256화소 = 24m): 흙 얼룩 + 바퀴 자국
+  dirt: canvasTex(256, (g, n) => {
+    const r = rng(23); g.fillStyle = '#f4efe6'; g.fillRect(0, 0, n, n);
+    for (let i = 0; i < 26; i++) { const x = r() * n, y = r() * n, rad = 14 + r() * 40, a = 0.03 + r() * 0.05;
+      const gr = g.createRadialGradient(x, y, 0, x, y, rad); gr.addColorStop(0, `rgba(100,85,65,${a})`); gr.addColorStop(1, 'rgba(100,85,65,0)'); g.fillStyle = gr; g.fillRect(0, 0, n, n); }
+    g.strokeStyle = 'rgba(90,70,45,0.14)'; g.lineWidth = 2;
+    for (let i = 0; i < 4; i++) { const y0 = r() * n, c = (r() - 0.5) * n; g.beginPath(); g.moveTo(-10, y0); g.quadraticCurveTo(n / 2, y0 + c, n + 10, y0 + (r() - 0.5) * 40); g.stroke(); }
+    pixelNoise(g, n, r, 0.06);
+  }, 24),
+  // 농지 고랑(128화소 = 6m, 1.2m 마다 이랑)
+  furrow: canvasTex(128, (g, n) => {
+    g.fillStyle = '#f6f4ea'; g.fillRect(0, 0, n, n); g.fillStyle = 'rgba(100,110,60,0.16)';
+    for (let x = 0; x < n; x += n / 5) g.fillRect(x, 0, n / 12, n);
+    pixelNoise(g, n, rng(29), 0.05);
+  }, 6),
+  // 조선소 콘크리트 판(256화소 = 16m, 4m 마다 줄눈)
+  slab: canvasTex(256, (g, n) => {
+    const r = rng(31); g.fillStyle = '#f3f3f2'; g.fillRect(0, 0, n, n);
+    g.fillStyle = '#d4d6d9'; for (let k = 0; k < 4; k++) { g.fillRect(k * 64, 0, 2, n); g.fillRect(0, k * 64, n, 2); }   // 4m 줄눈(판마다 밝기 차이는 체크무늬로 보여 뺌)
+    pixelNoise(g, n, r, 0.04);
+  }, 16),
 };
 // 모든 삼각형을 위(+y)를 보게 감는다. DoubleSide 재질은 뒤집혀 감긴 면의 법선을 아래로 돌려 빛을 덜 받으므로(화살표가 회색으로 보이던 원인)
 function faceUp(pos, uv) {
@@ -254,6 +293,41 @@ function openSpans(m, clear) {
 }
 const stats = { centerM: 0, laneM: 0, crosswalks: 0, stopLines: 0, edgeM: 0, parking: 0, stalls: 0 };
 const spotsCross = [];
+
+// ── 토지 이용(OSM, tools/map_ground.py): 빈 땅을 쓰임새로 옅게 구분. 녹지(1~3) 아래 순서 0.5 ──
+// 공사장(힐스테이트 거제 시그니처 등)은 흙, 조선소(한화오션 옥포조선소)는 콘크리트 판, 농지는 고랑, 아파트 단지는 조금 회색, 학교 부지는 옅은 베이지
+// 빛이 따뜻한 색의 채도를 키워 모래처럼 보이므로(11-27 캡처) 채도를 아주 낮게 적는다
+const LANDUSE = {
+  residential: ['#e8e5df', null], commercial: ['#ede2dd', null], retail: ['#ede2dd', null], marketplace: ['#ecdcd5', null],
+  industrial: ['#dfe1e4', 'slab'], shipyard: ['#dfe1e4', 'slab'], construction: ['#e6e0d5', 'dirt'], farmland: ['#e0e4c9', 'furrow'],
+  cemetery: ['#d9e2cf', null], school: ['#ece6dc', null], university: ['#ece6dc', null], college: ['#ece6dc', null], fuel: ['#dcdde0', null],
+};
+{
+  const LU = ((window.GROUND_DATA || {}).landuse || []), by = {};
+  // 넓은 것부터 깔아 작은 것(학교·주유소)이 위에 오게: 종류마다 순서를 조금씩 올린다
+  const ORDER = ['residential', 'commercial', 'retail', 'farmland', 'cemetery', 'construction', 'industrial', 'shipyard', 'marketplace', 'school', 'university', 'college', 'fuel'];
+  for (const l of LU) {
+    if (!LANDUSE[l.k] || l.p.length < 3) continue;
+    const out = by[l.k] || (by[l.k] = []);
+    const v2 = l.p.map(q => new THREE.Vector2(q[0], q[1]));
+    for (const t of THREE.ShapeUtils.triangulateShape(v2, [])) { const a = l.p[t[0]], b = l.p[t[1]], c = l.p[t[2]]; out.push(a[0], 0, a[1], b[0], 0, b[1], c[0], 0, c[1]); }
+  }
+  let n = 0;
+  for (const k of ORDER) if (by[k]) { const [col, tx] = LANDUSE[k]; flat(by[k], col, 0.5 + ORDER.indexOf(k) * 0.02, null, 'land-' + k, tx ? TEX[tx] : null); n++; }
+  stats.landuse = LU.length;
+}
+
+// ── 놀이터 바닥: 녹지(초록, 순서 2) 위에 고무칩 포장색(국내 놀이터 바닥), 순서 2.5 ──
+{
+  const pos = [];
+  for (const g of D.greens || []) {
+    if (g.k !== 'playground' || !g.p || g.p.length < 3) continue;
+    const v2 = g.p.map(q => new THREE.Vector2(q[0], q[1]));
+    for (const t of THREE.ShapeUtils.triangulateShape(v2, [])) { const a = g.p[t[0]], b = g.p[t[1]], c = g.p[t[2]]; pos.push(a[0], 0.001, a[1], b[0], 0.001, b[1], c[0], 0.001, c[1]); }
+  }
+  flat(pos, '#c4927d', 2.5, null, 'playground', TEX.dirt);
+  stats.playgrounds = (D.greens || []).filter(g => g.k === 'playground').length;
+}
 
 // ── 도로 포장: 등급마다 다른 회색. 큰길은 가장자리 0.6m 를 한 톤 어둡게(연석 쪽 그늘) ──
 {
@@ -736,6 +810,26 @@ if (M.ground && M.ground.material) M.ground.material.color.set(G.ground);
 if (M.scene.background && M.scene.background.isColor) M.scene.background.set(G.ground);
 if (M.scene.fog) M.scene.fog.color.set(G.ground);
 if (edgeFollow) edgeFollow();   // 낮 기준 배경을 정한 다음 한 번 맞춘다(밤이면 ea 가 바꾼 뒤 map-light 로 다시 맞춤)
+
+// ── 밤(ea 하루 빛 'map-light', document): 가로등을 받은 포장이 은은하게 빛나 멀리서도 도로망이 읽히게, 바다가 새까맣지 않게, 해안선이 보이게 ──
+{
+  const byName = (n) => made.find(m => m.name === 'ground-' + n);
+  const GLOW = [   // [메시 이름, 밤 최대 발광색]: 큰길이 가장 밝고 골목·인도는 옅게
+    // 가까이서 흙길처럼 보이지 않게 채도를 낮춘 회갈색(가로등 웅덩이는 decor.js 가 따로 더한다)
+    ['major', '#4a463f'], ['major-edge', '#3f3b35'], ['link', '#423e38'], ['minor', '#38352f'], ['minor-edge', '#2f2c27'],
+    ['service', '#2f2c27'], ['walk', '#3c3832'], ['foot', '#2f2c27'], ['parking', '#2f2c27'],
+    ['water', '#1f3557'], ['water-depth', '#000000'], ['foam', '#7f95b3'], ['quay', '#4b5260'],
+  ].map(([n, c]) => [byName(n), new THREE.Color(c)]).filter(([m]) => m);
+  const base = new Map(GLOW.map(([m]) => [m, m.material.emissive.clone()]));
+  const apply = (night) => {
+    const k = Math.max(0, Math.min(1, night || 0));
+    for (const [m, c] of GLOW) m.material.emissive.copy(base.get(m)).lerp(c, k);
+    const fm = byName('foam'); if (fm) fm.material.opacity = 0.55 + 0.3 * k;
+    M.need && M.need();
+  };
+  document.addEventListener('map-light', (e) => apply(e.detail && e.detail.night));
+  apply(M.night || 0);
+}
 if (M.greens) for (const k of ['wood', 'green', 'pitch']) { const g = M.greens[k]; if (g && g.material) g.material.color.set(G[k]); }
 if (M.water && M.water.material) M.water.material.color.set(G.water);
 
@@ -804,6 +898,7 @@ window.__ground = {
   minorCrosswalks: stats.minorCrosswalks || 0, manholes: stats.manholes || 0, busMarks: 0,
   speedBumps: stats.speedBumps || 0, drains: stats.drains || 0, bumpAt,
   diamonds: stats.diamonds || 0, treePits: 0, diamondAt,
+  landuse: stats.landuse || 0, playgrounds: stats.playgrounds || 0,
   arrows: stats.arrows || 0, schoolZones: stats.schoolZones || 0, schoolTexts: stats.schoolTexts || 0, waterCells: stats.waterCells || 0, coastM: stats.coastM || 0,
   schoolSpots, arrowsAt,
 };
