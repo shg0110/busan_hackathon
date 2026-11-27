@@ -27,8 +27,8 @@ function build(F, t) {
   for (let e = 0; e < NE; e++) {
     const v = val[e]; if (v < cap * 0.06) continue;
     const f = Math.min(1, v / cap), a = EA[e], b = EB[e], dx = NX[b] - NX[a], dz = NZ[b] - NZ[a], l = Math.hypot(dx, dz) || 1;
-    const w = (0.9 + f * 2.8) * wk, nx = -dz / l * w / 2, nz = dx / l * w / 2, y = 0.35;
-    pos.push(NX[a] + nx, y, NZ[a] + nz, NX[b] + nx, y, NZ[b] + nz, NX[a] - nx, y, NZ[a] - nz, NX[a] - nx, y, NZ[a] - nz, NX[b] + nx, y, NZ[b] + nz, NX[b] - nx, y, NZ[b] - nz);
+    const w = (0.9 + f * 2.8) * wk, nx = -dz / l * w / 2, nz = dx / l * w / 2, ya = 0.35 + M.hAt(NX[a], NZ[a]), yb = 0.35 + M.hAt(NX[b], NZ[b]);   // 지형 켜지면 땅 높이
+    pos.push(NX[a] + nx, ya, NZ[a] + nz, NX[b] + nx, yb, NZ[b] + nz, NX[a] - nx, ya, NZ[a] - nz, NX[a] - nx, ya, NZ[a] - nz, NX[b] + nx, yb, NZ[b] + nz, NX[b] - nx, yb, NZ[b] - nz);
     const x = f * (RAMP.length - 1), i = Math.min(RAMP.length - 2, Math.floor(x)), c = RAMP[i].clone().lerp(RAMP[i + 1], x - i);
     for (let k = 0; k < 6; k++) col.push(c.r, c.g, c.b);
   }

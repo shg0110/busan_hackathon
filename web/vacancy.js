@@ -15,8 +15,9 @@ const head = new THREE.InstancedMesh(headG, new THREE.MeshLambertMaterial({ colo
 const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), s = new THREE.Vector3(), c = new THREE.Color();
 V.forEach((v, i) => {
   const b = B[v.b], top = Math.max(10, (b ? b.h : 6) + 5), r = v.strong ? 2.2 : v.g === 'A' ? 1.8 : 1.3;
-  p.set(v.x, 0, v.z); s.set(1, top, 1); mtx.compose(p, q, s); stem.setMatrixAt(i, mtx);
-  p.set(v.x, top + r * 0.8, v.z); s.set(r, r, r); mtx.compose(p, q, s); head.setMatrixAt(i, mtx);
+  const g0 = M.hAt ? M.hAt(v.x, v.z) : 0;   // 지형 켜지면 땅 높이에서 시작(이름표 v.top 은 땅 기준이라 그대로)
+  p.set(v.x, g0, v.z); s.set(1, top, 1); mtx.compose(p, q, s); stem.setMatrixAt(i, mtx);
+  p.set(v.x, g0 + top + r * 0.8, v.z); s.set(r, r, r); mtx.compose(p, q, s); head.setMatrixAt(i, mtx);
   head.setColorAt(i, c.set(v.strong ? COL.strong : COL[v.g]));
   v.top = top + r * 0.8;
 });
