@@ -2,7 +2,7 @@
  "generated_by": "tools/sim_persona_check.js",
  "persona_version": "0.6.1",
  "runs_per_day": 3,
- "seconds": 16.7,
+ "seconds": 16.8,
  "summary": {
   "pass": "6/6"
  },
@@ -15,7 +15,7 @@
     1.05
    ],
    "pass": true,
-   "note": "시뮬 36560건 vs 목표 36718건"
+   "note": "시뮬 36559건 vs 목표 36718건"
   },
   {
    "name": "S2. 평일 결제 24시간 비율 최대 차이(카드 실측 대비)",
@@ -65,17 +65,17 @@
     1.1
    ],
    "pass": true,
-   "note": "시뮬 42,758만 원 vs 목표 42,989만 원. 실현 단가 ÷ 업종 가격 0.946(페르소나 가정 0.95)"
+   "note": "시뮬 42,757만 원 vs 목표 42,989만 원. 실현 단가 ÷ 업종 가격 0.946(페르소나 가정 0.95)"
   }
  ],
  "weekday": {
-  "transactions": 36560,
-  "revenue_krw": 427580900,
+  "transactions": 36559,
+  "revenue_krw": 427565933,
   "realized_price_ratio": 0.946,
   "failed": {
    "no_open_shop": 58,
    "no_money": 4,
-   "gave_up_waiting": 107,
+   "gave_up_waiting": 108,
    "share_of_tries": 0.0046
   },
   "hour_share": [
@@ -146,18 +146,18 @@
    },
    "tourist": {
     "transactions": 3318,
-    "per_capita_krw": 28478
+    "per_capita_krw": 28469
    }
   }
  },
  "weekend": {
   "transactions": 34838,
-  "revenue_krw": 418520633,
-  "realized_price_ratio": 0.969,
+  "revenue_krw": 418360433,
+  "realized_price_ratio": 0.968,
   "failed": {
    "no_open_shop": 71,
    "no_money": 6,
-   "gave_up_waiting": 86,
+   "gave_up_waiting": 89,
    "share_of_tries": 0.0047
   },
   "hour_share": [
@@ -181,30 +181,30 @@
    0.0914,
    0.106,
    0.103,
-   0.0789,
-   0.0549,
+   0.0788,
+   0.055,
    0.023,
    0.0044
   ],
   "hour_max_abs_diff": 0.0251,
   "category_spend_share": {
    "cafe": 0.0349,
-   "life": 0.1772,
-   "mart": 0.3298,
-   "meal": 0.376,
-   "pub": 0.0821
+   "life": 0.177,
+   "mart": 0.3299,
+   "meal": 0.3762,
+   "pub": 0.0819
   },
-  "category_max_abs_diff": 0.0278,
+  "category_max_abs_diff": 0.0277,
   "per_capita_krw": {
-   "korean": 12409,
-   "foreign_non_expat": 8048,
+   "korean": 12405,
+   "foreign_non_expat": 8041,
    "expat": 14813
   },
-  "foreign_to_korean": 0.649,
+  "foreign_to_korean": 0.648,
   "by_key": {
    "resident": {
     "transactions": 23343,
-    "per_capita_krw": 12422
+    "per_capita_krw": 12416
    },
    "worker": {
     "transactions": 2543,
@@ -212,11 +212,11 @@
    },
    "tourist": {
     "transactions": 5084,
-    "per_capita_krw": 29909
+    "per_capita_krw": 29902
    },
    "foreign.etc": {
-    "transactions": 1501,
-    "per_capita_krw": 7966
+    "transactions": 1500,
+    "per_capita_krw": 7949
    },
    "foreign.expat": {
     "transactions": 449,

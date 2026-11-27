@@ -544,7 +544,8 @@ function step(t, render) {
     }
     if (a.st === 3) {
       const s = SHOPS[a.shop];
-      if (seatFree(s.i, t)) enter(a, s, t);
+      if (!openAt(s, t)) { STATS.lost[s.i] += W; nextStop(a, t, render); }   // 기다리는 사이 가게가 손님을 그만 받으면(마감 10분 전) 다음 곳으로
+      else if (seatFree(s.i, t)) enter(a, s, t);
       else if (t >= a.waitEnd) { STATS.lost[s.i] += W; nextStop(a, t, render); }
       continue;
     }
@@ -555,7 +556,8 @@ function enter(a, s, t) {
   const baseStay = a.dwell ? (a.dwell * 0.45 + s.stay * 0.55) : s.stay;
   // 다중 방문(n곳)일 때는 한 번 외출의 체류 시간을 가게 수로 나눠 써서 뒤쪽 결제가 다음 시간대로 과도하게 밀리지 않게 한다
   const nStops = (PD && PD.pay_mode === 'avg_stops' && a.stops && a.stops.length > 1) ? a.stops.length : 1;
-  const stay = Math.max(4, (baseStay / nStops) * (0.75 + 0.5 * a.r()));
+  // 마감 시각을 넘겨 머물지 않게 자른다(예전엔 02시 마감 호프에 03시대까지 손님이 남았다). 들어올 때는 openAt 이라 마감까지 10분 넘게 남아 있다
+  const stay = Math.min(s.close - t, Math.max(4, (baseStay / nStops) * (0.75 + 0.5 * a.r())));
   a.st = 2; a.until = t + stay; SHOP_ST[s.i].occ.push(a.until);
   const pay = payOf(a, s);
   a.wallet -= pay; a.spent += pay; TOTAL_SPENT += pay * W; a.visits.push([s.i, t]);
@@ -1421,7 +1423,7 @@ function updOcc(force) {
   const L = MP.labels; for (const o of occLabels) { const i = L.indexOf(o); if (i >= 0) L.splice(i, 1); }
   occLabels.forEach((o, k) => {
     const e = occOn ? top[k] : null;
-    if (!e) { o.el.classList.add('off'); o.bi = -1; return; }
+    if (!e || !MP.buildings[e[0]]) { o.el.classList.add('off'); o.bi = -1; return; }   // 건물 자료가 없으면(화면 없는 점검) 배지 없음
     const [bi, v] = e, b = MP.buildings[bi], n = v.in + v.wait; let cx = 0, cz = 0; for (const p of b.p) { cx += p[0]; cz += p[1]; } cx /= b.p.length; cz /= b.p.length;
     const txt = `${OCC_ICON}${n}`;
     if (txt !== o.txt) { o.el.innerHTML = txt; o.txt = txt; o.w = 0; }
