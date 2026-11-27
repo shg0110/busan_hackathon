@@ -527,7 +527,10 @@ function measureCover() {
 }
 setInterval(measureCover, 400);
 function coverBoxes() { return coverCache.map(b => b.slice()); }
+let labN = -1;
 function placeLabels() {
+  // 다른 파일이 나중에 넣은 이름표도 우선순위(pri 큰 것 먼저)대로 자리를 잡게: 목록이 바뀔 때만 다시 정렬(같은 pri 는 순서 유지)
+  if (labels.length !== labN) { labels.sort((a, b) => b.pri - a.pri); labN = labels.length; }
   const W = canvas.clientWidth, H = canvas.clientHeight, taken = coverBoxes();
   const dist = camera.position.distanceTo(controls.target);
   for (const L of labels) {
