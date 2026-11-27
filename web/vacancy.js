@@ -26,7 +26,7 @@ for (const m of [stem, head]) { m.renderOrder = 12; m.castShadow = false; m.frus
 // 강한 후보에 이름표
 const box = document.getElementById('labels');
 for (const v of V.filter(v => v.strong)) {
-  const el = document.createElement('div'); el.className = 'lbl place vac'; el.textContent = `폐업 ${v.closed.slice(0, 7)} · ${v.n}`;
+  const el = document.createElement('div'); el.className = 'lbl place vac'; el.textContent = `${v.n}, ${v.closed.slice(2, 4)}년 ${+v.closed.slice(5, 7)}월 폐업`;
   box.appendChild(el); M.labels.unshift({ el, x: v.x, y: v.top + 4, z: v.z, pri: 9, kind: 'place', w: 0, h: 0 });
 }
 
@@ -56,7 +56,7 @@ M.infoExtra = (b, bi) => {
 // 보기 설정
 const layers = document.getElementById('layers');
 const lab = document.createElement('label'); lab.className = 'tog';
-lab.innerHTML = `<input type="checkbox" id="L-vac" checked><span><i class="sw" style="background:${COL.strong}"></i>폐업 기록 ${V.length}</span>`;
+lab.innerHTML = `<input type="checkbox" id="L-vac" checked><span><i class="sw" style="background:${COL.strong}"></i>문 닫은 가게 ${V.length}곳</span>`;
 layers.insertBefore(lab, layers.children[1] || null);
 document.getElementById('L-vac').onchange = (e) => {
   stem.visible = head.visible = e.target.checked;

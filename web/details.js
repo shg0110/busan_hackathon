@@ -112,7 +112,7 @@ B.forEach((b, i) => {
   if (b.k === 'house' && b.a > 70 && h2 < 0.32) rooms.push({ x: cx - (far[0] - cx) * 0.25, z: cz - (far[1] - cz) * 0.25, y: b.h, w: 3 + h2 * 4, d: 2.6 + h2 * 3, rot: Math.atan2(p[1][1] - p[0][1], p[1][0] - p[0][0]), b });
 });
 const tankGeo = new THREE.CylinderGeometry(1, 1, 1, 14); tankGeo.translate(0, 0.5, 0);
-const tankMesh = new THREE.InstancedMesh(tankGeo, new THREE.MeshLambertMaterial({ color: '#4a8fd8' }), tanks.length);
+const tankMesh = new THREE.InstancedMesh(tankGeo, new THREE.MeshLambertMaterial({ color: '#9db3c6' }), tanks.length);
 tanks.forEach((t, i) => { pos.set(t.x, t.y, t.z); scl.set(t.r, 1.3 + t.r * 0.6, t.r); q.identity(); mtx.compose(pos, q, scl); tankMesh.setMatrixAt(i, mtx); });
 const boxGeo = new THREE.BoxGeometry(1, 1, 1); boxGeo.translate(0, 0.5, 0);
 const roomMesh = new THREE.InstancedMesh(boxGeo, new THREE.MeshLambertMaterial({ color: '#ffffff' }), rooms.length);
@@ -177,7 +177,7 @@ renderer.shadowMap.needsUpdate = true;
 // 보기 설정
 const layers = document.getElementById('layers');
 const lab = document.createElement('label'); lab.className = 'tog';
-lab.innerHTML = '<input type="checkbox" id="L-detail" checked><span>간판·차·옥상</span>';
+lab.innerHTML = '<input type="checkbox" id="L-detail" checked><span>간판, 차, 옥상</span>';
 layers.appendChild(lab);
 document.getElementById('L-detail').onchange = (e) => { group.visible = e.target.checked; renderer.shadowMap.needsUpdate = true; need(); };
 need();
