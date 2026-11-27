@@ -29,7 +29,7 @@ const G = {
   minor: '#a2a7af', minorEdge: '#848a92',        // 골목(주거 도로). 위에서 볼 때 땅색과 구분되도록 한 단계 진하게(ea 점검표 ③)
   service: '#b6bbc1',                            // 건물 앞 진입로·주차 통로
   foot: '#e4ded3',                               // 보행로·계단(보도블록)
-  walk: '#ddd6ca', curb: '#5e646c',              // 인도(따뜻한 보도블록), 연석
+  walk: '#ddd6ca', curb: '#a3a7ad',              // 인도(따뜻한 보도블록), 연석(15cm 솟은 화강석 회색, 옆면 그늘로 경계가 보임)
   center: '#f2c230', lane: '#ffffff', zebra: '#fbfbf8',
   parking: '#9da2a9', stall: '#f4f4f2',
   edge: '#848b94',                               // 골목 가장자리선
@@ -58,6 +58,31 @@ function segDist(x, z, a, b) {
   let t = l2 ? ((x - a[0]) * dx + (z - a[1]) * dz) / l2 : 0; t = Math.max(0, Math.min(1, t));
   return Math.hypot(x - a[0] - t * dx, z - a[1] - t * dz);
 }
+// 선분 격자: 많은 점에서 가까운 선분을 찾을 때(바다 깊이·가로수 보호판). 모든 선분을 훑던 것을 cell(m) 칸으로 나눠 주변 칸만 본다
+function segGrid(segs, cell) {
+  const map = new Map(), K = (i, j) => i * 100003 + j;
+  segs.forEach((sg, idx) => {
+    const [a, b] = sg, i0 = Math.floor(Math.min(a[0], b[0]) / cell), i1 = Math.floor(Math.max(a[0], b[0]) / cell), j0 = Math.floor(Math.min(a[1], b[1]) / cell), j1 = Math.floor(Math.max(a[1], b[1]) / cell);
+    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) { const k = K(i, j); let l = map.get(k); if (!l) map.set(k, l = []); l.push(idx); }
+  });
+  return {
+    near(x, z, maxR) {   // maxR 안에서 가장 가까운 선분(없으면 d = maxR, s = null)
+      const r = Math.ceil(maxR / cell), ci = Math.floor(x / cell), cj = Math.floor(z / cell); let bd = maxR, best = null;
+      for (let i = ci - r; i <= ci + r; i++) for (let j = cj - r; j <= cj + r; j++) {
+        const l = map.get(K(i, j)); if (!l) continue;
+        for (const idx of l) { const sg = segs[idx], d = segDist(x, z, sg[0], sg[1]); if (d < bd) { bd = d; best = sg; } }
+      }
+      return { d: bd, s: best };
+    },
+  };
+}
+// 한 줄(z)에서 다각형 경계를 지나는 x 들(정렬). 같은 줄의 많은 점을 안쪽 판정할 때 inPoly 를 점마다 돌리지 않으려고
+function rowCross(p, z) {
+  const xs = [];
+  for (let i = 0, j = p.length - 1; i < p.length; j = i++) { const a = p[i], b = p[j]; if ((a[1] > z) !== (b[1] > z)) xs.push((b[0] - a[0]) * (z - a[1]) / (b[1] - a[1]) + a[0]); }
+  return xs.sort((u, v) => u - v);
+}
+const inRow = (xs, x) => { let c = 0; for (const v of xs) { if (v > x) break; c++; } return (c & 1) === 1; };
 function bbox(p, pad) {
   let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
   for (const q of p) { if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0]; if (q[1] < z0) z0 = q[1]; if (q[1] > z1) z1 = q[1]; }
@@ -130,6 +155,27 @@ function stripe(m, off, wd, s0, s1, y, out) {
     prev = cur; if (s >= s1) break;
   }
 }
+// 길을 따라 솟은 띠(연석): 윗면 + 양 옆면. 삼각형마다 감는 방향을 바깥 법선에 맞춰 앞면만 그려도 되게 한다
+function raised(m, off, wd, H, s0, s1, pos, nrm) {
+  const tri = (a, b, c, n) => {
+    const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+    const cx = uy * vz - uz * vy, cy = uz * vx - ux * vz, cz = ux * vy - uy * vx;
+    if (cx * n[0] + cy * n[1] + cz * n[2] < 0) { const t = b; b = c; c = t; }
+    pos.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]); nrm.push(n[0], n[1], n[2], n[0], n[1], n[2], n[0], n[1], n[2]);
+  };
+  const quad = (a, b, c, d, n) => { tri(a, b, c, n); tri(a, c, d, n); };
+  const step = 3; let prev = null;
+  for (let s = s0; s <= s1 + 1e-6; s = Math.min(s1, s + step)) {
+    const q = m.w.at(s), cx = q.x + q.nx * off, cz = q.z + q.nz * off, h = wd / 2;
+    const cur = { i: [cx - q.nx * h, cz - q.nz * h], o: [cx + q.nx * h, cz + q.nz * h], nx: q.nx, nz: q.nz };
+    if (prev) {
+      quad([prev.i[0], H, prev.i[1]], [cur.i[0], H, cur.i[1]], [cur.o[0], H, cur.o[1]], [prev.o[0], H, prev.o[1]], [0, 1, 0]);
+      quad([prev.i[0], 0, prev.i[1]], [cur.i[0], 0, cur.i[1]], [cur.i[0], H, cur.i[1]], [prev.i[0], H, prev.i[1]], [-cur.nx, 0, -cur.nz]);
+      quad([prev.o[0], 0, prev.o[1]], [cur.o[0], 0, cur.o[1]], [cur.o[0], H, cur.o[1]], [prev.o[0], H, prev.o[1]], [cur.nx, 0, cur.nz]);
+    }
+    prev = cur; if (s >= s1) break;
+  }
+}
 // 띠(꺾임 이음 각도 제한) + caps=true 면 양 끝에 둥근 원판(교차로 이음새 메움, app.js ribbon 과 같은 방식)
 function ribbon(pts, w, y, out, caps) {
   const h = w / 2, n = pts.length, Lft = [], Rgt = [];
@@ -167,10 +213,20 @@ function canvasTex(size, draw, metersPerTile) {
   t.userData.m = metersPerTile; return t;
 }
 // 사람 눈높이에서 보이도록 대비를 충분히 준다. 멀리서는 밉맵이 평균색으로 뭉개므로 반짝이거나 얼룩지지 않는다(ea 점검표 ①)
-function pixelNoise(g, n, r, amp) {   // 화소마다 밝기 ±amp(0~1)
-  const im = g.getImageData(0, 0, n, n), d = im.data;
-  for (let i = 0; i < d.length; i += 4) { const k = 1 + (r() - 0.5) * 2 * amp; d[i] = Math.min(255, d[i] * k); d[i + 1] = Math.min(255, d[i + 1] * k); d[i + 2] = Math.min(255, d[i + 2] * k); }
-  g.putImageData(im, 0, 0);
+// 화소 잡음: 256² 잡음 타일을 한 번만 만들고, 질감마다 곱하기 합성으로 깐다(화소마다 계산하던 것보다 약 7배 적음, 합성은 GPU)
+// 곱하기 투명도 a 면 밝기 = 1 - a·u(u 는 0~1 고른 난수), 평균 1 - a/2 → amp 는 a/2 쯤
+let noiseTile = null;
+function pixelNoise(g, n, r, amp) {
+  if (!noiseTile) {
+    noiseTile = document.createElement('canvas'); noiseTile.width = noiseTile.height = 256;
+    const ng = noiseTile.getContext('2d'), im = ng.createImageData(256, 256), d = im.data, rr = rng(97);
+    for (let i = 0; i < d.length; i += 4) { const v = 255 - rr() * 255; d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255; }
+    ng.putImageData(im, 0, 0);
+  }
+  g.save(); g.globalCompositeOperation = 'multiply'; g.globalAlpha = Math.min(1, amp * 2);
+  const ox = Math.floor(r() * 256), oy = Math.floor(r() * 256);   // 질감마다 잡음 위치를 다르게
+  for (let y = -oy; y < n; y += 256) for (let x = -ox; x < n; x += 256) g.drawImage(noiseTile, x, y);
+  g.restore();
 }
 const TEX = {
   // 아스팔트(512화소 = 10m, 한 화소 약 2cm): 화소 잡음 + 골재 알갱이 + 옅은 얼룩 + 실금 + 땜질 자국 두 군데
@@ -215,6 +271,16 @@ const TEX = {
     for (let x = 0; x < n; x += n / 5) g.fillRect(x, 0, n / 12, n);
     pixelNoise(g, n, rng(29), 0.05);
   }, 6),
+  // 물결(512화소 = 30m): 옅은 밝은 물결선과 어두운 골. 가까이서만 보이고 멀리서는 밉맵이 평균색으로 뭉갠다
+  ripple: canvasTex(512, (g, n) => {
+    const r = rng(53); g.fillStyle = '#f2f3f5'; g.fillRect(0, 0, n, n);
+    for (let i = 0; i < 70; i++) {
+      const y0 = r() * n, len = 40 + r() * 140, x0 = r() * n, amp = 2 + r() * 4, ph = r() * 6.28, light = r() < 0.55;
+      g.strokeStyle = light ? `rgba(255,255,255,${0.35 + r() * 0.35})` : `rgba(20,40,70,${0.05 + r() * 0.06})`; g.lineWidth = light ? 1.2 : 2;
+      g.beginPath(); for (let x = 0; x <= len; x += 4) { const y = y0 + Math.sin(x / 18 + ph) * amp; if (x === 0) g.moveTo(x0 + x, y); else g.lineTo(x0 + x, y); } g.stroke();
+      if (x0 + len > n) { g.beginPath(); for (let x = 0; x <= len; x += 4) { const y = y0 + Math.sin(x / 18 + ph) * amp; if (x === 0) g.moveTo(x0 + x - n, y); else g.lineTo(x0 + x - n, y); } g.stroke(); }
+    }
+  }, 30),
   // 조선소 콘크리트 판(256화소 = 16m, 4m 마다 줄눈)
   slab: canvasTex(256, (g, n) => {
     const r = rng(31); g.fillStyle = '#f3f3f2'; g.fillRect(0, 0, n, n);
@@ -295,11 +361,12 @@ const stats = { centerM: 0, laneM: 0, crosswalks: 0, stopLines: 0, edgeM: 0, par
 const spotsCross = [];
 
 // ── 토지 이용(OSM, tools/map_ground.py): 빈 땅을 쓰임새로 옅게 구분. 녹지(1~3) 아래 순서 0.5 ──
+// OSM 공사장 면은 이름 태그만 있고 지번·시작일이 없다. 그 안에 국토부·Overture 건물이 서 있어 실제와 다를 수 있으니 흙색은 아주 옅게만 칠한다.
 // 공사장(힐스테이트 거제 시그니처 등)은 흙, 조선소(한화오션 옥포조선소)는 콘크리트 판, 농지는 고랑, 아파트 단지는 조금 회색, 학교 부지는 옅은 베이지
 // 빛이 따뜻한 색의 채도를 키워 모래처럼 보이므로(11-27 캡처) 채도를 아주 낮게 적는다
 const LANDUSE = {
   residential: ['#e8e5df', null], commercial: ['#ede2dd', null], retail: ['#ede2dd', null], marketplace: ['#ecdcd5', null],
-  industrial: ['#dfe1e4', 'slab'], shipyard: ['#dfe1e4', 'slab'], construction: ['#e6e0d5', 'dirt'], farmland: ['#e0e4c9', 'furrow'],
+  industrial: ['#dfe1e4', 'slab'], shipyard: ['#dfe1e4', 'slab'], construction: ['#e8e4dc', 'dirt'], farmland: ['#e0e4c9', 'furrow'],
   cemetery: ['#d9e2cf', null], school: ['#ece6dc', null], university: ['#ece6dc', null], college: ['#ece6dc', null], fuel: ['#dcdde0', null],
 };
 {
@@ -322,6 +389,9 @@ const LANDUSE = {
   const pos = [];
   for (const g of D.greens || []) {
     if (g.k !== 'playground' || !g.p || g.p.length < 3) continue;
+    // 800㎡ 넘는 것은 공원 전체를 놀이터로 표시한 것이라(1,509㎡ 한 곳) 통째로 갈색이 되어 흙밭처럼 보인다 → 녹지로 둔다
+    let ar = 0; for (let i = 0; i < g.p.length; i++) { const a = g.p[i], b = g.p[(i + 1) % g.p.length]; ar += a[0] * b[1] - b[0] * a[1]; }
+    if (Math.abs(ar) / 2 > 800) continue;
     const v2 = g.p.map(q => new THREE.Vector2(q[0], q[1]));
     for (const t of THREE.ShapeUtils.triangulateShape(v2, [])) { const a = g.p[t[0]], b = g.p[t[1]], c = g.p[t[2]]; pos.push(a[0], 0.001, a[1], b[0], 0.001, b[1], c[0], 0.001, c[1]); }
   }
@@ -356,9 +426,18 @@ const LANDUSE = {
   flat(pos, G.walk, 3.5, null, 'walk', TEX.paver);   // 녹지(1~3) 위, 물(4)·길 아래
 }
 
+// ── 선형 점자블록(국내 인도): 큰길 인도 안쪽(건물 쪽, 길 가장자리에서 2.1~2.4m)을 따라 이어지는 30cm 노란 줄. 가로수 보호판(1.5±0.6m)과 겹치지 않는 자리 ──
+// 실제 설치 위치는 확인하지 않은 장식이다. 교차로 앞 10m 는 비운다(점형 블록이 있는 자리)
+{
+  const pos = [];
+  for (const m of majors) if (!m.r.br && !m.ring) for (const [a, b] of openSpans(m, 10)) for (const sgn of [1, -1]) stripe(m, sgn * (m.r.w / 2 + 2.25), 0.3, a, b, 0.004, pos);
+  const tm = flat(pos, '#d2b35a', 3.6, null, 'tactile-line');
+  stats.tactileLineM = Math.round(pos.length / 18 * 4);
+}
+
 // ── 연석·중앙선·차선 ─────────────────────────────────────
 {
-  const center = [], lane = [], curb = [];
+  const center = [], lane = [], curb = { pos: [], nrm: [] };
   for (const m of majors) {
     const w = m.r.w, ow = !!m.r.ow, ln = m.r.ln || 0;
     for (const [a, b] of openSpans(m, JUNC_CLEAR)) {
@@ -375,9 +454,15 @@ const LANDUSE = {
       else for (let k = 1; k < per; k++) for (const sgn of [1, -1]) dash(sgn * k * (w / 2) / per);
     }
     // 연석: 길 가장자리 바로 바깥 0.35m(인도 쪽), 교차로 앞뒤 8m 는 비움
-    if (!m.r.br) for (const [a, b] of openSpans(m, 8)) for (const sgn of [1, -1]) stripe(m, sgn * (w / 2 + 0.17), 0.35, a, b, 0.02, curb);
+    // 연석: 차도 가장자리 바로 바깥 0.2m 폭, 15cm 솟은 상자(사람 눈높이에서 길 가장자리가 입체로 보이게). 교차로 앞뒤 8m 는 비움(횡단보도 턱 낮춤)
+    if (!m.r.br) for (const [a, b] of openSpans(m, 8)) for (const sgn of [1, -1]) { raised(m, sgn * (w / 2 + 0.1), 0.2, 0.15, a, b, curb.pos, curb.nrm); stats.curbM = (stats.curbM || 0) + (b - a); }
   }
-  flat(curb, G.curb, 8, null, 'curb');
+  {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(curb.pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(curb.nrm, 3));
+    const mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: G.curb }));   // 깊이를 쓰는 입체라 앞면만, 순서는 바닥 표시(8.9) 다음
+    mesh.renderOrder = 9.05; mesh.receiveShadow = true; mesh.castShadow = true; mesh.name = 'ground-curb'; scene.add(mesh); made.push(mesh);
+  }
   flat(center, G.center, 8, '#2a2208', 'center');
   flat(lane, G.lane, 8, '#202020', 'lane');
 }
@@ -475,6 +560,9 @@ if (D.parking && D.parking.length) {
   flat(stop, G.zebra, 8.9, '#3c3c3c', 'stop');
 }
 
+// 큰길 꼭짓점 → 길 폭(골목 입구 횡단보도), 큰길 선분 격자(가로수 보호판 방향)
+const majorWAt = new Map(); for (const m of majors) for (const q of m.r.p) if (!majorWAt.has(key(q))) majorWAt.set(key(q), m.r.w);
+const majorSegs = segGrid(majors.flatMap(m => m.r.p.slice(1).map((q, i) => [m.r.p[i], q])), 20);
 // ── 골목 입구 횡단보도·정지선: 골목(주거 도로)이 큰길과 만나는 입구, 큰길 인도 바깥 자리에 골목을 가로지르는 흰 줄 ──
 // 실제 위치는 확인하지 않은 장식이다(OSM 에 옥포 횡단보도 점이 없다). 큰길 신호등(seohogyun-20)이 붙지 않도록 자리는 따로(spots.crosswalkMinor).
 const spotsMinor = [];
@@ -486,7 +574,7 @@ const spotsMinor = [];
     r.p.forEach((p, i) => {
       if (!isJunction(p) || majorAt(p) < 2) return;   // 큰길이 지나가는 교차점만
       // 큰길 반폭 + 인도 + 1.5m 바깥(교차로 안쪽 모서리 다음)
-      let mw = 12; for (const m of majors) if (m.r.p.some(q => key(q) === key(p))) { mw = m.r.w; break; }
+      const mw = majorWAt.get(key(p)) || 12;
       const back = mw / 2 + WALK_W + 1.5;
       const dirs = i === 0 ? [1] : i === r.p.length - 1 ? [-1] : [1, -1];
       for (const dir of dirs) {
@@ -722,22 +810,23 @@ const schoolSpots = [];
       if (ny >= 0) base.push(a[0], 0, a[1], b[0], 0, b[1], c[0], 0, c[1]); else base.push(a[0], 0, a[1], c[0], 0, c[1], b[0], 0, b[1]);
     }
   }
-  const bm = flat(base, G.water, 4, null, 'water'); if (bm) bm.receiveShadow = false;
+  const bm = flat(base, G.water, 4, null, 'water', TEX.ripple); if (bm) bm.receiveShadow = false;
   // 깊이: 8m 격자, 칸 꼭짓점마다 해안까지 거리 → 투명도(해안 0, 140m 이상 0.42). 해안 근처는 투명이라 격자 계단이 안 보인다
   if (coast.length) {
     const cell = 8, pos = [], col = [];
     const xs = D.water.flatMap(w => w.p.map(q => q[0])), zs = D.water.flatMap(w => w.p.map(q => q[1]));
     const x0 = Math.min(...xs), x1 = Math.max(...xs), z0 = Math.min(...zs), z1 = Math.max(...zs);
     const deep = new THREE.Color('#3f78a8');
-    const dist = (x, z) => { let d = Infinity; for (const [a, b] of coast) { const v = segDist(x, z, a, b); if (v < d) d = v; } return d; };
-    const alpha = (x, z) => { const t = Math.min(1, dist(x, z) / 140); return 0.42 * t * t * (3 - 2 * t); };
+    const cg = segGrid(coast, 35);   // 140m 넘으면 같은 값이라 그 안만 찾는다
+    const alpha = (x, z) => { const t = Math.min(1, cg.near(x, z, 140).d / 140); return 0.42 * t * t * (3 - 2 * t); };
     const memo = new Map(), A = (x, z) => { const k = x + ',' + z; let v = memo.get(k); if (v === undefined) memo.set(k, v = alpha(x, z)); return v; };
-    for (let x = x0; x < x1; x += cell) for (let z = z0; z < z1; z += cell) {
-      const cx = x + cell / 2, cz = z + cell / 2;
-      if (!D.water.some(w => inPoly(cx, cz, w.p))) continue;
+    for (let z = z0; z < z1; z += cell) { const cz = z + cell / 2, rows = D.water.map(w => rowCross(w.p, cz));
+    for (let x = x0; x < x1; x += cell) {
+      const cx = x + cell / 2;
+      if (!rows.some(xs => inRow(xs, cx))) continue;
       const q = [[x, z], [x + cell, z], [x + cell, z + cell], [x, z + cell]];
       for (const i of [0, 2, 1, 0, 3, 2]) { const [px, pz] = q[i]; pos.push(px, 0.004, pz); col.push(deep.r, deep.g, deep.b, A(px, pz)); }
-    }
+    } }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));   // [0,2,1]·[0,3,2] 순서라 이미 위(+y)를 본다
     g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
@@ -806,6 +895,7 @@ if (window.__decor && window.__decor.spots) window.__decor.spots.crosswalkMinor 
 
 // app.js 의 옛 길 띠(보행로·골목·큰길 3겹)는 이 파일 포장으로 바꾼다. 땅 색도 바닥 위계에 맞춘다.
 if (Array.isArray(M.roads)) for (const r of M.roads) if (r) r.visible = false;
+// 빈 땅(바탕 평면)에는 질감을 넣지 않는다: 11-27 흙·콘크리트 잡음을 넣어 보니 따뜻한 바탕색·햇빛과 겹쳐 해안 빈 땅이 모래사장처럼 보였다
 if (M.ground && M.ground.material) M.ground.material.color.set(G.ground);
 if (M.scene.background && M.scene.background.isColor) M.scene.background.set(G.ground);
 if (M.scene.fog) M.scene.fog.color.set(G.ground);
@@ -868,7 +958,7 @@ function treePits() {
   const items = [];
   for (const [x, z] of T) {
     let best = null;
-    for (const m of majors) for (let i = 0; i < m.r.p.length - 1; i++) { const d = segDist(x, z, m.r.p[i], m.r.p[i + 1]); if (!best || d < best.d) best = { d, a: m.r.p[i], b: m.r.p[i + 1] }; }
+    const nb = majorSegs.near(x, z, 30); if (nb.s) best = { d: nb.d, a: nb.s[0], b: nb.s[1] };
     let fx = 1, fz = 0;
     if (best) { const dx = best.b[0] - best.a[0], dz = best.b[1] - best.a[1], l = Math.hypot(dx, dz) || 1; fx = dx / l; fz = dz / l; }
     items.push({ x, z, fx, fz, across: 1.2, along: 1.2 });
