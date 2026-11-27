@@ -268,9 +268,13 @@ if (shrubs.length > MAX_SHRUBS) shrubs.length = MAX_SHRUBS;
 
 // ── 나무 그리기 ─────────────────────────────────────────
 const treeRefs = [];   // 나무마다 {x, z, parts: [[InstancedMesh, 번호]..]} — 나중에 버스 정류장 자리의 나무를 숨길 때 쓴다
+const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
 function hideTreesNear(x, z, r) {
-  const zero = new THREE.Matrix4().makeScale(0, 0, 0), touched = new Set(); let n = 0;
-  for (const t of treeRefs) {
+  const zero = ZERO, touched = new Set(); let n = 0;
+  nearProp(x, z, 0);   // 격자에 새 항목 넣기
+  const list = r > 4 ? treeRefs : [];
+  if (r <= 4) { const cx = Math.floor(x / 4), cz = Math.floor(z / 4); for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) { const a = PG.get(pgKey(cx + i, cz + j)); if (a) list.push(...a); } }
+  for (const t of list) {
     if (Math.hypot(t.x - x, t.z - z) > r || !t.parts.length) continue;
     for (const [m, i] of t.parts) { m.setMatrixAt(i, zero); touched.add(m); }
     t.parts = []; n++;
@@ -360,7 +364,17 @@ function hideTreesNear(x, z, r) {
 
 // ── 가로등: 큰길 양쪽 30m 간격, 인도 쪽(길 가장자리 + 0.7m), 팔은 길 쪽으로. 위치는 장식(실제 가로등 자료 없음) ──
 // 가로수가 5m·15m·25m…(10m 간격)에 서므로 가로등은 10m·40m·70m…에 세워 늘 나무와 나무 한가운데(5m 떨어짐)에 오게 한다.
-const nearProp = (x, z, r) => treeRefs.some(t => (t.parts.length || t.prop) && Math.abs(t.x - x) < r && Math.abs(t.z - z) < r && Math.hypot(t.x - x, t.z - z) < r);
+// 나무·소품 자리 찾기: 4m 칸 격자(treeRefs 는 뒤에 붙기만 하므로 새로 붙은 것만 칸에 넣는다). 전엔 부를 때마다 7천 개를 다 훑었다
+const PG = new Map(); let pgN = 0;
+const pgKey = (cx, cz) => cx * 100003 + cz;
+function nearProp(x, z, r) {
+  for (; pgN < treeRefs.length; pgN++) { const t = treeRefs[pgN], k = pgKey(Math.floor(t.x / 4), Math.floor(t.z / 4)); let a = PG.get(k); if (!a) PG.set(k, a = []); a.push(t); }
+  const hit = (t) => (t.parts.length || t.prop) && Math.abs(t.x - x) < r && Math.abs(t.z - z) < r && Math.hypot(t.x - x, t.z - z) < r;
+  if (r > 4) return treeRefs.some(hit);
+  const cx = Math.floor(x / 4), cz = Math.floor(z / 4);
+  for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) { const a = PG.get(pgKey(cx + i, cz + j)); if (a && a.some(hit)) return true; }
+  return false;
+}
 {
   const L = [];   // [x, z, 각도]
   for (const m of majors) {
@@ -564,10 +578,10 @@ function trafficLights() {
   for (const cw of CW) {
     const [x, z, w0] = cw, nr = nearestRoad(x, z, 8); if (!nr) continue;
     const half = (w0 || nr.r.w) / 2, side = 1;
-    const px = nr.px + nr.nx * (half + 0.9) * side, pz = nr.pz + nr.nz * (half + 0.9) * side;
+    const px = nr.px + nr.nx * (half + 1.3) * side, pz = nr.pz + nr.nz * (half + 1.3) * side;   // 점자블록(가장자리 0.35~0.95m, ground.js) 뒤
     if (!inside(px, pz, 4) || nearBuilding(px, pz, 0.4)) continue;
     hideTreesNear(px, pz, 2.6);
-    const rot = nr.rot, arm = Math.min(half + 0.9, 6.5), toRoad = -side;   // 상자 z 축 = 길의 +법선 → 길 쪽은 -side
+    const rot = nr.rot, arm = Math.min(half + 1.3, 6.5), toRoad = -side;   // 상자 z 축 = 길의 +법선 → 길 쪽은 -side
     boxPart(body, 0.2, 6.2, 0.2, 0, 3.1, 0, rot, px, pz, '#4a5058');                       // 기둥
     boxPart(body, 0.13, 0.13, arm, 0, 6.0, toRoad * arm / 2, rot, px, pz, '#4a5058');      // 팔
     const hz = toRoad * (arm - 0.5);
@@ -589,7 +603,7 @@ function trafficLights() {
   return n;
 }
 
-// 볼라드: 횡단보도 양끝 길 가장자리 + 0.45m, 길 방향으로 -1.8·-0.6·0.6·1.8m(장식)
+// 볼라드: 횡단보도 양끝, 점자블록(길 가장자리 0.35~0.95m) 바로 뒤 1.25m, 길 방향으로 -2.1·-0.9·0.9·2.1m(가운데는 신호등)(장식)
 function bollards() {
   const CW = (window.__decor && window.__decor.spots && window.__decor.spots.crosswalk) || spots.crosswalk;
   if (!CW || !CW.length) return 0;
@@ -597,8 +611,8 @@ function bollards() {
   for (const [x, z, w0] of CW) {
     const nr = nearestRoad(x, z, 8); if (!nr) continue;
     const half = (w0 || nr.r.w) / 2, dx = nr.nz, dz = -nr.nx;
-    for (const side of [1, -1]) for (const t of [-1.8, -0.6, 0.6, 1.8]) {
-      const bx = nr.px + nr.nx * (half + 0.45) * side + dx * t, bz = nr.pz + nr.nz * (half + 0.45) * side + dz * t;
+    for (const side of [1, -1]) for (const t of [-2.1, -0.9, 0.9, 2.1]) {
+      const bx = nr.px + nr.nx * (half + 1.25) * side + dx * t, bz = nr.pz + nr.nz * (half + 1.25) * side + dz * t;
       if (!inside(bx, bz, 3) || nearBuilding(bx, bz, 0.15) || nearRoad(bx, bz, 0.05, -1) || nearProp(bx, bz, 0.5)) continue;
       P.push([bx, bz]);
     }
@@ -750,12 +764,14 @@ function areaLabels() {
   const area = (p) => { let s = 0; for (let i = 0; i < p.length; i++) { const a = p[i], b = p[(i + 1) % p.length]; s += a[0] * b[1] - b[0] * a[1]; } return Math.abs(s / 2); };
   const sea = D.water.slice().sort((a, b) => area(b.p) - area(a.p))[0].p, bb = bbox(sea, 0);
   let cx = 0, cz = 0; for (const q of sea) { cx += q[0]; cz += q[1]; } cx /= sea.length; cz /= sea.length;
+  const cand = [];
+  for (let x = bb[0]; x <= bb[2]; x += 20) for (let z = bb[1]; z <= bb[3]; z += 20) cand.push([x, z, Math.hypot(x - cx, z - cz)]);
+  cand.sort((a, b) => a[2] - b[2]);
   let best = null;
-  for (let x = bb[0]; x <= bb[2]; x += 20) for (let z = bb[1]; z <= bb[3]; z += 20) {
-    if (!inPoly(x, z, sea) || !inside(x, z, 60)) continue;
-    let edge = Infinity; for (let i = 0; i < sea.length; i++) edge = Math.min(edge, segDist(x, z, sea[i], sea[(i + 1) % sea.length]));
-    if (edge < 60) continue;   // 해안선에서 60m 넘게 떨어진 바다 위
-    const d = Math.hypot(x - cx, z - cz); if (!best || d < best.d) best = { x, z, d };
+  for (const [x, z] of cand) {
+    if (!inside(x, z, 60) || !inPoly(x, z, sea)) continue;
+    let ok = true; for (let i = 0; i < sea.length && ok; i++) if (segDist(x, z, sea[i], sea[(i + 1) % sea.length]) < 60) ok = false;   // 해안선에서 60m 넘게 떨어진 바다 위
+    if (ok) { best = { x, z }; break; }
   }
   if (!best) return 0;
   const el = document.createElement('div'); el.className = 'lbl place water'; el.textContent = '옥포만';
@@ -765,12 +781,13 @@ function areaLabels() {
 
 function afterLoad() {
   busStops(); streetProps();
+  const T0 = performance.now(), ms = {}, tm = (k, f) => { const t = performance.now(), r = f(); ms[k] = Math.round(performance.now() - t); return r; };
   try {
-    stats.lights = trafficLights(); stats.bollards = bollards(); stats.signs = roadSigns();
-    const [poles, wires] = utilityPoles(); stats.poles = poles; stats.wires = wires;
-    stats.school = schoolZones(); stats.areaLabels = areaLabels();
+    stats.lights = tm('lights', trafficLights); stats.bollards = tm('bollards', bollards); stats.signs = tm('signs', roadSigns);
+    const [poles, wires] = tm('poles', utilityPoles); stats.poles = poles; stats.wires = wires;
+    stats.school = tm('school', schoolZones); stats.areaLabels = tm('area', areaLabels);
   } catch (e) { console.warn('decor 소품', e); }
-  if (window.__decor) Object.assign(window.__decor, { lights: stats.lights || 0, signs: stats.signs || 0, poles: stats.poles || 0, wires: stats.wires || 0, schoolPosts: stats.school || 0, bollards: stats.bollards || 0, areaLabels: stats.areaLabels || 0, lightAt: stats.lightAt || [], signAt: stats.signAt || [] });
+  if (window.__decor) Object.assign(window.__decor, { lights: stats.lights || 0, signs: stats.signs || 0, poles: stats.poles || 0, wires: stats.wires || 0, schoolPosts: stats.school || 0, bollards: stats.bollards || 0, areaLabels: stats.areaLabels || 0, lightAt: stats.lightAt || [], signAt: stats.signAt || [], ms: Object.assign(ms, { all: Math.round(performance.now() - T0) }) });
   if (M.renderer) M.renderer.shadowMap.needsUpdate = true;
   M.need && M.need();
 }
