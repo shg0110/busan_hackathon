@@ -16,7 +16,7 @@ const C = {
   walls: ['#ffffff', '#fbfbfc', '#f7f8fa', '#f9fafb', '#fdfdfe', '#f4f5f7'],
   roof: '#e3e6ea', roofApt: '#dadee3',
   est: '#f2b48f',          // 층수 추정 건물 강조
-  select: '#d9480f',
+  select: '#fcc419',
 };
 
 // ── 렌더러·장면 ─────────────────────────────────────────
@@ -306,15 +306,19 @@ function paintEstimated(on) {
 // 고른 건물: 같은 모양을 강조색으로 덧그림
 let selMesh = null, selIdx = -1;
 function select(bi) {
-  if (selMesh) { scene.remove(selMesh); selMesh.geometry.dispose(); selMesh = null; }
+  if (selMesh) { scene.remove(selMesh); selMesh.geometry.dispose(); selMesh.children.forEach(c => c.geometry.dispose()); selMesh = null; }
   selIdx = bi;
   if (bi < 0) { info.hidden = true; need(); return; }
   const [s, e] = bRange[bi];
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(bPos.slice(s * 3, e * 3), 3));
   g.setAttribute('normal', new THREE.Float32BufferAttribute(bNrm.slice(s * 3, e * 3), 3));
-  selMesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: C.select, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
-  selMesh.renderOrder = 12; scene.add(selMesh);
+  // 고른 건물: 노랑 반투명 + 진한 윤곽(주황 '가게 없는 층'과 헷갈리지 않게)
+  selMesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: C.select, transparent: true, opacity: 0.55, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+  selMesh.renderOrder = 13;
+  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(g, 30), new THREE.LineBasicMaterial({ color: '#212529' }));
+  edges.renderOrder = 14; selMesh.add(edges);
+  scene.add(selMesh);
   showInfo(B[bi]); need();
 }
 
