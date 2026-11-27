@@ -1,10 +1,14 @@
-/* 나무와 도로 표시(중앙선·차선·인도·횡단보도) — app.js 다음에 불러온다.
+/* 나무와 도로 표시(중앙선·차선·인도·횡단보도·정지선·골목 가장자리선·버스 정류장 쉼터) — app.js 다음에 불러온다.
    자료: window.MAP_DATA(roads·greens·buildings·water, tools/map_build.py). 그릴 곳: window.__map.scene.
    좌표: x = 동쪽(m), z = 남쪽(m), y = 위.
    주의: 나무·차선·횡단보도는 실제 위치가 아니라 보기 좋게 놓은 장식이다.
      - 가로수: OSM에 옥포 가로수 점 자료가 없어 큰길 양쪽에 12m 간격으로 놓았다.
      - 공원 나무: 녹지 다각형 안을 격자로 채웠다(종류마다 간격이 다름).
-     - 횡단보도: 큰길끼리 만나는 곳에만 그렸다. 실제 횡단보도 위치는 확인하지 않았다.
+     - 횡단보도·정지선: 큰길끼리 만나는 곳에만 그렸다. 실제 횡단보도 위치는 확인하지 않았다.
+     - 중앙선·차선: OSM 일방(ow)·차로 수(ln)를 따른다. 일방통행은 중앙선 없음, 차로 수가 없는 길은 점선 없음.
+     - 주차장 바닥·테두리는 OSM 실제 위치, 그 안의 주차 칸 선은 장식이다.
+     - 나무 모양(활엽·침엽·관목)과 비율도 가정이다. 버스 정류장 쉼터만 OSM 정류장 실제 위치(SIM_DATA.stops)다.
+     - 가로등(큰길 양쪽 30m)·벤치·화분(빛의 거리·옥포성안로 14m)은 장식이다. 실제 위치 자료가 없다.
    난수는 씨앗을 고정해 화면이 열 때마다 같게 나온다. */
 (() => {
 'use strict';
@@ -15,14 +19,16 @@ const HX = D.meta.half[0], HZ = D.meta.half[1];
 
 // ── 색·치수 ───────────────────────────────────────────
 const C = {
-  trunk: '#7a5c3e', leafA: '#5f9e4f', leafB: '#7bb661',
-  center: '#f2c94c', lane: '#ffffff', walk: '#f3f4f6', zebra: '#ffffff', curb: '#b9bfc8',
+  trunk: '#7a5c3e', leaf: ['#5a9a4a', '#6fae5a', '#7cb864', '#8cc26e'],
+  center: '#f2c94c', lane: '#ffffff', walk: '#e6e9ed', zebra: '#ffffff', curb: '#9aa2ac', edge: '#aeb5bf',
+  lampPole: '#3d434b', lampHead: '#f4f1e6', benchWood: '#a47b55', benchLeg: '#4a5260', planter: '#cfc9bf',
+  parking: '#d3d8de', coneA: '#4a8550', coneB: '#5f9c5c', shrubA: '#6aa85a', shrubB: '#88c06c',
 };
 const MAJOR = new Set(['trunk', 'primary', 'secondary', 'tertiary']);          // 가로수·인도·중앙선을 그리는 큰길
 const VEHICLE_SKIP = new Set(['service', 'footway', 'path', 'steps', 'cycleway', 'pedestrian', 'track']);
-const MAX_TREES = 4000;
+const MAX_TREES = 5200;
 const WALK_W = 2.5;            // 인도 폭(m)
-const STREET_GAP = 12;         // 가로수 간격(m)
+const STREET_GAP = 10;         // 가로수 간격(m)
 const JUNC_CLEAR = 15;         // 교차로 앞뒤로 선을 비우는 길이(m)
 
 // ── 도우미 ───────────────────────────────────────────
@@ -128,7 +134,9 @@ D.roads.forEach((r, ri) => {
   const w = walker(r.p);
   const js = [];
   r.p.forEach((p, i) => { if (isJunction(p)) js.push({ s: w.cum[i], p, major: majorAt(p) }); });
-  majors.push({ r, ri, w, js });
+  // 회전교차로: 처음과 끝이 같은 일방 고리. 원 안 차로에는 횡단보도·정지선을 그리지 않는다.
+  const ring = !!r.ow && Math.hypot(r.p[0][0] - r.p[r.p.length - 1][0], r.p[0][1] - r.p[r.p.length - 1][1]) < 1;
+  majors.push({ r, ri, w, js, ring });
 });
 
 // ── 납작한 띠 만들기 ───────────────────────────────────
@@ -163,12 +171,12 @@ function ribbon(pts, w, y, out) {
     out.push(a[0], y, a[1], c[0], y, c[1], b[0], y, b[1], b[0], y, b[1], c[0], y, c[1], d[0], y, d[1]);
   }
 }
-function flat(pos, color, order) {
+function flat(pos, color, order, glow) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   const nrm = new Float32Array(pos.length); for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1;
   g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
-  const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color, depthWrite: false, side: THREE.DoubleSide }));
+  const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color, depthWrite: false, side: THREE.DoubleSide, emissive: glow || '#000000' }));
   m.renderOrder = order; m.receiveShadow = true; m.name = 'decor'; scene.add(m); return m;
 }
 // 교차로 앞뒤를 뺀 구간들
@@ -189,36 +197,85 @@ function openSpans(m, clear) {
 }
 
 // ── 중앙선·차선 ─────────────────────────────────────────
-const stats = { centerM: 0, laneM: 0, crosswalks: 0 };
+const stats = { centerM: 0, laneM: 0, crosswalks: 0, stopLines: 0 };
+const spots = { crosswalk: [], bus: [] };   // 다른 파일(주차된 차 등)이 피할 자리: [x, z, 길 폭] / [x, z]
 {
   const center = [], lane = [];
   for (const m of majors) {
     const w = m.r.w;
+    // 차로는 OSM lanes(ln)가 있을 때만 그린다. 폭으로 짐작하지 않는다(옥포 큰길은 12m에 주차가 많아 짐작하면 틀린 그림).
+    const ow = !!m.r.ow, ln = m.r.ln || 0;
     for (const [a, b] of openSpans(m, JUNC_CLEAR)) {
-      stripe(m, 0, 0.3, a, b, 0.03, center); stats.centerM += b - a;
-      // 4차로 이상(폭 14m 이상)이면 방향마다 흰 점선: 3m 칠하고 5m 비움
-      if (w >= 14) {
-        const per = Math.max(2, Math.round(w / 2 / 3.3));       // 한 방향 차로 수
-        for (let k = 1; k < per; k++) for (const sgn of [1, -1]) {
-          const off = sgn * k * (w / 2) / per;
-          for (let s = a; s + 3 <= b; s += 8) { stripe(m, off, 0.15, s, s + 3, 0.03, lane); stats.laneM += 3; }
-        }
-      }
+      // 양방향이면 노란 중앙선. 일방통행이면 중앙선이 없다.
+      if (!ow) { stripe(m, 0, 0.3, a, b, 0.03, center); stats.centerM += b - a; }
+      // 흰 점선(3m 칠하고 5m 비움): 일방 2차로 이상은 차로 사이, 양방향 4차로 이상은 방향마다 차로 사이
+      const dash = (off) => { for (let s = a; s + 3 <= b; s += 8) { stripe(m, off, 0.15, s, s + 3, 0.03, lane); stats.laneM += 3; } };
+      if (ow && ln >= 2) for (let k = 1; k < ln; k++) dash(-w / 2 + k * w / ln);
+      if (!ow && ln >= 4) { const per = Math.floor(ln / 2); for (let k = 1; k < per; k++) for (const sgn of [1, -1]) dash(sgn * k * (w / 2) / per); }
     }
   }
   // 연석: 길 가장자리 양쪽 0.3m 진한 회색 선(길과 인도 경계가 또렷하게), 교차로 앞뒤 8m 는 비움
   const curb = [];
   for (const m of majors) if (!m.r.br) for (const [a, b] of openSpans(m, 8)) for (const sgn of [1, -1]) stripe(m, sgn * (m.r.w / 2 - 0.15), 0.3, a, b, 0.02, curb);
   flat(curb, C.curb, 8);
-  flat(center, C.center, 8);
+  flat(center, C.center, 8, '#2a2208');
   if (lane.length) flat(lane, C.lane, 8);
 }
 
-// ── 횡단보도: 큰길끼리 만나는 교차로에서, 교차로 앞 10m 자리에 길을 가로지르는 흰 줄 ──
+// ── 주차장(OSM amenity=parking 면, 실제 위치): 바닥을 조금 진하게, 흰 테두리, 긴 변을 따라 주차 칸 선(칸은 장식) ──
+if (D.parking && D.parking.length) {
+  const fill = [], line = [];
+  const tri = (p, y, out) => {
+    const v2 = p.map(q => new THREE.Vector2(q[0], q[1]));
+    for (const t of THREE.ShapeUtils.triangulateShape(v2, [])) { const a = p[t[0]], b = p[t[1]], c = p[t[2]]; out.push(a[0], y, a[1], b[0], y, b[1], c[0], y, c[1]); }
+  };
+  const seg = (a, b, wd, y, out) => {   // 두 점을 잇는 폭 wd 의 납작한 띠
+    const dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz) || 1, nx = -dz / L * wd / 2, nz = dx / L * wd / 2;
+    out.push(a[0] + nx, y, a[1] + nz, b[0] + nx, y, b[1] + nz, a[0] - nx, y, a[1] - nz, a[0] - nx, y, a[1] - nz, b[0] + nx, y, b[1] + nz, b[0] - nx, y, b[1] - nz);
+  };
+  let stalls = 0;
+  for (const pk of D.parking) {
+    const p = pk.p; if (p.length < 3) continue;
+    tri(p, 0, fill);
+    for (let i = 0; i < p.length; i++) {
+      const a = p[i], b = p[(i + 1) % p.length]; seg(a, b, 0.15, 0.02, line);
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L < 8) continue;
+      const dx = (b[0] - a[0]) / L, dz = (b[1] - a[1]) / L;
+      let nx = -dz, nz = dx;
+      const mx = (a[0] + b[0]) / 2, mz = (a[1] + b[1]) / 2;
+      if (!inPoly(mx + nx * 2.5, mz + nz * 2.5, p)) { nx = -nx; nz = -nz; }        // 안쪽을 향하게
+      if (!inPoly(mx + nx * 2.5, mz + nz * 2.5, p)) continue;
+      for (let s = 1.5; s <= L - 1.5; s += 2.5) {                                   // 칸 폭 2.5m, 길이 5m
+        const x0 = a[0] + dx * s, z0 = a[1] + dz * s, x1 = x0 + nx * 5, z1 = z0 + nz * 5;
+        if (!inPoly(x1, z1, p) || nearBuilding(x1, z1, 0.5)) continue;
+        seg([x0, z0], [x1, z1], 0.12, 0.02, line); stalls++;
+      }
+    }
+  }
+  flat(fill, C.parking, 4.5);   // 물(4) 위, 길(5~7) 아래
+  flat(line, C.lane, 8);
+  stats.parking = D.parking.length; stats.stalls = stalls;
+}
+
+// ── 골목 가장자리선: 큰길이 아닌 차도(골목) 양쪽 0.2m 진한 회색, 교차로 앞뒤 3m 는 비움 ──
 {
-  const pos = [], done = new Set();
+  const edge = [];
+  D.roads.forEach((r, ri) => {
+    if (!vehicle[ri] || MAJOR.has(r.k) || r.k !== 'residential' || r.br || r.p.length < 2) return;
+    const w = walker(r.p), js = [];
+    r.p.forEach((p, i) => { if (isJunction(p)) js.push({ s: w.cum[i] }); });
+    const m = { r, w, js };
+    for (const [a, b] of openSpans(m, 3)) for (const sgn of [1, -1]) { stripe(m, sgn * (r.w / 2 - 0.1), 0.2, a, b, 0.02, edge); stats.edgeM = (stats.edgeM || 0) + (b - a); }
+  });
+  if (edge.length) flat(edge, C.edge, 8);
+}
+
+// ── 횡단보도·정지선: 큰길끼리 만나는 교차로에서, 교차로 앞 10m 자리에 길을 가로지르는 흰 줄 ──
+// 정지선은 교차로로 들어오는 쪽 차로(우측 통행)에만, 횡단보도 바로 바깥에 0.45m.
+{
+  const pos = [], stop = [], done = new Set();
   for (const m of majors) for (const j of m.js) {
-    if (j.major < 3) continue;
+    if (j.major < 3 || m.ring) continue;
     for (const dir of [-1, 1]) {
       const s = j.s + dir * 10;
       if (s < 2 || s > m.w.L - 2) continue;
@@ -226,44 +283,50 @@ const stats = { centerM: 0, laneM: 0, crosswalks: 0 };
       if (done.has(k)) continue; done.add(k);
       // 줄 하나 = 길 방향 4m × 가로 0.5m, 0.5m 간격으로 길 폭만큼
       const half = m.r.w / 2 - 0.5;
-      for (let o = -half; o <= half; o += 1.0) stripe(m, o, 0.5, s - 2, s + 2, 0.03, pos);
-      stats.crosswalks++;
+      for (let o = -half; o <= half; o += 1.0) stripe(m, o, 0.55, s - 2.5, s + 2.5, 0.03, pos);
+      stats.crosswalks++; spots.crosswalk.push([+q.x.toFixed(1), +q.z.toFixed(1), m.r.w]);
+      // 선의 오른쪽 법선 = 진행 방향 오른쪽. 교차로로 들어오는 차는 -dir 방향으로 달리므로 그 오른쪽은 -dir 쪽
+      const ss = s + dir * 4;
+      if (ss > 0.5 && ss < m.w.L - 0.5) { stripe(m, -dir * m.r.w / 4, m.r.w / 2 - 0.4, ss - 0.225, ss + 0.225, 0.03, stop); stats.stopLines++; }
     }
   }
-  if (pos.length) flat(pos, C.zebra, 9);
+  if (pos.length) flat(pos, C.zebra, 9, '#3c3c3c');
+  if (stop.length) flat(stop, C.zebra, 9, '#3c3c3c');
 }
 
 // ── 나무 자리 ─────────────────────────────────────────
-const trees = [];   // [x, z, 높이, 잎 반지름 비율]
-// 가로수: 큰길 양쪽, 길 가장자리에서 1.5m 바깥(인도 안)
+// 모양: broad 둥근 활엽(잎 두 덩이), cone 원뿔 침엽(두 단), 관목은 따로(shrubs)
+const trees = [];   // [x, z, 높이, 잎 반지름 비율, 종류, 모양]
+// 가로수: 큰길 양쪽, 길 가장자리에서 1.5m 바깥(인도 안). 활엽만.
 for (const m of majors) {
   if (m.r.br) continue;
   const off = m.r.w / 2 + 1.5;
   for (let s = STREET_GAP / 2; s < m.w.L; s += STREET_GAP) {
-    if (m.js.some(j => Math.abs(j.s - s) < 12)) continue;                 // 교차로 가까이는 비움
+    if (m.js.some(j => Math.abs(j.s - s) < 11)) continue;                 // 교차로 가까이는 비움
     const q = m.w.at(s);
     for (const sgn of [1, -1]) {
       const x = q.x + q.nx * off * sgn, z = q.z + q.nz * off * sgn;
       if (!inside(x, z, 5) || inWater(x, z) || nearBuilding(x, z, 1.8) || nearRoad(x, z, 1.0, m.ri)) continue;
-      trees.push([x, z, 6 + rand() * 1.5, 0.34, 'street']);
+      trees.push([x, z, (6 + rand() * 1.5) * 1.3, 0.34, 'street', 'broad']);
     }
   }
 }
-// 녹지 안: 종류마다 간격(m)과 키
+// 녹지 안: 종류마다 [간격(m), 키 최소, 키 최대, 침엽 비율]
 const GREEN = {
-  wood: [8, 7, 9], forest: [8, 7, 9], park: [12, 6.5, 9], garden: [12, 5, 7], playground: [13, 6, 8],
-  meadow: [20, 6, 8], scrub: [10, 3.5, 5],
+  wood: [8, 9, 13, 0.55], forest: [8, 9, 13, 0.55], park: [9, 8.5, 11.5, 0.15], garden: [9, 6.5, 9, 0.15],
+  playground: [10, 7.5, 10.5, 0.1], meadow: [15, 7.5, 10.5, 0.2],
 };
 const greenTrees = { wood: [], other: [] };
 for (const g of D.greens) {
-  const spec = GREEN[g.k]; if (!spec) continue;           // pitch(운동장)·grass 는 비워 둔다
-  const [gap, h0, h1] = spec, b = bbox(g.p, 0);
+  const spec = GREEN[g.k]; if (!spec) continue;           // pitch(운동장)·grass 는 비워 둔다, scrub 은 관목으로
+  const [gap, h0, h1, coneP] = spec, b = bbox(g.p, 0);
   const off = rand() * gap;
   for (let x = b[0] + off; x < b[2]; x += gap) for (let z = b[1] + off; z < b[3]; z += gap) {
     const px = x + (rand() - 0.5) * gap * 0.7, pz = z + (rand() - 0.5) * gap * 0.7;
     if (!inPoly(px, pz, g.p) || !inside(px, pz, 5) || inWater(px, pz)) continue;
     if (nearBuilding(px, pz, 2.2) || nearRoad(px, pz, 1.5, -1)) continue;
-    (g.k === 'wood' || g.k === 'forest' ? greenTrees.wood : greenTrees.other).push([px, pz, h0 + rand() * (h1 - h0), 0.38, g.k]);
+    const shape = rand() < coneP ? 'cone' : 'broad';
+    (g.k === 'wood' || g.k === 'forest' ? greenTrees.wood : greenTrees.other).push([px, pz, h0 + rand() * (h1 - h0), shape === 'cone' ? 0.24 : 0.38, g.k, shape]);
   }
 }
 // 4,000그루를 넘으면 숲부터 고르게 솎는다
@@ -274,31 +337,278 @@ if (wood.length > room) { const keep = Math.max(0, room) / wood.length; wood = w
 trees.push(...wood);
 if (trees.length > MAX_TREES) trees.length = MAX_TREES;
 
-// ── 나무 그리기: 줄기·잎 InstancedMesh 2개 ─────────────────
-if (trees.length) {
-  const trunkGeo = new THREE.CylinderGeometry(0.16, 0.24, 1, 6, 1); trunkGeo.translate(0, 0.5, 0);
-  const leafGeo = new THREE.IcosahedronGeometry(1, 1);
-  const trunk = new THREE.InstancedMesh(trunkGeo, new THREE.MeshLambertMaterial({ color: C.trunk }), trees.length);
-  const leaf = new THREE.InstancedMesh(leafGeo, new THREE.MeshLambertMaterial({ color: '#ffffff' }), trees.length);
+// 관목: 공원·정원·놀이터 가장자리 안쪽 1.3m 에 3.5m 간격, 덤불(scrub)은 안을 5m 격자로
+const shrubs = [];   // [x, z, 크기]
+const MAX_SHRUBS = 3000;
+for (const g of D.greens) {
+  if (shrubs.length >= MAX_SHRUBS) break;
+  if (['park', 'garden', 'playground'].includes(g.k)) {
+    const p = g.p;
+    for (let i = 0; i < p.length; i++) {
+      const a = p[i], b = p[(i + 1) % p.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (L < 2) continue;
+      const dx = (b[0] - a[0]) / L, dz = (b[1] - a[1]) / L;
+      for (let s = 1.5; s < L - 1; s += 3.5) {
+        let x = a[0] + dx * s - dz * 1.3, z = a[1] + dz * s + dx * 1.3;
+        if (!inPoly(x, z, p)) { x = a[0] + dx * s + dz * 1.3; z = a[1] + dz * s - dx * 1.3; }   // 안쪽이 반대편이면 뒤집기
+        if (!inPoly(x, z, p) || nearBuilding(x, z, 1.2) || nearRoad(x, z, 0.8, -1) || !inside(x, z, 5)) continue;
+        shrubs.push([x, z, 1.0 + rand() * 0.9]);
+      }
+    }
+  } else if (g.k === 'scrub') {
+    const b = bbox(g.p, 0);
+    for (let x = b[0]; x < b[2]; x += 5) for (let z = b[1]; z < b[3]; z += 5) {
+      const px = x + (rand() - 0.5) * 3, pz = z + (rand() - 0.5) * 3;
+      if (!inPoly(px, pz, g.p) || nearBuilding(px, pz, 1.2) || nearRoad(px, pz, 0.8, -1) || inWater(px, pz)) continue;
+      shrubs.push([px, pz, 1.4 + rand() * 1.2]);
+    }
+  }
+}
+if (shrubs.length > MAX_SHRUBS) shrubs.length = MAX_SHRUBS;
+
+// ── 나무 그리기 ─────────────────────────────────────────
+const treeRefs = [];   // 나무마다 {x, z, parts: [[InstancedMesh, 번호]..]} — 나중에 버스 정류장 자리의 나무를 숨길 때 쓴다
+function hideTreesNear(x, z, r) {
+  const zero = new THREE.Matrix4().makeScale(0, 0, 0), touched = new Set(); let n = 0;
+  for (const t of treeRefs) {
+    if (Math.hypot(t.x - x, t.z - z) > r || !t.parts.length) continue;
+    for (const [m, i] of t.parts) { m.setMatrixAt(i, zero); touched.add(m); }
+    t.parts = []; n++;
+  }
+  for (const m of touched) m.instanceMatrix.needsUpdate = true;
+  return n;
+}
+// InstancedMesh 4개: 줄기, 활엽 잎(나무마다 두 덩이), 침엽 잎(두 단 원뿔), 관목
+{
   const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), pos = new THREE.Vector3(), scl = new THREE.Vector3();
-  const ca = new THREE.Color(C.leafA), cb = new THREE.Color(C.leafB), col = new THREE.Color();
-  const up = new THREE.Vector3(0, 1, 0);
-  trees.forEach(([x, z, h, rr], i) => {
-    const r = h * rr;
-    // 줄기: 잎 속으로 조금 들어가게
-    pos.set(x, 0, z); scl.set(1, h * 0.45, 1); q.identity(); mtx.compose(pos, q, scl); trunk.setMatrixAt(i, mtx);
-    // 잎: 위아래로 살짝 길쭉, 돌려서 면 모양이 겹치지 않게
-    q.setFromAxisAngle(up, rand() * Math.PI * 2);
-    pos.set(x, h - r * 0.98, z); scl.set(r, r * 0.92, r); mtx.compose(pos, q, scl); leaf.setMatrixAt(i, mtx);
-    leaf.setColorAt(i, col.copy(ca).lerp(cb, rand()));
-  });
-  trunk.instanceMatrix.needsUpdate = true; leaf.instanceMatrix.needsUpdate = true; leaf.instanceColor.needsUpdate = true;
-  for (const m of [trunk, leaf]) {
-    m.castShadow = true; m.receiveShadow = m === trunk; m.renderOrder = 10; m.name = 'decor-trees';
+  const up = new THREE.Vector3(0, 1, 0), col = new THREE.Color();
+  const pal = (a, b) => [new THREE.Color(a), new THREE.Color(b)];
+  const LEAF = C.leaf.map(h => new THREE.Color(h)), CONE = pal(C.coneA, C.coneB), SHRUB = pal(C.shrubA, C.shrubB);
+  const broadIdx = [], coneIdx = [];
+  trees.forEach((t, i) => (t[5] === 'cone' ? coneIdx : broadIdx).push(i));
+  const broad = broadIdx.map(i => trees[i]), cone = coneIdx.map(i => trees[i]);
+  const mk = (geo, color, n) => { const m = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({ color }), Math.max(1, n)); m.count = n; return m; };
+  const meshes = [];
+  trees.forEach(t => treeRefs.push({ x: t[0], z: t[1], parts: [] }));
+  if (trees.length) {
+    const trunkGeo = new THREE.CylinderGeometry(0.16, 0.24, 1, 6, 1); trunkGeo.translate(0, 0.5, 0);
+    const trunk = mk(trunkGeo, C.trunk, trees.length);
+    trees.forEach(([x, z, h, rr, , shape], i) => {
+      const th = shape === 'cone' ? h * 0.3 : h * 0.45, tw = shape === 'cone' ? 1.1 : 1;
+      pos.set(x, 0, z); scl.set(tw, th, tw); q.identity(); mtx.compose(pos, q, scl); trunk.setMatrixAt(i, mtx);
+      treeRefs[i].parts.push([trunk, i]);
+    });
+    meshes.push(trunk);
+  }
+  if (broad.length) {
+    // 잎 세 덩이: 가운데 큰 덩이 + 양옆으로 비켜 난 덩이 둘(풍성하게, 공 하나로 보이지 않게)
+    // 색은 4단계 초록 중 하나를 고르고, 옆 덩이는 조금 밝거나 어둡게
+    const leaf = mk(new THREE.IcosahedronGeometry(1, 1), '#ffffff', broad.length * 3);
+    broad.forEach(([x, z, h, rr], i) => {
+      const r = h * rr, k = Math.floor(rand() * LEAF.length), base = LEAF[k].clone().lerp(LEAF[Math.min(LEAF.length - 1, k + 1)], rand() * 0.5);
+      const sy = 0.82 + rand() * 0.22;
+      q.setFromAxisAngle(up, rand() * Math.PI * 2);
+      pos.set(x, h - r * sy, z); scl.set(r, r * sy, r); mtx.compose(pos, q, scl); leaf.setMatrixAt(i * 3, mtx); leaf.setColorAt(i * 3, base);
+      const a0 = rand() * Math.PI * 2;
+      for (let s2 = 1; s2 <= 2; s2++) {
+        const a = a0 + s2 * (2.2 + rand() * 0.6), r2 = r * (0.6 + rand() * 0.14), up2 = s2 === 1 ? 0.18 : -0.12;
+        pos.set(x + Math.cos(a) * r * 0.58, h - r * sy + r * up2, z + Math.sin(a) * r * 0.58); scl.set(r2, r2 * 0.9, r2);
+        mtx.compose(pos, q, scl); leaf.setMatrixAt(i * 3 + s2, mtx);
+        leaf.setColorAt(i * 3 + s2, col.copy(base).multiplyScalar(s2 === 1 ? 1.06 : 0.92));
+      }
+      treeRefs[broadIdx[i]].parts.push([leaf, i * 3], [leaf, i * 3 + 1], [leaf, i * 3 + 2]);
+    });
+    meshes.push(leaf);
+  }
+  if (cone.length) {
+    // 침엽: 원뿔 두 단(아래가 넓고 위가 좁게)
+    const coneGeo = new THREE.ConeGeometry(1, 1, 8, 1); coneGeo.translate(0, 0.5, 0);
+    const needle = mk(coneGeo, '#ffffff', cone.length * 2);
+    cone.forEach(([x, z, h, rr], i) => {
+      const r = h * rr, c = col.copy(CONE[0]).lerp(CONE[1], rand()).clone();
+      q.setFromAxisAngle(up, rand() * Math.PI * 2);
+      pos.set(x, h * 0.22, z); scl.set(r, h * 0.55, r); mtx.compose(pos, q, scl); needle.setMatrixAt(i * 2, mtx); needle.setColorAt(i * 2, c);
+      pos.set(x, h * 0.5, z); scl.set(r * 0.72, h * 0.5, r * 0.72); mtx.compose(pos, q, scl); needle.setMatrixAt(i * 2 + 1, mtx); needle.setColorAt(i * 2 + 1, c);
+      treeRefs[coneIdx[i]].parts.push([needle, i * 2], [needle, i * 2 + 1]);
+    });
+    meshes.push(needle);
+  }
+  if (shrubs.length) {
+    const bush = mk(new THREE.IcosahedronGeometry(1, 1), '#ffffff', shrubs.length);
+    shrubs.forEach(([x, z, sz], i) => {
+      q.setFromAxisAngle(up, rand() * Math.PI * 2);
+      pos.set(x, sz * 0.38, z); scl.set(sz * 0.6, sz * 0.45, sz * 0.6); mtx.compose(pos, q, scl); bush.setMatrixAt(i, mtx);
+      bush.setColorAt(i, col.copy(SHRUB[0]).lerp(SHRUB[1], rand()));
+    });
+    meshes.push(bush);
+  }
+  for (const m of meshes) {
+    m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true;
+    m.castShadow = true; m.receiveShadow = false; m.renderOrder = 10; m.name = 'decor-trees';
     m.computeBoundingSphere && m.computeBoundingSphere();
     scene.add(m);
   }
+  stats.broad = broad.length; stats.cone = cone.length; stats.shrubs = shrubs.length;
 }
+
+// ── 가로등: 큰길 양쪽 30m 간격, 인도 쪽(길 가장자리 + 0.7m), 팔은 길 쪽으로. 위치는 장식(실제 가로등 자료 없음) ──
+// 가로수가 5m·15m·25m…(10m 간격)에 서므로 가로등은 10m·40m·70m…에 세워 늘 나무와 나무 한가운데(5m 떨어짐)에 오게 한다.
+const nearProp = (x, z, r) => treeRefs.some(t => (t.parts.length || t.prop) && Math.abs(t.x - x) < r && Math.abs(t.z - z) < r && Math.hypot(t.x - x, t.z - z) < r);
+{
+  const L = [];   // [x, z, 각도]
+  for (const m of majors) {
+    if (m.r.br || m.ring) continue;
+    const off = m.r.w / 2 + 0.7;
+    for (let s = 10; s < m.w.L - 5; s += 30) {
+      if (m.js.some(j => Math.abs(j.s - s) < 9)) continue;
+      const q = m.w.at(s);
+      for (const sgn of [1, -1]) {
+        const x = q.x + q.nx * off * sgn, z = q.z + q.nz * off * sgn;
+        if (!inside(x, z, 5) || inWater(x, z) || nearBuilding(x, z, 0.8) || nearRoad(x, z, 0.3, m.ri) || nearProp(x, z, 3.5)) continue;
+        const dx = -sgn * q.nx, dz = -sgn * q.nz;              // 길 쪽 방향
+        L.push([x, z, Math.atan2(-dz, dx)]);
+      }
+    }
+  }
+  if (L.length) {
+    const poleGeo = new THREE.CylinderGeometry(0.07, 0.1, 1, 6, 1); poleGeo.translate(0, 0.5, 0);
+    const armGeo = new THREE.BoxGeometry(1.4, 0.08, 0.08); armGeo.translate(0.7, 0, 0);
+    const headGeo = new THREE.SphereGeometry(0.24, 10, 6); headGeo.scale(1.3, 0.55, 1);
+    const pole = new THREE.InstancedMesh(poleGeo, new THREE.MeshLambertMaterial({ color: C.lampPole }), L.length);
+    const arm = new THREE.InstancedMesh(armGeo, new THREE.MeshLambertMaterial({ color: C.lampPole }), L.length);
+    const head = new THREE.InstancedMesh(headGeo, new THREE.MeshLambertMaterial({ color: C.lampHead, emissive: '#6e6a58' }), L.length);
+    const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), pos = new THREE.Vector3(), scl = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+    L.forEach(([x, z, a], i) => {
+      q.setFromAxisAngle(up, a);
+      pos.set(x, 0, z); scl.set(1, 6, 1); mtx.compose(pos, q, scl); pole.setMatrixAt(i, mtx);
+      pos.set(x, 5.95, z); scl.set(1, 1, 1); mtx.compose(pos, q, scl); arm.setMatrixAt(i, mtx);
+      pos.set(x + Math.cos(a) * 1.35, 5.85, z - Math.sin(a) * 1.35); mtx.compose(pos, q, scl); head.setMatrixAt(i, mtx);
+      treeRefs.push({ x, z, parts: [[pole, i], [arm, i], [head, i]] });
+    });
+    for (const m of [pole, arm, head]) { m.instanceMatrix.needsUpdate = true; m.castShadow = m !== head; m.renderOrder = 10; m.name = 'decor-lamps'; m.computeBoundingSphere && m.computeBoundingSphere(); scene.add(m); }
+  }
+  stats.lamps = L.length;
+}
+
+// 상자 여러 개를 한 덩어리로(쉼터·벤치·화분). 상자마다 색을 꼭짓점 색으로 넣는다.
+function boxPart(parts, w, h, d, x, y, z, rot, cx, cz, color) {
+  const g = new THREE.BoxGeometry(w, h, d); g.translate(x, y, z); g.rotateY(rot); g.translate(cx, 0, cz);
+  const c = new THREE.Color(color), n = g.attributes.position.count, cols = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) { cols[i * 3] = c.r; cols[i * 3 + 1] = c.g; cols[i * 3 + 2] = c.b; }
+  g.setAttribute('color', new THREE.BufferAttribute(cols, 3)); parts.push(g.toNonIndexed ? g.toNonIndexed() : g);
+}
+function addMerged(parts, name) {
+  if (!parts.length || !THREE.BufferGeometryUtils) return null;
+  const mesh = new THREE.Mesh(THREE.BufferGeometryUtils.mergeBufferGeometries(parts, false), new THREE.MeshLambertMaterial({ vertexColors: true }));
+  mesh.castShadow = true; mesh.receiveShadow = true; mesh.renderOrder = 10; mesh.name = name; scene.add(mesh); return mesh;
+}
+// 점에서 가장 가까운 차도 선분: {r, px, pz, nx, nz, side, rot} (rot: 길 방향이 상자 x 축이 되게)
+function nearestRoad(x, z, maxD) {
+  let best = null, bd = Infinity;
+  for (const [ri, i] of RG.at(x, z)) {
+    if (!vehicle[ri]) continue;
+    const r = D.roads[ri], d = segDist(x, z, r.p[i], r.p[i + 1]);
+    if (d < bd) { bd = d; best = [r, i]; }
+  }
+  if (!best || bd > maxD) return null;
+  const [r, i] = best, a = r.p[i], b = r.p[i + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+  const dx = (b[0] - a[0]) / L, dz = (b[1] - a[1]) / L, t = Math.max(0, Math.min(L, (x - a[0]) * dx + (z - a[1]) * dz));
+  const px = a[0] + dx * t, pz = a[1] + dz * t, nx = -dz, nz = dx;
+  return { r, px, pz, nx, nz, side: ((x - px) * nx + (z - pz) * nz) >= 0 ? 1 : -1, rot: -Math.atan2(dz, dx) };
+}
+
+// ── 벤치·화분: 빛의 거리·옥포성안로 보행로에 14m 간격으로 번갈아(장식). 거리 자료(STREETS)가 decor 뒤에 불러와지므로 load 뒤에 ──
+function streetProps() {
+  const ST = window.STREETS; if (!ST) return;
+  const parts = [], bush = [];
+  let benches = 0, planters = 0;
+  for (const st of ST) {
+    if (!['light', 'seongan'].includes(st.id) || !st.p || st.p.length < 2) continue;
+    const w = walker(st.p);
+    let k = 0;
+    for (let s = 7; s < w.L - 7; s += 14, k++) {
+      const q = w.at(s), nr = nearestRoad(q.x, q.z, 12); if (!nr) continue;
+      for (const sgn of [1, -1]) {
+        const off = nr.r.w / 2 + 1.1;
+        const x = nr.px + nr.nx * off * sgn, z = nr.pz + nr.nz * off * sgn;
+        if (!inside(x, z, 5) || nearBuilding(x, z, 0.7) || inWater(x, z) || nearRoad(x, z, 0.45, -1) || nearProp(x, z, 2.2)) continue;
+        const rot = nr.rot, back = 0.22 * sgn;   // 상자 z 축 = 길의 법선 방향 → 등받이는 길 반대쪽
+        if ((k + (sgn > 0 ? 0 : 1)) % 2 === 0) {
+          boxPart(parts, 1.6, 0.07, 0.42, 0, 0.45, 0, rot, x, z, C.benchWood);
+          boxPart(parts, 1.6, 0.36, 0.05, 0, 0.72, back, rot, x, z, C.benchWood);
+          for (const lx of [-0.68, 0.68]) boxPart(parts, 0.06, 0.45, 0.42, lx, 0.225, 0, rot, x, z, C.benchLeg);
+          benches++;
+        } else {
+          boxPart(parts, 1.1, 0.55, 1.1, 0, 0.275, 0, rot, x, z, C.planter);
+          bush.push([x, z]);
+          planters++;
+        }
+        treeRefs.push({ x, z, parts: [], prop: true });   // 다음 소품과 겹치지 않게 자리만 기록
+      }
+    }
+  }
+  addMerged(parts, 'decor-street');
+  if (bush.length) {
+    const g = new THREE.IcosahedronGeometry(1, 1), m = new THREE.InstancedMesh(g, new THREE.MeshLambertMaterial({ color: '#ffffff' }), bush.length);
+    const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), pos = new THREE.Vector3(), scl = new THREE.Vector3(), col = new THREE.Color(), up = new THREE.Vector3(0, 1, 0);
+    bush.forEach(([x, z], i) => {
+      q.setFromAxisAngle(up, rand() * 6.28); pos.set(x, 0.85, z); scl.set(0.55, 0.42, 0.55); mtx.compose(pos, q, scl); m.setMatrixAt(i, mtx);
+      m.setColorAt(i, col.copy(new THREE.Color(C.leaf[1 + (i % 3)])));
+    });
+    m.instanceMatrix.needsUpdate = true; m.instanceColor.needsUpdate = true; m.castShadow = true; m.renderOrder = 10; m.name = 'decor-street';
+    m.computeBoundingSphere && m.computeBoundingSphere(); scene.add(m);
+  }
+  stats.benches = benches; stats.planters = planters;
+  if (window.__decor) { window.__decor.benches = benches; window.__decor.planters = planters; }
+}
+
+// ── 버스 정류장 쉼터: SIM_DATA.stops(OSM 버스 정류장 실제 위치). sim 자료가 decor 뒤에 불러와지므로 load 뒤에 그린다 ──
+function busStops() {
+  const S = window.SIM_DATA && window.SIM_DATA.stops; if (!S || !S.length || !THREE.BufferGeometryUtils) return;
+  const parts = [];
+  const box = (...args) => boxPart(parts, ...args);
+  for (const st of S) {
+    // 가장 가까운 차도 선분의 방향으로 돌리고, 정류장 점이 있는 쪽 길 가장자리 바깥 1.2m 에 둔다
+    let best = null, bd = Infinity;
+    for (const [ri, i] of RG.at(st.x, st.z)) {
+      if (!vehicle[ri]) continue;
+      const r = D.roads[ri], d = segDist(st.x, st.z, r.p[i], r.p[i + 1]);
+      if (d < bd) { bd = d; best = [r, i]; }
+    }
+    let rot = 0, cx = st.x, cz = st.z;
+    if (best && bd < 25) {
+      const [r, i] = best, a = r.p[i], b = r.p[i + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+      const dx = (b[0] - a[0]) / L, dz = (b[1] - a[1]) / L;
+      const t = Math.max(0, Math.min(L, (st.x - a[0]) * dx + (st.z - a[1]) * dz));
+      const px = a[0] + dx * t, pz = a[1] + dz * t, nx = -dz, nz = dx;
+      const side = ((st.x - px) * nx + (st.z - pz) * nz) >= 0 ? 1 : -1;
+      const off = r.w / 2 + 1.2;
+      cx = px + nx * off * side; cz = pz + nz * off * side;
+      rot = -Math.atan2(dz, dx);
+      if (side < 0) rot += Math.PI;   // 쉼터 등판이 길 반대쪽(인도 안쪽)으로 가게
+    }
+    stats.hiddenTrees = (stats.hiddenTrees || 0) + hideTreesNear(cx, cz, 4.5);
+    spots.bus.push([+cx.toFixed(1), +cz.toFixed(1)]);   // 쉼터·표지 기둥과 겹치는 가로수는 숨긴다
+    // 지붕·등판·기둥 2개·표지 기둥·표지판
+    box(3.4, 0.12, 1.5, 0, 2.5, 0.1, rot, cx, cz, '#5b6573');
+    box(3.2, 1.9, 0.06, 0, 1.25, 0.8, rot, cx, cz, '#cfe0ec');
+    box(0.1, 2.5, 0.1, -1.55, 1.25, 0.8, rot, cx, cz, '#5b6573');
+    box(0.1, 2.5, 0.1, 1.55, 1.25, 0.8, rot, cx, cz, '#5b6573');
+    box(0.08, 2.9, 0.08, 2.3, 1.45, -0.4, rot, cx, cz, '#5b6573');
+    box(0.55, 0.55, 0.06, 2.3, 2.75, -0.4, rot, cx, cz, '#2f3b4a');
+  }
+  addMerged(parts, 'decor-bus');
+  stats.busStops = S.length;
+  if (window.__decor) { window.__decor.busStops = S.length; window.__decor.hiddenTrees = stats.hiddenTrees || 0; }
+  if (M.renderer) M.renderer.shadowMap.needsUpdate = true;
+  M.need && M.need();
+}
+function afterLoad() {
+  busStops(); streetProps();
+  if (M.renderer) M.renderer.shadowMap.needsUpdate = true;
+  M.need && M.need();
+}
+if (document.readyState === 'complete') afterLoad(); else addEventListener('load', afterLoad);
 
 // 그림자는 한 번만 계산하는 설정이라(app.js) 나무를 넣었으니 다시 계산하게 한다
 if (M.renderer) M.renderer.shadowMap.needsUpdate = true;
@@ -309,7 +619,9 @@ window.__decor = {
   trees: trees.length,
   street: trees.filter(t => t[4] === 'street').length,
   green: trees.filter(t => t[4] !== 'street').length,
-  centerM: Math.round(stats.centerM), laneM: Math.round(stats.laneM), crosswalks: stats.crosswalks,
-  majorRoads: majors.length,
+  broad: stats.broad || 0, cone: stats.cone || 0, shrubs: stats.shrubs || 0,
+  centerM: Math.round(stats.centerM), laneM: Math.round(stats.laneM), edgeM: Math.round(stats.edgeM || 0),
+  crosswalks: stats.crosswalks, stopLines: stats.stopLines, busStops: stats.busStops || 0, lamps: stats.lamps || 0,
+  spots, majorRoads: majors.length, oneway: majors.filter(m => m.r.ow).length, parking: stats.parking || 0, stalls: stats.stalls || 0,
 };
 })();
