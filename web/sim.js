@@ -498,9 +498,14 @@ const dot = (() => { const c = document.createElement('canvas'); c.width = c.hei
   const t = new THREE.CanvasTexture(c); return t; })();
 const ptsMat = new THREE.PointsMaterial({ size: 8 * MP.renderer.getPixelRatio(), sizeAttenuation: false, vertexColors: true, map: dot, alphaTest: 0.5, transparent: false, depthTest: true });
 const points = new THREE.Points(geo, ptsMat); points.renderOrder = 20; points.frustumCulled = false; scene.add(points);
+// 가까이 보면 사람 모양(아래 drawFigures). 상수는 syncDot 이 처음 불리기 전에 있어야 함
+let drawDirty = true;   // 멈춰 있을 때도 시각을 옮기면 점을 다시 그려야 한다
+const FIG_MAX = 4000, FIG_NEAR = 200, FIG_R = 420;
+function figMode() { return MP.camera.position.distanceTo(MP.controls.target) < FIG_NEAR; }
 // 2만 명 1:1이라 멀리서 8px 점이 길을 덮음 → 카메라 거리에 따라 크기(가까이 8 · 중간 5.5 · 멀리 3.5px)
 const dotPx = () => { const d = MP.camera.position.distanceTo(MP.controls.target); return d < 260 ? 6.5 : d < 620 ? 4.5 : 3.2; };
-let dotNow = 0; function syncDot() { const v = dotPx(); if (v !== dotNow) { dotNow = v; ptsMat.size = v * MP.renderer.getPixelRatio(); need(); } }
+let dotNow = 0, figNow = null; function syncDot() { const v = dotPx(); if (v !== dotNow) { dotNow = v; ptsMat.size = v * MP.renderer.getPixelRatio(); need(); }
+  const f = figMode(); if (f !== figNow || f) { figNow = f; drawDirty = true; } }
 MP.controls.addEventListener('change', syncDot); syncDot();
 // 점은 화면에 서 있는 네모라 아래쪽 반이 앞의 연석(15cm)·낮은 물체에 가려 반달처럼 보임 → 깊이를 카메라 쪽으로 조금 당김(건물은 여전히 가림)
 ptsMat.onBeforeCompile = (sh) => { sh.vertexShader = sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n  gl_Position.z -= 0.0015 * gl_Position.w;'); };
@@ -532,7 +537,25 @@ function draw(t) {
     const c = GCOL[a.g]; col[n * 3] = c.r; col[n * 3 + 1] = c.g; col[n * 3 + 2] = c.b; n++;
   }
   geo.setDrawRange(0, n); geo.attributes.position.needsUpdate = true; geo.attributes.color.needsUpdate = true;
+  drawFigures(n);
   return n;
+}
+// 가까이(카메라 200m 안) 보면 점 대신 작은 사람 모양(몸통 원기둥 + 머리 공, 부류 색). 화면 가운데 420m 안의 사람만, 최대 4,000명
+const figGeo = (() => { const body = new THREE.CylinderGeometry(0.22, 0.3, 1.15, 8); body.translate(0, 0.63, 0);
+  const head = new THREE.SphereGeometry(0.2, 10, 8); head.translate(0, 1.45, 0);
+  const g = THREE.BufferGeometryUtils.mergeBufferGeometries([body, head]); g.scale(2.1, 2.1, 2.1); return g; })();   // 실제보다 크게(약 3.5m) — 지도 높이에서 사람으로 읽히게
+const figMesh = new THREE.InstancedMesh(figGeo, new THREE.MeshLambertMaterial({ color: '#ffffff' }), FIG_MAX);
+figMesh.count = 0; figMesh.frustumCulled = false; figMesh.renderOrder = 20; figMesh.visible = false; scene.add(figMesh);
+const _fm = new THREE.Matrix4(), _fc = new THREE.Color();
+function drawFigures(n) {
+  const on = figMode(); figMesh.visible = on; points.material.visible = !on;
+  if (!on) return;
+  const tx = MP.controls.target.x, tz = MP.controls.target.z; let k = 0;
+  for (let i = 0; i < n && k < FIG_MAX; i++) {
+    const x = pos[i * 3], z = pos[i * 3 + 2]; if (Math.abs(x - tx) > FIG_R || Math.abs(z - tz) > FIG_R) continue;
+    _fm.makeTranslation(x, 0, z); figMesh.setMatrixAt(k, _fm); figMesh.setColorAt(k, _fc.setRGB(col[i * 3], col[i * 3 + 1], col[i * 3 + 2])); k++;
+  }
+  figMesh.count = k; figMesh.instanceMatrix.needsUpdate = true; if (figMesh.instanceColor) figMesh.instanceColor.needsUpdate = true;
 }
 
 // ── 화면: 하루 재생 패널 ─────────────────────────────────────
@@ -591,7 +614,6 @@ const assumed = GROUPS.filter(g => CFG.groups[g].src === '가정' || /가정/.te
 }
 $('sim-note').textContent = `가상 인물 ${' '}점 1개 = 사람 약 ${'{W}'}명. ` + (assumed ? '사람 수·교대 시간은 아직 근거 확인 전 가정 값입니다.' : '');
 let simT = T0, playing = false, speed = 15, lastNow = 0;
-let drawDirty = true;   // 멈춰 있을 때도 시각을 옮기면 점을 다시 그려야 한다
 // 재생 막대 옮기기: 예전엔 매번 05시부터 다시 계산(18시 0.3초·새벽 1시 0.5초). 이제
 //  - 앞으로 옮기면 지금 상태에서 이어서 계산
 //  - 뒤로 옮기면 1시간마다 저장해 둔 상태 중 가장 가까운 것에서 이어서 계산
@@ -916,6 +938,6 @@ function trySlot(bi, floor, sub, price, seats, runs = 3) {
   removeVirtual(s);
   return r;
 }
-window.__sim = { peakTxt, _ck: CK, runDay, experiment, seek, nodesNear, flowDay, trySlot, nodeFlow, nodeFlowAsync, restore: () => { drawDirty = true; need(); }, won, wonX, GROUPS, SUB, SUBS_OF, subOptions, NAT,
+window.__sim = { get _fig() { return figMesh; }, peakTxt, _ck: CK, runDay, experiment, seek, nodesNear, flowDay, trySlot, nodeFlow, nodeFlowAsync, restore: () => { drawDirty = true; need(); }, won, wonX, GROUPS, SUB, SUBS_OF, subOptions, NAT,
   graph: { NX, NZ, ADJ, NN }, get scen() { return scen; }, get A() { return A; }, get W() { return W; }, SHOPS, CFG, nodes: NN, get t() { return simT; } };
 })();
