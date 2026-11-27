@@ -179,7 +179,7 @@ function stripe(m, off, wd, s0, s1, y, out) {
   }
 }
 // 길을 따라 솟은 띠(연석): 윗면 + 양 옆면. 삼각형마다 감는 방향을 바깥 법선에 맞춰 앞면만 그려도 되게 한다
-function raised(m, off, wd, H, s0, s1, pos, nrm, step = 3) {
+function raised(m, off, wd, H, s0, s1, pos, nrm, step = 6) {
   const tri = (a, b, c, n) => {
     const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
     const cx = uy * vz - uz * vy, cy = uz * vx - ux * vz, cz = ux * vy - uy * vx;
@@ -187,9 +187,14 @@ function raised(m, off, wd, H, s0, s1, pos, nrm, step = 3) {
     pos.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]); nrm.push(n[0], n[1], n[2], n[0], n[1], n[2], n[0], n[1], n[2]);
   };
   const quad = (a, b, c, d, n) => { tri(a, b, c, n); tri(a, c, d, n); };
+  // 표본: 시작·끝, 길 선의 꼭짓점(꺾이는 곳은 꼭 지킴), 그 사이는 step 간격(전엔 3m 고정이라 연석 삼각형이 8.8만 개, 20 측정)
+  const S = [s0, s1]; for (const c of m.w.cum) if (c > s0 + 0.3 && c < s1 - 0.3) S.push(c);
+  S.sort((a, b) => a - b);
+  const samples = [];
+  for (let k = 0; k < S.length; k++) { samples.push(S[k]); if (k < S.length - 1) { const g = S[k + 1] - S[k], n = Math.ceil(g / step); for (let t = 1; t < n; t++) samples.push(S[k] + g * t / n); } }
   let prev = null;
-  for (let s = s0; s <= s1 + 1e-6; s = Math.min(s1, s + step)) {
-    const q = m.w.at(s), cx = q.x + q.nx * off, cz = q.z + q.nz * off, h = wd / 2;
+  for (const s of samples) {
+    const q = m.w.at(Math.min(s, m.w.L)), cx = q.x + q.nx * off, cz = q.z + q.nz * off, h = wd / 2;
     const cur = { i: [cx - q.nx * h, cz - q.nz * h], o: [cx + q.nx * h, cz + q.nz * h], nx: q.nx, nz: q.nz };
     cur.hi = TH(cur.i[0], cur.i[1]) + (TON ? LIFT : 0); cur.ho = TH(cur.o[0], cur.o[1]) + (TON ? LIFT : 0);   // 지형이 꺼져 있으면 0
     if (prev) {
@@ -198,7 +203,7 @@ function raised(m, off, wd, H, s0, s1, pos, nrm, step = 3) {
       quad([prev.i[0], prev.hi - dn, prev.i[1]], [cur.i[0], cur.hi - dn, cur.i[1]], [cur.i[0], cur.hi + H, cur.i[1]], [prev.i[0], prev.hi + H, prev.i[1]], [-cur.nx, 0, -cur.nz]);
       quad([prev.o[0], prev.ho - dn, prev.o[1]], [cur.o[0], cur.ho - dn, cur.o[1]], [cur.o[0], cur.ho + H, cur.o[1]], [prev.o[0], prev.ho + H, prev.o[1]], [cur.nx, 0, cur.nz]);
     }
-    prev = cur; if (s >= s1) break;
+    prev = cur;
   }
 }
 // 띠(꺾임 이음 각도 제한) + caps=true 면 양 끝에 둥근 원판(교차로 이음새 메움, app.js ribbon 과 같은 방식)
@@ -429,7 +434,10 @@ if (TON && window.TERRAIN) {
     const k = jj * nx + ii, x = T.x0 + ii * T.cell, z = T.z0 + jj * T.cell;
     P[k * 3] = x; P[k * 3 + 1] = TH(x, z); P[k * 3 + 2] = z; UV[k * 2] = ii / (nx - 1); UV[k * 2 + 1] = 1 - jj / (nz - 1);
   }
-  for (let jj = 0; jj < nz - 1; jj++) for (let ii = 0; ii < nx - 1; ii++) { const a = jj * nx + ii, b = a + 1, c = a + nx, d = c + 1; idx.push(a, c, b, b, c, d); }   // 위(+y)를 보게
+  // 바다 칸(네 꼭짓점이 모두 물 다각형 안)은 위에 물이 덮여 보이지 않으므로 만들지 않는다(삼각형 줄이기). 높이 0 인 땅이 비지 않게 높이가 아니라 다각형으로 판정
+  const seaV = new Uint8Array(nx * nz);
+  for (let jj = 0; jj < nz; jj++) { const z = T.z0 + jj * T.cell, rows = D.water.map(w => rowCross(w.p, z)); for (let ii = 0; ii < nx; ii++) if (rows.some(xs => inRow(xs, T.x0 + ii * T.cell))) seaV[jj * nx + ii] = 1; }
+  for (let jj = 0; jj < nz - 1; jj++) for (let ii = 0; ii < nx - 1; ii++) { const a = jj * nx + ii, b = a + 1, c = a + nx, d = c + 1; if (seaV[a] && seaV[b] && seaV[c] && seaV[d]) continue; idx.push(a, c, b, b, c, d); }   // 위(+y)를 보게
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(P, 3)); g.setAttribute('uv', new THREE.BufferAttribute(UV, 2)); g.setIndex(idx); g.computeVertexNormals();
   const tm = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: '#ffffff', map: landTex }));
   tm.renderOrder = 0; tm.receiveShadow = true; tm.name = 'ground-terrain'; scene.add(tm); made.push(tm);
