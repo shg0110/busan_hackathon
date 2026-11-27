@@ -183,9 +183,19 @@ const TEX = {
     }
   }, 2),
 };
+// 모든 삼각형을 위(+y)를 보게 감는다. DoubleSide 재질은 뒤집혀 감긴 면의 법선을 아래로 돌려 빛을 덜 받으므로(화살표가 회색으로 보이던 원인)
+function faceUp(pos, uv) {
+  for (let i = 0; i < pos.length; i += 9) {
+    const ax = pos[i], az = pos[i + 2], bx = pos[i + 3], bz = pos[i + 5], cx = pos[i + 6], cz = pos[i + 8];
+    if ((bz - az) * (cx - ax) - (bx - ax) * (cz - az) >= 0) continue;
+    for (let k = 0; k < 3; k++) { const t = pos[i + 3 + k]; pos[i + 3 + k] = pos[i + 6 + k]; pos[i + 6 + k] = t; }
+    if (uv) { const j = i / 9 * 6; for (let k = 0; k < 2; k++) { const t = uv[j + 2 + k]; uv[j + 2 + k] = uv[j + 4 + k]; uv[j + 4 + k] = t; } }
+  }
+}
 const made = [];
 function flat(pos, color, order, glow, name, tex) {
   if (!pos.length) return null;
+  faceUp(pos);
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   const nrm = new Float32Array(pos.length); for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1;
@@ -197,6 +207,31 @@ function flat(pos, color, order, glow, name, tex) {
   }
   const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color, depthWrite: false, side: THREE.DoubleSide, emissive: glow || '#000000', map: tex || null }));
   m.renderOrder = order; m.receiveShadow = true; m.name = 'ground-' + (name || order); scene.add(m); made.push(m); return m;
+}
+
+// ── 노면 글자: 운전자가 다가오며 읽도록 글자 윗부분이 진행 방향(f)을 보고, 여러 줄이면 가까운 줄부터 읽힌다(lines 는 먼 줄 → 가까운 줄).
+// 실제 노면 글자처럼 진행 방향으로 길쭉하게(세로 2.6배까지) 늘린다. items: [{ x, z, fx, fz, across, along }] → 한 메시로 합침
+function roadText(lines, color, glow, items, name, cw, ch) {
+  if (!items.length) return null;
+  const c = document.createElement('canvas'); c.width = cw; c.height = ch; const g = c.getContext('2d');
+  g.fillStyle = color; g.textAlign = 'center'; g.textBaseline = 'middle';
+  const rowH = ch / lines.length, fs = Math.min(cw / Math.max(...lines.map(t => t.length)) * 0.9, rowH / 1.2);
+  g.font = `800 ${fs}px "Pretendard", "Apple SD Gothic Neo", sans-serif`;
+  lines.forEach((t, i) => { g.save(); g.translate(cw / 2, rowH * (i + 0.5)); g.scale(1, Math.min(2.6, rowH * 0.82 / fs)); g.fillText(t, 0, 0); g.restore(); });
+  const tex = new THREE.CanvasTexture(c); tex.encoding = THREE.sRGBEncoding;
+  if (M.renderer && M.renderer.capabilities) tex.anisotropy = Math.min(8, M.renderer.capabilities.getMaxAnisotropy());
+  const pos = [], uv = [], y = 0.032;
+  for (const { x, z, fx, fz, across, along } of items) {
+    const rx = -fz, rz = fx;   // 운전자 오른쪽
+    const P = (u, v) => [x + rx * (u - 0.5) * across + fx * (v - 0.5) * along, z + rz * (u - 0.5) * across + fz * (v - 0.5) * along];
+    for (const [u, v] of [[0, 0], [1, 0], [1, 1], [0, 0], [1, 1], [0, 1]]) { const q = P(u, v); pos.push(q[0], y, q[1]); uv.push(u, v); }
+  }
+  faceUp(pos, uv);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  const nrm = new Float32Array(pos.length); for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1; geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+  const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide, emissive: glow || '#000000' }));
+  mesh.renderOrder = 8.9; mesh.name = 'ground-' + name; scene.add(mesh); made.push(mesh); return mesh;
 }
 function openSpans(m, clear) {
   const cuts = m.js.map(j => [j.s - clear, j.s + clear]).sort((a, b) => a[0] - b[0]);
@@ -328,6 +363,79 @@ if (D.parking && D.parking.length) {
   flat(stop, G.zebra, 8.9, '#3c3c3c', 'stop');
 }
 
+// ── 골목 입구 횡단보도·정지선: 골목(주거 도로)이 큰길과 만나는 입구, 큰길 인도 바깥 자리에 골목을 가로지르는 흰 줄 ──
+// 실제 위치는 확인하지 않은 장식이다(OSM 에 옥포 횡단보도 점이 없다). 큰길 신호등(seohogyun-20)이 붙지 않도록 자리는 따로(spots.crosswalkMinor).
+const spotsMinor = [];
+{
+  const pos = [], stop = [], done = new Set();
+  D.roads.forEach((r, ri) => {
+    if (!vehicle[ri] || r.k !== 'residential' || r.br || r.p.length < 2) return;
+    const w = walker(r.p);
+    r.p.forEach((p, i) => {
+      if (!isJunction(p) || majorAt(p) < 2) return;   // 큰길이 지나가는 교차점만
+      // 큰길 반폭 + 인도 + 1.5m 바깥(교차로 안쪽 모서리 다음)
+      let mw = 12; for (const m of majors) if (m.r.p.some(q => key(q) === key(p))) { mw = m.r.w; break; }
+      const back = mw / 2 + WALK_W + 1.5;
+      const dirs = i === 0 ? [1] : i === r.p.length - 1 ? [-1] : [1, -1];
+      for (const dir of dirs) {
+        const sc = w.cum[i] + dir * (back + 1.5);
+        if (sc < 1.5 || sc > w.L - 1.5) continue;
+        const q = w.at(sc), k = Math.round(q.x / 4) + ':' + Math.round(q.z / 4);
+        if (done.has(k)) continue; done.add(k);
+        const m = { r, w, js: [] }, half = r.w / 2 - 0.4;
+        for (let o = -half; o <= half + 1e-6; o += 0.9) stripe(m, o, 0.45, sc - 1.5, sc + 1.5, 0.03, pos);
+        spotsMinor.push([+q.x.toFixed(1), +q.z.toFixed(1), r.w]);
+        const ss = sc + dir * 2.2;                     // 정지선: 큰길 쪽으로 나가는 차로(오른쪽)에, 횡단보도 바로 바깥
+        if (ss > 0.5 && ss < w.L - 0.5) stripe(m, dir * r.w / 4, r.w / 2 - 0.3, ss - 0.2, ss + 0.2, 0.03, stop);
+      }
+    });
+  });
+  flat(pos, G.zebra, 8.9, '#3c3c3c', 'zebra-minor');
+  flat(stop, G.zebra, 8.9, '#3c3c3c', 'stop-minor');
+  stats.minorCrosswalks = spotsMinor.length;
+}
+
+// ── 점자블록(점형): 큰길 횡단보도 양 끝 인도 쪽, 횡단보도 폭 × 0.6m 노란 판(점 무늬 질감) ──
+{
+  const pos = [], done = new Set();
+  for (const m of majors) for (const j of m.js) {
+    if (j.major < 3 || m.ring || m.r.br) continue;
+    for (const dir of [-1, 1]) {
+      const s = j.s + dir * 10;
+      if (s < 2 || s > m.w.L - 2) continue;
+      const q = m.w.at(s), k = Math.round(q.x / 6) + ':' + Math.round(q.z / 6);
+      if (done.has(k)) continue; done.add(k);
+      for (const sgn of [1, -1]) stripe(m, sgn * (m.r.w / 2 + 0.35 + 0.3), 0.6, s - 2.2, s + 2.2, 0.028, pos);
+    }
+  }
+  const dots = canvasTex(64, (g, n) => {
+    g.fillStyle = '#f2c94c'; g.fillRect(0, 0, n, n);
+    g.fillStyle = 'rgba(160,110,0,0.55)';
+    for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) { g.beginPath(); g.arc(x * 16 + 8, y * 16 + 8, 4, 0, Math.PI * 2); g.fill(); }
+  }, 0.3);
+  const tm = flat(pos, '#ffffff', 8.9, null, 'tactile', dots);
+  stats.tactile = pos.length / 18 / 2;   // 대략적인 판 수(띠 조각 기준)
+}
+
+// ── 맨홀 뚜껑: 큰길 가운데에서 비켜 35m 마다, 골목 50m 마다. 둥근 진회색 판 + 밝은 테(장식) ──
+{
+  const lid = [], rim = [], r0 = rng(31);
+  const disc = (x, z, rad, y, out) => { const n = 14; for (let i = 0; i < n; i++) { const a0 = i / n * Math.PI * 2, a1 = (i + 1) / n * Math.PI * 2; out.push(x, y, z, x + Math.cos(a1) * rad, y, z + Math.sin(a1) * rad, x + Math.cos(a0) * rad, y, z + Math.sin(a0) * rad); } };
+  let n = 0;
+  D.roads.forEach((r, ri) => {
+    if (!vehicle[ri] || r.br || r.p.length < 2 || !(MAJOR.has(r.k) || r.k === 'residential')) return;
+    const w = walker(r.p), gap = MAJOR.has(r.k) ? 35 : 50;
+    for (let s = gap * (0.3 + r0() * 0.5); s < w.L - 5; s += gap * (0.85 + r0() * 0.3)) {
+      const q = w.at(s), off = (r0() < 0.5 ? -1 : 1) * r.w * (0.12 + r0() * 0.12);
+      const x = q.x + q.nx * off, z = q.z + q.nz * off;
+      disc(x, z, 0.42, 0.026, rim); disc(x, z, 0.34, 0.027, lid); n++;
+    }
+  });
+  flat(rim, '#a9adb3', 8.6, null, 'manhole-rim');
+  flat(lid, '#5d636b', 8.65, null, 'manhole');
+  stats.manholes = n;
+}
+
 // ── 진행 방향 화살표: 횡단보도가 있는 큰길 교차로로 들어오는 차로에, 정지선 바깥 8~13m 자리에 흰 직진 화살표 ──
 // 우측 통행이라 들어오는 차로는 진행 방향 오른쪽(정지선과 같은 쪽). 일방통행은 진행 방향(선의 +s) 쪽에서만.
 const arrowsAt = [];
@@ -383,32 +491,19 @@ const schoolSpots = [];
         stripe(m, 0, r.w - 0.5, a0, b0, 0.025, red);
         const pts = []; for (let s = a0; s <= b0 + 1e-6; s += 4) { const q = w.at(Math.min(s, b0)); pts.push([+q.x.toFixed(1), +q.z.toFixed(1)]); }
         schoolSpots.push({ p: pts, w: r.w, n: sc.n });
-        if (b0 - a0 >= 16) text.push({ q: w.at((a0 + b0) / 2), w: r.w });
+        if (b0 - a0 >= 16) text.push({ q: w.at((a0 + b0) / 2), w: r.w, ow: !!r.ow });
       }
     }
   });
   flat(red, '#9c4a40', 8.5, null, 'school-red');   // 빛이 1.2배 밝히므로 차분한 벽돌빛으로 적는다
-  // 글자: 캔버스로 쓴 흰 글자를 길 방향으로 눕힌 판(길 폭 × 7m)
-  if (text.length) {
-    const tex = (() => {
-      const c = document.createElement('canvas'); c.width = 512; c.height = 1024; const g = c.getContext('2d');
-      g.translate(256, 512); g.rotate(-Math.PI / 2); g.fillStyle = '#ffffff'; g.textAlign = 'center'; g.textBaseline = 'middle';
-      g.font = '800 150px "Pretendard", "Apple SD Gothic Neo", sans-serif';
-      g.fillText('어린이', 0, -95); g.fillText('보호구역', 0, 95);
-      const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; return t;
-    })();
-    for (const { q, w } of text) {
-      const L = 7, W = Math.min(w - 1, 6), y = 0.032, ax = q.dx, az = q.dz, nx = q.nx, nz = q.nz;
-      const P = (u, v) => [q.x + ax * u + nx * v, q.z + az * u + nz * v];
-      const a = P(-L / 2, W / 2), b = P(L / 2, W / 2), c = P(L / 2, -W / 2), d = P(-L / 2, -W / 2);
-      const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.Float32BufferAttribute([a[0], y, a[1], b[0], y, b[1], c[0], y, c[1], a[0], y, a[1], c[0], y, c[1], d[0], y, d[1]], 3));
-      g.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 0], 2));
-      g.setAttribute('normal', new THREE.Float32BufferAttribute([0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0], 3));
-      const mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide, emissive: '#3c3c3c' }));
-      mesh.renderOrder = 8.9; mesh.name = 'ground-school-text'; scene.add(mesh); made.push(mesh);
-    }
+  // 글자: 양방향 길은 차로마다(들어오는 차 기준), 일방은 길 가운데 하나. 길이 7m
+  const items = [];
+  for (const { q, w, ow } of text) {
+    if (ow) items.push({ x: q.x, z: q.z, fx: q.dx, fz: q.dz, across: Math.min(w - 1, 3.2), along: 7 });
+    else for (const dir of [1, -1]) items.push({ x: q.x + q.nx * dir * w / 4, z: q.z + q.nz * dir * w / 4, fx: q.dx * dir, fz: q.dz * dir, across: Math.min(w / 2 - 0.5, 3.2), along: 7 });
   }
+  roadText(['보호구역', '어린이'], '#ffffff', '#3c3c3c', items, 'school-text', 512, 1024);
+  text.length = items.length;
   stats.schoolZones = schoolSpots.length; stats.schoolTexts = text.length;
 }
 
@@ -445,9 +540,11 @@ const schoolSpots = [];
       for (const i of [0, 2, 1, 0, 3, 2]) { const [px, pz] = q[i]; pos.push(px, 0.004, pz); col.push(deep.r, deep.g, deep.b, A(px, pz)); }
     }
     const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));   // [0,2,1]·[0,3,2] 순서라 이미 위(+y)를 본다
     g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
-    const mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
+    const nrm = new Float32Array(pos.length); for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1; g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+    // 빛을 받는 재질이라 밤(ea #63 하루 빛)에는 함께 어두워진다
+    const mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
     mesh.renderOrder = 4.1; mesh.name = 'ground-water-depth'; scene.add(mesh); made.push(mesh);
     stats.waterCells = pos.length / 18;
   }
@@ -475,13 +572,14 @@ const schoolSpots = [];
   if (M.water) M.water.visible = false;
 }
 
+let edgeFollow = null;
 // ── 지도 가장자리 흐리기(바닥): 자료가 끝나는 곳에서 안쪽 160m 까지 땅색으로 부드럽게 덮는다 ──
 // 같은 식을 ea 의 건물에도 쓴다(__map.edgeFade 가 있으면 그것, 없으면 같은 식: smoothstep(0, 160, 가장자리까지 거리)).
 {
   const HX = D.meta.half[0], HZ = D.meta.half[1], BAND = 160;
   const fade = (typeof M.edgeFade === 'function') ? M.edgeFade : (x, z) => { const d = Math.min(HX - Math.abs(x), HZ - Math.abs(z)); const t = Math.max(0, Math.min(1, d / BAND)); return t * t * (3 - 2 * t); };
   const c = new THREE.Color(G.ground), pos = [], col = [], step = 20;
-  const push = (x, z) => { pos.push(x, 0.05, z); col.push(c.r, c.g, c.b, 1 - fade(x, z)); };
+  const push = (x, z) => { pos.push(x, 0.05, z); col.push(1, 1, 1, 1 - fade(x, z)); };   // 색은 재질 쪽(배경색을 따라감)
   const quad = (xa, za, xb, zb) => { push(xa, za); push(xb, za); push(xb, zb); push(xa, za); push(xb, zb); push(xa, zb); };
   for (let x = -HX; x < HX; x += step) for (let z = -HZ; z < HZ; z += step) {
     const xb = Math.min(HX, x + step), zb = Math.min(HZ, z + step);
@@ -491,8 +589,13 @@ const schoolSpots = [];
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
-  const mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
+  const mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: c, vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false }));
   mesh.renderOrder = 8.95; mesh.name = 'ground-edge-fade'; scene.add(mesh); made.push(mesh);
+  // 하루 빛(ea #63): 밤에는 배경·안개가 어두워지므로 이 띠도 배경색을 따라가야 지도 끝에 흰 띠가 남지 않는다
+  // 그릴 때마다 배경색을 복사한다(map-light 는 밤 정도가 0.02 넘게 바뀔 때만 와서 노을 구간의 배경 변화를 다 따라가지 못함)
+  const follow = () => { const bg = M.scene.background; if (bg && bg.isColor) mesh.material.color.copy(bg); };
+  mesh.onBeforeRender = follow;
+  edgeFollow = follow;
 }
 
 // 다른 파일(details.js 주차된 차)이 피할 횡단보도 자리: decor.js 가 만든 같은 배열에 채운다(형식 [x, z, 길 폭] 그대로)
@@ -500,14 +603,46 @@ if (window.__decor && window.__decor.spots && Array.isArray(window.__decor.spots
 else { window.__decor = window.__decor || {}; window.__decor.spots = Object.assign(window.__decor.spots || {}, { crosswalk: spotsCross }); }
 // 어린이보호구역으로 칠한 길 중심선 구간(seohogyun-20 의 울타리·표지판이 load 뒤에 읽음): [{ p: [[x, z]..], w: 길 폭 }]
 if (window.__decor && window.__decor.spots) window.__decor.spots.school = schoolSpots.map(z => ({ p: z.p, w: z.w }));
+if (window.__decor && window.__decor.spots) window.__decor.spots.crosswalkMinor = spotsMinor;   // 골목 입구 횡단보도 [x, z, 길 폭](신호등 없음)
 
 // app.js 의 옛 길 띠(보행로·골목·큰길 3겹)는 이 파일 포장으로 바꾼다. 땅 색도 바닥 위계에 맞춘다.
 if (Array.isArray(M.roads)) for (const r of M.roads) if (r) r.visible = false;
 if (M.ground && M.ground.material) M.ground.material.color.set(G.ground);
 if (M.scene.background && M.scene.background.isColor) M.scene.background.set(G.ground);
 if (M.scene.fog) M.scene.fog.color.set(G.ground);
+if (edgeFollow) edgeFollow();   // 낮 기준 배경을 정한 다음 한 번 맞춘다(밤이면 ea 가 바꾼 뒤 map-light 로 다시 맞춤)
 if (M.greens) for (const k of ['wood', 'green', 'pitch']) { const g = M.greens[k]; if (g && g.material) g.material.color.set(G[k]); }
 if (M.water && M.water.material) M.water.material.color.set(G.water);
+
+// ── 버스 정류장 노면 표시: 정류장 쉼터(seohogyun-20, decor.js 가 load 뒤 spots.bus 에 채움) 앞 차도 가장자리에 노란 점선 상자(15m × 3m)와 '버스' 글자 ──
+function busMarks() {
+  const B = (window.__decor && window.__decor.spots && window.__decor.spots.bus) || [];
+  if (!B.length) return;
+  const box = [], txt = [];
+  for (const [bx, bz] of B) {
+    // 가장 가까운 차도 선분
+    let best = null;
+    D.roads.forEach((r, ri) => { if (!vehicle[ri] || r.p.length < 2) return;
+      for (let i = 0; i < r.p.length - 1; i++) { const d = segDist(bx, bz, r.p[i], r.p[i + 1]); if (!best || d < best.d) best = { d, r, i }; } });
+    if (!best || best.d > best.r.w / 2 + WALK_W + 6) continue;
+    const a = best.r.p[best.i], b = best.r.p[best.i + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, dx = (b[0] - a[0]) / L, dz = (b[1] - a[1]) / L;
+    const t = Math.max(0, Math.min(L, (bx - a[0]) * dx + (bz - a[1]) * dz)), cx = a[0] + dx * t, cz = a[1] + dz * t;
+    let nx = -dz, nz = dx; if ((bx - cx) * nx + (bz - cz) * nz < 0) { nx = -nx; nz = -nz; }   // 쉼터 쪽
+    const off = best.r.w / 2 - 1.7;                                                          // 차도 가장자리 안쪽 3m 상자의 가운데
+    const ox = cx + nx * off, oz = cz + nz * off, y = 0.03;
+    const P = (u, v) => [ox + dx * u + nx * v, oz + dz * u + nz * v];
+    const seg = (p0, p1, wd) => { const ddx = p1[0] - p0[0], ddz = p1[1] - p0[1], l = Math.hypot(ddx, ddz) || 1, ex = -ddz / l * wd / 2, ez = ddx / l * wd / 2;
+      box.push(p0[0] + ex, y, p0[1] + ez, p1[0] + ex, y, p1[1] + ez, p0[0] - ex, y, p0[1] - ez, p0[0] - ex, y, p0[1] - ez, p1[0] + ex, y, p1[1] + ez, p1[0] - ex, y, p1[1] - ez); };
+    const dashLine = (u0, v0, u1, v1) => { const l = Math.hypot(u1 - u0, v1 - v0); for (let s = 0; s < l; s += 1.5) { const s1 = Math.min(l, s + 0.9); seg(P(u0 + (u1 - u0) * s / l, v0 + (v1 - v0) * s / l), P(u0 + (u1 - u0) * s1 / l, v0 + (v1 - v0) * s1 / l), 0.18); } };
+    dashLine(-7.5, -1.5, 7.5, -1.5); dashLine(-7.5, 1.5, 7.5, 1.5); dashLine(-7.5, -1.5, -7.5, 1.5); dashLine(7.5, -1.5, 7.5, 1.5);
+    txt.push({ x: ox, z: oz, fx: nz, fz: -nx, across: 2.4, along: 4.5 });   // 이 차로는 연석(쉼터 쪽 n)이 운전자 오른쪽
+  }
+  flat(box, '#f2c230', 8.9, '#2a2208', 'bus-box');
+  roadText(['버스'], '#f2c230', '#2a2208', txt, 'bus-text', 256, 512);
+  if (window.__ground) window.__ground.busMarks = txt.length;
+  M.need && M.need();
+}
+if (document.readyState === 'complete') setTimeout(busMarks, 0); else addEventListener('load', busMarks);   // decor.js 의 load 처리 다음에 돈다
 
 if (M.renderer) M.renderer.shadowMap.needsUpdate = true;
 M.need && M.need();
@@ -517,6 +652,7 @@ window.__ground = {
   meshes: made.length, majorRoads: majors.length, hidOld: Array.isArray(M.roads) ? M.roads.filter(r => r && !r.visible).length : 0,
   centerM: Math.round(stats.centerM), laneM: Math.round(stats.laneM), edgeM: Math.round(stats.edgeM),
   crosswalks: stats.crosswalks, stopLines: stats.stopLines, parking: stats.parking, stalls: stats.stalls,
+  minorCrosswalks: stats.minorCrosswalks || 0, manholes: stats.manholes || 0, busMarks: 0,
   arrows: stats.arrows || 0, schoolZones: stats.schoolZones || 0, schoolTexts: stats.schoolTexts || 0, waterCells: stats.waterCells || 0, coastM: stats.coastM || 0,
   schoolSpots, arrowsAt,
 };
