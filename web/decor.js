@@ -448,8 +448,103 @@ function busStops() {
   if (M.renderer) M.renderer.shadowMap.needsUpdate = true;
   M.need && M.need();
 }
+// ── 신호등: 공공데이터포털 표준데이터의 실제 자리에만 세운다(window.FACILITIES, seohogyun-31 이 만듦) ──
+//   차량·보행 = 전국신호등표준데이터 좌표(signals), 보행 = 전국횡단보도표준데이터 '보행자신호등유무'가 있음인 횡단보도 양 끝(crosswalks)
+// 자료에 방향이 없어서 기둥은 가장 가까운 차도 쪽을 보게 돌린다. 1.5m 안에 몰린 신호등은 한 기둥으로 묶는다.
+// 차량 신호등: 6m 기둥 + 길 쪽 팔 + 가로형 3구. 보행 신호등: 3m 기둥 + 2구. 켜진 불(초록/빨강)은 그림이다
+function nearVehicleRoad(x, z, maxD) {
+  let best = null, bd = Infinity;
+  for (const [ri, i] of RG.at(x, z)) {
+    if (!vehicle[ri]) continue;
+    const r = D.roads[ri], d = segDist(x, z, r.p[i], r.p[i + 1]);
+    if (d < bd) { bd = d; best = [r, i]; }
+  }
+  if (!best || bd > maxD) return null;
+  const [r, i] = best, a = r.p[i], b = r.p[i + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+  const dx = (b[0] - a[0]) / L, dz = (b[1] - a[1]) / L, t = Math.max(0, Math.min(L, (x - a[0]) * dx + (z - a[1]) * dz));
+  return { r, d: bd, px: a[0] + dx * t, pz: a[1] + dz * t, dx, dz };
+}
+function realSignals() {
+  const F = window.FACILITIES;
+  const S = Array.isArray(F && F.signals) ? F.signals.slice() : [];
+  // 보행 신호등: 전국횡단보도표준데이터에서 '보행자신호등 있음'(ped)인 횡단보도의 양 끝. 31의 자료는 횡단보도를 차도 중심선에 맞춘 자리(x, z)와
+  // 길 방향(dx, dz), 그려진 차도 폭(span)을 준다. 기둥은 점자블록(span/2 + 0.35~0.95m) 바로 뒤 span/2 + 1.3m 에, 등은 건너편을 본다.
+  // 신호등 표준데이터에 4m 안 실제 보행 신호등이 있으면 그 끝은 건너뛴다(지금 옥포는 신호등 표준데이터에 0건)
+  let fromCross = 0;
+  for (const c of (F && Array.isArray(F.crosswalks) ? F.crosswalks : [])) {
+    if (!c.ped || !inside(c.x, c.z, 2) || !(c.dx || c.dz)) continue;
+    const half = (c.span > 0 ? c.span : 8) / 2 + 1.3, nx = -c.dz, nz = c.dx;
+    for (const sg of [1, -1]) {
+      const x = c.x + nx * half * sg, z = c.z + nz * half * sg;
+      if (S.some(s => s.kind === 'ped' && Math.hypot(s.x - x, s.z - z) < 4)) continue;
+      S.push({ x, z, kind: 'ped', cx: c.x, cz: c.z }); fromCross++;
+    }
+  }
+  if (!S.length) return { car: 0, ped: 0, poles: 0, fromCross: 0 };
+  const groups = [];
+  for (const s of S) {
+    if (!inside(s.x, s.z, 2)) continue;
+    const g = groups.find(g => Math.hypot(g.x - s.x, g.z - s.z) < 1.5);
+    if (g) g.items.push(s); else groups.push({ x: s.x, z: s.z, items: [s] });
+  }
+  const body = [], glow = [], POLE = '#4a5058', HOUSE = '#24282e';
+  let car = 0, ped = 0, k = 0;
+  for (const g of groups) {
+    const nr = nearVehicleRoad(g.x, g.z, 15);
+    const hasCar = g.items.some(s => s.kind === 'car'), hasPed = g.items.some(s => s.kind === 'ped');
+    // 지역 축: +z 가 길 쪽(가장 가까운 차도 중심선을 향함). 차도가 없으면 돌리지 않음
+    let rot = 0, toRoad = 0;
+    const cw = g.items.find(s => s.cx !== undefined);   // 횡단보도에서 온 기둥은 그 횡단보도 가운데(건너편)를 보게
+    if (cw) { const ax = cw.cx - g.x, az = cw.cz - g.z, L = Math.hypot(ax, az) || 1; rot = Math.atan2(ax / L, az / L); toRoad = Math.min(L, 6.5); }
+    else if (nr) { const ax = nr.px - g.x, az = nr.pz - g.z, L = Math.hypot(ax, az) || 1; rot = Math.atan2(ax / L, az / L); toRoad = Math.min(L, 6.5); }
+    const lit = (k++ % 2 === 0);   // 기둥마다 번갈아(차량 초록·보행 빨강 / 차량 빨강·보행 초록)
+    const B = (w, h, d, x, y, z, col, arr = body) => { const geo = new THREE.BoxGeometry(w, h, d); geo.translate(x, y, z); geo.rotateY(rot); geo.translate(g.x, 0, g.z);
+      const c = new THREE.Color(col), n = geo.attributes.position.count, cols = new Float32Array(n * 3); for (let i = 0; i < n; i++) cols.set([c.r, c.g, c.b], i * 3);
+      geo.setAttribute('color', new THREE.BufferAttribute(cols, 3)); arr.push(geo.toNonIndexed()); };
+    const H = hasCar ? 6.2 : 3.1;
+    B(0.2, H, 0.2, 0, H / 2, 0, POLE);
+    if (hasCar) {
+      const arm = Math.max(1.2, toRoad - 0.5);
+      B(0.13, 0.13, arm, 0, 6.0, arm / 2, POLE);
+      const hz = arm - 0.65;   // 가로형 3구: 팔을 따라 길게 매달고(지역 z), 등은 다가오는 차 쪽(길 방향, 지역 ±x)을 본다
+      B(0.34, 0.42, 1.3, 0, 5.82, hz, HOUSE);
+      for (const [zk, on, off] of [[0.42, '#ff4d4f', '#4a2326'], [0, '#ffc53d', '#4a3d1c'], [-0.42, '#38d27a', '#1d3d2b']]) {
+        const isOn = (zk === -0.42 && lit) || (zk === 0.42 && !lit);
+        for (const f of [1, -1]) B(0.04, 0.26, 0.26, f * 0.19, 5.82, hz + zk, isOn ? on : off, glow);
+      }
+      car += g.items.filter(s => s.kind === 'car').length;
+    }
+    if (hasPed) {
+      const y0 = hasCar ? 2.95 : 2.45;
+      B(0.3, 0.72, 0.26, 0, y0, 0.24, HOUSE);                                          // 보행 2구
+      for (const f of [1, -1]) { B(0.18, 0.22, 0.04, 0, y0 + 0.17, 0.24 + f * 0.15, lit ? '#4a2326' : '#ff4d4f', glow); B(0.18, 0.22, 0.04, 0, y0 - 0.17, 0.24 + f * 0.15, lit ? '#38d27a' : '#1d3d2b', glow); }
+      ped += g.items.filter(s => s.kind === 'ped').length;
+    }
+    hideTreesNear(g.x, g.z, 1.5);
+  }
+  addMerged(body, 'decor-signal');
+  if (glow.length && THREE.BufferGeometryUtils) {
+    const m = new THREE.Mesh(THREE.BufferGeometryUtils.mergeBufferGeometries(glow, false), new THREE.MeshBasicMaterial({ vertexColors: true }));
+    m.renderOrder = 10; m.name = 'decor-signal-light'; scene.add(m);
+  }
+  return { car, ped, poles: groups.length, fromCross };
+}
+
 // ── 지도 밖 큰 곳 방향 이름표(한화오션 옥포조선소 등, OSM 지명): 가운데에서 그쪽으로 그은 선이 지도 가장자리(안쪽 45m)와 만나는 곳에 '…방향'.
 // 가상 손님의 큰 몫이 조선소 통근자라 어디서 오는지 보이게 한다. 이름과 방향은 OSM 자료 그대로다
+// 어린이보호구역 시설 이름표: 전국어린이보호구역표준데이터의 시설 위치(FACILITIES.schoolZones). 지정 범위 자료가 없어 바닥·울타리·표지판은 그리지 않는다
+function schoolLabels() {
+  const Z = window.FACILITIES && window.FACILITIES.schoolZones, box = document.getElementById('labels');
+  if (!Array.isArray(Z) || !Z.length || !M.labels || !box) return 0;
+  let n = 0;
+  for (const z of Z) {
+    if (!inside(z.x, z.z, 2)) continue;
+    const el = document.createElement('div'); el.className = 'lbl place kid';
+    el.innerHTML = '<b>어린이보호구역</b>' + (M.esc ? M.esc(z.name) : String(z.name).replace(/[<&>"]/g, ''));
+    box.appendChild(el); M.labels.push({ el, x: z.x, y: 2, z: z.z, pri: 2, kind: 'place', w: 0, h: 0 }); n++;   // pri 2: 첫 화면(멀리)에선 숨고 가까이 볼 때만(빈 층 표시와 다투지 않게)
+  }
+  return n;
+}
 function edgeLabels() {
   if (!M.labels) return 0;
   const box = document.getElementById('labels'); if (!box) return 0;
@@ -466,8 +561,9 @@ function edgeLabels() {
 
 function afterLoad() {
   busStops();
-  try { stats.areaLabels = edgeLabels(); } catch (e) { console.warn('decor 이름표', e); }
-  if (window.__decor) window.__decor.areaLabels = stats.areaLabels || 0;
+  try { stats.signals = realSignals(); } catch (e) { console.warn('decor 신호등', e); }
+  try { stats.areaLabels = edgeLabels(); stats.schoolLabels = schoolLabels(); } catch (e) { console.warn('decor 이름표', e); }
+  if (window.__decor) { window.__decor.areaLabels = stats.areaLabels || 0; window.__decor.signals = stats.signals || null; window.__decor.schoolLabels = stats.schoolLabels || 0; }
   if (M.renderer) M.renderer.shadowMap.needsUpdate = true;
   M.need && M.need();
 }
