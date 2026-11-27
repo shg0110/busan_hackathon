@@ -138,9 +138,9 @@ hot.forEach((h, k) => {
   // 고리·속은 땅에 바로 그린다(지형이 켜지면 꼭짓점마다 땅 높이 — 평평한 원판이면 비탈에 묻히거나 뜸)
   const drape = (g) => { g.rotateX(-Math.PI / 2); g.translate(h.x, 0, h.z); const pa = g.attributes.position; for (let i = 0; i < pa.count; i++) pa.setY(i, pa.getY(i) + M.hAt(pa.getX(i), pa.getZ(i))); return g; };
   const ring = new THREE.Mesh(drape(new THREE.RingGeometry(RAD - 2.2, RAD, 96)), new THREE.MeshBasicMaterial({ color: STATE.empty.col, transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide }));
-  ring.position.y = 0.12; ring.renderOrder = 9.5;
+  ring.position.y = 0.12 + M.GL; ring.renderOrder = 9.5;
   const fill = new THREE.Mesh(drape(new THREE.CircleGeometry(RAD - 2.2, 48, 0, Math.PI * 2)), new THREE.MeshBasicMaterial({ color: STATE.empty.col, transparent: true, opacity: 0.1, depthWrite: false, side: THREE.DoubleSide }));
-  fill.position.y = 0.1; fill.renderOrder = 9.4;
+  fill.position.y = 0.1 + M.GL; fill.renderOrder = 9.4;
   hotGroup.add(ring, fill);
   const el = document.createElement('div'); el.className = 'lbl place hot'; el.innerHTML = `<b>${k + 1}</b>가게 없는 층 ${h.s}개`;
   document.getElementById('labels').appendChild(el);

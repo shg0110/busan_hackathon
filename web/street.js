@@ -107,7 +107,7 @@ function laneStrip(q, half, off, y, out) {   // 선을 따라 [off-half, off+hal
   }
 }
 function meshOf(pos, color, opacity, order) {
-  if (M.TON) for (let i = 0; i < pos.length; i += 3) pos[i + 1] += M.hAt(pos[i], pos[i + 2]);   // 지형 켜지면 꼭짓점마다 땅 높이
+  if (M.TON) for (let i = 0; i < pos.length; i += 3) pos[i + 1] += M.hAt(pos[i], pos[i + 2]) + M.GL;   // 지형 켜지면 꼭짓점마다 땅 높이 + 바닥층 위
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, side: THREE.DoubleSide }));
   m.renderOrder = order; return m;
@@ -141,9 +141,9 @@ function drawBand(s) {
   const mid = q[Math.floor(q.length / 2)];
   ends.forEach((e, k) => {
     const disc = new THREE.Mesh(new THREE.CircleGeometry(4.2, 28), new THREE.MeshBasicMaterial({ color: '#212529', depthWrite: false }));
-    disc.rotation.x = -Math.PI / 2; disc.position.set(e[0], 0.1 + M.hAt(e[0], e[1]), e[1]); disc.renderOrder = 9.7; band.add(disc);
+    disc.rotation.x = -Math.PI / 2; disc.position.set(e[0], 0.1 + M.GL + M.hAt(e[0], e[1]), e[1]); disc.renderOrder = 9.7; band.add(disc);
     const ring = new THREE.Mesh(new THREE.RingGeometry(4.2, 5.4, 28), new THREE.MeshBasicMaterial({ color: '#ffd43b', depthWrite: false }));
-    ring.rotation.x = -Math.PI / 2; ring.position.set(e[0], 0.11 + M.hAt(e[0], e[1]), e[1]); ring.renderOrder = 9.7; band.add(ring);
+    ring.rotation.x = -Math.PI / 2; ring.position.set(e[0], 0.11 + M.GL + M.hAt(e[0], e[1]), e[1]); ring.renderOrder = 9.7; band.add(ring);
     const dir = (() => { const dx = e[0] - mid[0], dz = e[1] - mid[1]; return Math.abs(dx) > Math.abs(dz) ? (dx > 0 ? '동쪽' : '서쪽') : (dz > 0 ? '남쪽' : '북쪽'); })();
     addLabel(names ? `${k ? '끝' : '시작'} · ${names[k]}` : `${dir} 끝`, 'street-end', e[0], 3, e[1]);
   });
@@ -248,7 +248,7 @@ function render(s) {
 }
 function flow(s) {
   if (!SIM) { document.getElementById('st-flow').innerHTML = ''; return; }
-  const key = s.id;
+  const key = s.id + ':' + SIM.cfgVer;   // 시간 정하기를 바꾸면 다시 계산
   if (!flowCache[key]) {
     const set = SIM.nodesNear(s.pRoad || s.p, 14);   // 실제 도로에 붙인 선(drawBand 에서 만듦) 기준
     flowCache[key] = { wd: SIM.flowDay(false, set), we: SIM.flowDay(true, set) };
@@ -378,5 +378,6 @@ else {
 // 밤에는 거리 층 띠도 제 색 그대로(floors.js 와 같게)
 document.addEventListener('map-light', (e) => { if (!sBands) return; const n = e.detail.night >= 0.5, basic = sBands.material.isMeshBasicMaterial;
   if (n !== basic) { sBands.material.dispose(); sBands.material = n ? new THREE.MeshBasicMaterial({ vertexColors: true }) : new THREE.MeshLambertMaterial({ vertexColors: true }); need(); } });
+document.addEventListener('sim-config', () => { if (cur && SIM) flow(cur); });
 window.__street = { choose, get cur() { return cur; }, flowCache };
 })();

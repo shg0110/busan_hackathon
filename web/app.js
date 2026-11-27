@@ -212,7 +212,7 @@ function drawBoundary(k) {
       if (carry >= (on ? DASH : GAP) - 1e-6) { carry = 0; on = !on; }
     }
   }
-  if (TON) for (let i = 0; i < pos.length; i += 3) pos[i + 1] += hAt(pos[i], pos[i + 2]);
+  if (TON) for (let i = 0; i < pos.length; i += 3) pos[i + 1] += hAt(pos[i], pos[i + 2]) + GL;
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   bndMesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: '#3d434a', depthWrite: false, side: THREE.DoubleSide, transparent: true, opacity: 0.75 }));
   bndMesh.renderOrder = 8.8; bndMesh.frustumCulled = false; scene.add(bndMesh); need && need();
@@ -225,6 +225,8 @@ const B = D.buildings;
 // 지형(seohogyun-31 terrain.js, 기본 꺼짐·?terrain=1): 건물 바닥을 발자국 아래 가장 낮은 땅 높이로 올린다(b.b0 = 원래 값).
 // b.b 를 쓰는 층 띠·층 단면·거리 층 띠·간판은 따로 고치지 않아도 따라온다. 땅에 붙는 선·이름표·사람은 hAt 을 더한다
 const TON = !!window.TERRAIN_ON, hAt = TON && window.heightAt ? window.heightAt : () => 0;
+// 지형을 켜면 바닥층(ground.js)이 땅 위 0.2m 에 깔리므로(LIFT, #111) 땅에 얹는 띠·그늘·고리는 그보다 위로(GL 만큼 더 띄움)
+const GL = TON ? 0.25 : 0;
 for (const b of B) { b.b0 = b.b || 0; if (TON && window.heightRange) b.b = b.b0 + window.heightRange(b.p).min; }
 const bPos = [], bNrm = [], bCol = [], bUv = [], triOwner = [];
 const ROOF_UV = [0.95, 0.15];   // 무늬의 흰 칸(지붕은 무늬 없이)
@@ -454,7 +456,7 @@ scene.add(bMesh);
     let p = b.p.slice(); if (signedArea(p) > 0) p.reverse();
     for (let i = 0; i < p.length; i++) {
       const a = p[i], c = p[(i + 1) % p.length], dx = c[0] - a[0], dz = c[1] - a[1], l = Math.hypot(dx, dz); if (l < 0.3) continue;
-      const nx = -dz / l * OUT, nz = dx / l * OUT, y = TON ? 0.12 : 0.04;   // 지형 켜면 조금 더 띄움(지형 메시 삼각형과 계산 높이가 몇 cm 달라 얼룩지지 않게)
+      const nx = -dz / l * OUT, nz = dx / l * OUT, y = 0.04 + GL;   // 지형 켜면 조금 더 띄움(지형 메시 삼각형과 계산 높이가 몇 cm 달라 얼룩지지 않게)
       // 안쪽(벽 밑) 알파 W0 → 바깥 0. 지형이 켜져 있으면 8m 이하 조각마다 땅 높이
       const ns = TON ? Math.max(1, Math.ceil(l / 8)) : 1;
       for (let k = 0; k < ns; k++) {
@@ -868,7 +870,7 @@ requestAnimationFrame(() => requestAnimationFrame(() => {
 
 // 점검용(자동 시험이 읽음)
 window.__map = { select, hideBuilding, get selMesh() { return selMesh; }, buildings: B, signedArea, camera, controls, HOME, labels, need, orbit, scene, renderer, R, esc, tint, setRoofs,
-  roads: roadMeshes, ground, greens: greenMeshes, water: waterMesh, xz, meta: D.meta, dayLight, edgeFade, hAt, TON, get night() { return Math.max(0, nightNow); },
+  roads: roadMeshes, ground, greens: greenMeshes, water: waterMesh, xz, meta: D.meta, dayLight, edgeFade, hAt, TON, GL, get night() { return Math.max(0, nightNow); },
   get selected() { return selIdx; }, infoExtra: null };
 function syncFog() { if (!scene.fog) return; const h = camera.position.y, k = 1 + Math.max(0, Math.min(1, (420 - h) / 380)) * 0.9; scene.fog.near = R * 1.15 * k; scene.fog.far = R * 2.6 * k; }
 controls.addEventListener('change', syncFog); syncFog();
