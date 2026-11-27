@@ -248,7 +248,7 @@ function render(s) {
 }
 function flow(s) {
   if (!SIM) { document.getElementById('st-flow').innerHTML = ''; return; }
-  const key = s.id;
+  const key = s.id + ':' + SIM.cfgVer;   // 시간 정하기를 바꾸면 다시 계산
   if (!flowCache[key]) {
     const set = SIM.nodesNear(s.pRoad || s.p, 14);   // 실제 도로에 붙인 선(drawBand 에서 만듦) 기준
     flowCache[key] = { wd: SIM.flowDay(false, set), we: SIM.flowDay(true, set) };
@@ -378,5 +378,6 @@ else {
 // 밤에는 거리 층 띠도 제 색 그대로(floors.js 와 같게)
 document.addEventListener('map-light', (e) => { if (!sBands) return; const n = e.detail.night >= 0.5, basic = sBands.material.isMeshBasicMaterial;
   if (n !== basic) { sBands.material.dispose(); sBands.material = n ? new THREE.MeshBasicMaterial({ vertexColors: true }) : new THREE.MeshLambertMaterial({ vertexColors: true }); need(); } });
+document.addEventListener('sim-config', () => { if (cur && SIM) flow(cur); });
 window.__street = { choose, get cur() { return cur; }, flowCache };
 })();

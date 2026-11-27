@@ -192,6 +192,15 @@ const AGENTS_MAX = PD ? Math.max(36000, Math.ceil(PD.n * 1.25)) : 2400;
 
 // 업종별 문 여는 시간(그 업종 가게 중 가장 이른 개점 ~ 가장 늦은 마감). 문 닫은 업종은 고르지 않는다
 // (예전엔 업종을 시각과 상관없이 뽑아 낮에 술집, 이른 아침에 식당으로 가서 평일 약 590건이 헛걸음이 됐다)
+// ── 시간 정하기(사용자가 바꿈): 재생 범위, 세부 업종·가게별 영업시간, 사람 부류별 외출 시각 ─────────
+// 기본 영업시간은 세부 업종마다 하나(가정 — 상가정보에 영업시간 항목이 없음). 바꾸면 저장점·흐름 캐시를 버리고 다시 계산한다.
+// TS.sub[세부업종] / TS.shop[가게 번호] = [여는 분, 닫는 분(다음 날이면 1440 넘음)], TS.seg[부류 번호] = 외출 시각 옮김(분), TS.ship = 조선소 출퇴근 옮김(평일)
+const SUB_DEF = {}; for (const x of MENU.subs) SUB_DEF[x.id] = [x.open, x.close];
+const TS = { p0: T0, p1: T1, sub: {}, shop: {}, seg: {}, ship: 0, ver: 0 };
+function hoursOf(sub, cat) { return (sub && (TS.sub[sub] || SUB_DEF[sub])) || [CFG.cats[cat].open, CFG.cats[cat].close]; }
+function catWindows() { for (const k in CAT_WIN) delete CAT_WIN[k];
+  for (const s of SHOPS) { const w = CAT_WIN[s.c] || (CAT_WIN[s.c] = [Infinity, -Infinity]); w[0] = Math.min(w[0], s.open); w[1] = Math.max(w[1], s.close); } }
+function applyHours() { for (const s of SHOPS) { const h = TS.shop[s.i] || hoursOf(s.sub, s.c); s.open = h[0]; s.close = h[1]; } catWindows(); }
 const CAT_WIN = {};
 for (const s of SHOPS) { const w = CAT_WIN[s.c] || (CAT_WIN[s.c] = [Infinity, -Infinity]); w[0] = Math.min(w[0], s.open); w[1] = Math.max(w[1], s.close); }
 const catOpen = (c, t) => { const w = CAT_WIN[c]; return !!w && t + 5 >= w[0] && t + 5 < w[1] - 10; };
@@ -232,10 +241,11 @@ function makeDayFromPersona(rec, we, r) {
       : (g === 'worker' ? pickHome('worker', h => h.w * (h.k === 'apt' ? 1.6 : 1), r) : pickHome('resident', h => h.w, r))).node;
   const visitProb = we ? rec[9] : rec[8];
   const out = [];
+  const sh = (TS.seg[rec[1]] || 0) + (!we && shipGate ? TS.ship : 0);   // 시간 정하기: 부류 외출 시각 + 조선소 출퇴근 옮김(분)
 
   if (!we && shipGate) {
     const gate = GATES[Math.floor(r() * GATES.length)];
-    const tin = Math.round(405 + r() * 75);
+    const tin = Math.round(405 + r() * 75) + sh;
     const wdArr = rec[2];
     const visitToday = (r() * 100 < visitProb);
     const willPay = visitToday && (r() * PU < payProb);
@@ -244,21 +254,21 @@ function makeDayFromPersona(rec, we, r) {
       // 출근길 편의점·카페 방문 후 조선소 입문, 퇴근길은 곧장 귀가
       const t = Math.max(T0, tin - 25);
       out.push({ t, from: baseNode, stops: willPay ? payStops(cw, cats, r, t, false, 0) : [], to: gate.node, budget: rec[6] });
-      out.push({ t: Math.round(1025 + rTout * 95), from: gate.node, stops: [], to: baseNode, budget: 0 });
+      out.push({ t: Math.round(1025 + rTout * 95) + sh, from: gate.node, stops: [], to: baseNode, budget: 0 });
     } else if (visitToday && wdArr >= 660 && wdArr < 840) {
       // 극소수(2%) 점심 외출자(대부분은 한화오션 사내식당에서 식사)
-      const t = normSimMin(wdArr, r);
+      const t = normSimMin(wdArr + sh, r);
       out.push({ t: Math.max(T0, tin - 20), from: baseNode, stops: [], to: gate.node, budget: 0 });
       out.push({ t, from: gate.node, stops: willPay ? payStops(cw, cats, r, t, false, 0) : [], to: gate.node, budget: rec[6] });
-      out.push({ t: Math.round(1030 + rTout * 90), from: gate.node, stops: [], to: baseNode, budget: 0 });
+      out.push({ t: Math.round(1030 + rTout * 90) + sh, from: gate.node, stops: [], to: baseNode, budget: 0 });
     } else {
       // 아침 출근 → 사내 근무·점심 사내식당 → 저녁 퇴근 후 상권 경유(유료 방문 또는 무소비 거리 이동)
       out.push({ t: Math.max(T0, tin - 20), from: baseNode, stops: [], to: gate.node, budget: 0 });
       if (visitToday) {
-        const t = normSimMin(wdArr, r);
+        const t = normSimMin(wdArr + sh, r);
         out.push({ t, from: gate.node, stops: willPay ? payStops(cw, cats, r, t, multi, multiP) : [], to: baseNode, budget: willPay ? rec[6] : 0 });
       } else {
-        out.push({ t: Math.round(1025 + rTout * 95), from: gate.node, stops: [], to: baseNode, budget: 0 });
+        out.push({ t: Math.round(1025 + rTout * 95) + sh, from: gate.node, stops: [], to: baseNode, budget: 0 });
       }
     }
     return out;
@@ -267,7 +277,7 @@ function makeDayFromPersona(rec, we, r) {
   if (r() * 100 >= visitProb) return null;
   const willPay = r() * PU < payProb;
   const rSpot = r();
-  const arr = normSimMin(we ? rec[3] : rec[2], r);
+  const arr = normSimMin((we ? rec[3] : rec[2]) + sh, r);
   const stops = willPay ? payStops(cw, cats, r, arr, multi, multiP) : [];
   if (stops.length) {
     out.push({ t: arr, from: baseNode, stops, to: baseNode, budget: rec[6] });
@@ -633,10 +643,12 @@ panel.innerHTML = `
   </div>
   <div class="sim-body">
     <input id="sim-range" type="range" min="${T0}" max="${T1}" step="1" value="${T0}" aria-label="시각">
-    <div class="sim-ticks"><span>05시</span><span>12시</span><span>18시</span><span>24시</span><span>02시</span></div>
+    <div class="sim-ticks" id="sim-ticks"></div>
     <div class="sim-legend" id="sim-legend"></div>
     <div class="sim-stats" id="sim-stats"></div>
     <p class="sim-note" id="sim-note"></p>
+    <p class="ts-chip" id="ts-chip" hidden></p>
+    <button type="button" class="btn-sub" id="ts-open">시간 정하기 <span>재생 범위 · 영업시간 · 외출 시각</span></button>
     <details class="sim-src"><summary>자료와 가정 보기</summary><div id="sim-src"></div></details>
     <button class="tour sim-tour btn-main" id="sim-tour">빈 층에 가게 열어 보기</button>
   </div>`;
@@ -667,6 +679,7 @@ const assumed = GROUPS.filter(g => CFG.groups[g].src === '가정' || /가정/.te
     ${li('조선소 쪽 입구', 'OSM 조선소 서쪽 경계 차단기(34.88789, 128.69100), 문별 출퇴근 인원 미확인')}
     ${li('가게', `소상공인시장진흥공단 상가정보 2026-09 영업 중 가게 ${SHOPS.length.toLocaleString('ko-KR')}곳, 소분류로 세부 업종 ${MENU.subs.length}개에 나눔`)}
     ${li('업종 고르는 비율·머무는 시간·자리 수·걷는 속도', '가정(근거 자료 없음)')}
+    ${li('영업시간', '세부 업종마다 하나씩 정한 가정 값(상가정보에 영업시간 항목이 없음). 시간 정하기에서 업종·가게마다 바꿀 수 있음')}
   </ul><p>근거: docs/okpo-persona-sources.md</p>`;
 }
 $('sim-note').textContent = `가상 인물 ${' '}점 1개 = 사람 약 ${'{W}'}명. ` + (assumed ? '사람 수·교대 시간은 아직 근거 확인 전 가정 값입니다.' : '');
@@ -700,13 +713,13 @@ function copyKeys(o) { const c = {}; for (const k in o) c[k] = o[k].slice(); ret
 // 2시간마다 저장(사람 2만 명이라 저장점 1개가 약 6MB — 1시간마다면 60MB)
 function keep(s) { if (s % 120 === 0 && CK.key === liveKey && !CK.m.has(s) && SHOP_ST.length === SHOPS.length) CK.m.set(s, snap(s)); }
 function seek(t) {
-  const key = scen;
+  const key = scen + ':' + TS.ver;   // 시간 설정이 바뀌면 저장점을 새로
   if (CK.key !== key) { CK.key = key; CK.m.clear(); }
   let from;
   if (liveKey === key && A.length && t >= simT) from = Math.floor(simT);
   else {
     let best = -1; for (const m of CK.m.keys()) if (m <= t && m > best) best = m;
-    if (best >= 0) { restoreSnap(CK.m.get(best)); from = best; } else { reset(key === 'we', 0); from = T0 - 1; }
+    if (best >= 0) { restoreSnap(CK.m.get(best)); from = best; } else { reset(scen === 'we', 0); from = T0 - 1; }
     liveKey = key;
   }
   for (let s = from + 1; s <= t; s++) { step(s, true); keep(s); }
@@ -733,7 +746,7 @@ function ui() {
   need();
 }
 function playBtn() { $('sim-play').innerHTML = playing ? '<span class="ico">❚❚</span> 멈추기' : '<span class="ico">▶</span> 하루 돌려 보기'; $('sim-play').classList.toggle('on', playing); }
-$('sim-play').onclick = () => { playing = !playing; playBtn(); if (playing && simT >= T1) seek(T0); };
+$('sim-play').onclick = () => { playing = !playing; playBtn(); if (playing && (simT >= TS.p1 || simT < TS.p0)) seek(TS.p0); };
 $('sim-range').oninput = (e) => seek(+e.target.value);
 $('sim-day').querySelectorAll('button').forEach(b => b.onclick = () => {
   $('sim-day').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); scen = b.dataset.s; seek(simT);
@@ -762,20 +775,125 @@ $('sim-fold').onclick = () => { const f = panel.classList.toggle('folded'); $('s
 panel.classList.add('folded'); $('sim-fold').setAttribute('aria-label', '펴기');   // 처음엔 접어 둠(지도 가운데 아래를 가리지 않게). 주 버튼은 기록지에
 $('sim-tour').onclick = () => { if (window.__floors) window.__floors.nextTour(); setTimeout(() => { const e = document.getElementById('exp'); if (e) e.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, 750); };
 
+// ── 시간 정하기 창 ─────────────────────────────────────────
+// 재생 범위(계산은 늘 05:00부터 — 범위 앞에 나온 사람도 그대로 있음), 세부 업종 영업시간, 가게마다 영업시간, 부류별 외출 시각·조선소 출퇴근 옮기기
+const SEG_KO = { resident: '옥포1동 주민', foreign_resident: '옥포 거주 외국인', okpo1_worker: '옥포1동 상권·사업체 근무자', stayer: '시외 체류·숙소형 유입',
+  commuter: '시외 주간 유입(통근·출장)', geoje_visitor: '거제 다른 동 방문객', tourist: '관광객' };
+const tLabel = (m) => { const d = m >= 1440, h = Math.floor((m % 1440) / 60), mm = m % 60; return `${d ? '다음 날 ' : ''}${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`; };
+const tOpts = (from, to, sel) => { let o = ''; for (let m = from; m <= to; m += 30) o += `<option value="${m}"${m === sel ? ' selected' : ''}>${tLabel(m)}</option>`; return o; };
+const shOpts = (sel) => { let o = ''; for (let m = -180; m <= 180; m += 30) o += `<option value="${m}"${m === sel ? ' selected' : ''}>${m === 0 ? '그대로' : (m > 0 ? '+' : '−') + (Math.abs(m) >= 60 ? Math.floor(Math.abs(m) / 60) + '시간' : '') + (Math.abs(m) % 60 ? ' ' + Math.abs(m) % 60 + '분' : '')}${m > 0 ? ' 늦게' : m < 0 ? ' 일찍' : ''}</option>`; return o; };
+const tsDefault = () => ({ p0: T0, p1: T1, sub: {}, shop: {}, seg: {}, ship: 0 });
+const tsClone = (o) => ({ p0: o.p0, p1: o.p1, sub: { ...o.sub }, shop: { ...o.shop }, seg: { ...o.seg }, ship: o.ship });
+function tsChanged(o) { return o.p0 !== T0 || o.p1 !== T1 || o.ship || Object.keys(o.sub).length || Object.keys(o.shop).length || Object.values(o.seg).some(v => v); }
+function ticks() {   // 눈금을 실제 시각 자리에(같은 간격으로 늘어놓으면 05·12·18·24·02시가 제자리에 오지 않음)
+  const el = $('sim-ticks'), span = TS.p1 - TS.p0, step = span > 720 ? 240 : span > 360 ? 120 : 60; let h = '';
+  for (let m = Math.ceil(TS.p0 / step) * step; m <= TS.p1; m += step) { const f = (m - TS.p0) / span, x = f < 0.04 ? '0' : f > 0.96 ? '-100%' : '-50%';
+    h += `<span style="position:absolute;left:${(f * 100).toFixed(2)}%;transform:translateX(${x})">${String(Math.floor((m % 1440) / 60)).padStart(2, '0')}시</span>`; }
+  el.style.position = 'relative'; el.style.height = '16px'; el.innerHTML = h;
+}
+ticks();
+let tsDraft = null;
+const dlg = document.createElement('dialog'); dlg.id = 'ts-dlg'; dlg.className = 'ts-dlg'; document.body.appendChild(dlg);
+function tsRender() {
+  const D = tsDraft, segCount = {}; let nShip = 0; if (PD) for (const r of PD.p) { segCount[r[1]] = (segCount[r[1]] || 0) + 1; if (r[11] & 1) nShip++; }
+  const nSub = {}; for (const x of SHOPS) if (!x.virtual && x.sub) nSub[x.sub] = (nSub[x.sub] || 0) + 1;
+  const segs = PD ? (PD.segments || []) : [];
+  dlg.innerHTML = `<form method="dialog" class="ts">
+    <header class="ts-hd"><h2>시간 정하기</h2><button type="button" class="ts-x" id="ts-close" aria-label="닫기">×</button></header>
+    <div class="ts-body">
+    <section><h3>하루 재생 범위</h3>
+      <p class="ts-note">재생 막대가 이 사이만 움직입니다. 계산은 늘 05:00부터라 범위 앞에 나온 사람도 그대로 있습니다. 하루 합계는 05:00~다음 날 02:00 전체입니다.</p>
+      <div class="ts-row"><label>시작 <select id="ts-p0">${tOpts(T0, 1200, D.p0)}</select></label><span class="ts-dash">~</span><label>끝 <select id="ts-p1">${tOpts(720, T1, D.p1)}</select></label></div></section>
+    <section><h3>업종별 영업시간</h3>
+      <p class="ts-note">기본값은 업종마다 흔한 영업시간을 가정한 값입니다(상가정보에 영업시간 자료가 없음). 바꾸면 그 업종 가게 전부에 적용됩니다.</p>
+      <table class="ts-tb"><thead><tr><th>업종</th><th>가게</th><th>여는 시각</th><th>닫는 시각</th><th></th></tr></thead><tbody>
+      ${MENU.subs.map(x => { const h = D.sub[x.id] || SUB_DEF[x.id], ch = !!D.sub[x.id];
+        return `<tr data-sub="${x.id}" class="${ch ? 'ch' : ''}"><td>${esc(x.ko)}</td><td class="n">${(nSub[x.id] || 0).toLocaleString('ko-KR')}</td>
+          <td><select data-k="o">${tOpts(0, 1380, h[0])}</select></td><td><select data-k="c">${tOpts(360, T1, h[1])}</select></td>
+          <td>${ch ? '<button type="button" class="ts-undo" data-undo-sub="' + x.id + '">기본값</button>' : ''}</td></tr>`; }).join('')}
+      </tbody></table></section>
+    <section><h3>가게마다</h3>
+      <p class="ts-note">가게 이름으로 찾아 그 가게만 바꿉니다. 업종 값보다 먼저 적용됩니다.</p>
+      <input type="search" id="ts-q" class="ts-q" placeholder="가게 이름 (예: 피자헛)" autocomplete="off">
+      <ul class="ts-shops" id="ts-shops"></ul></section>
+    <section><h3>사람 부류별 외출 시각</h3>
+      <p class="ts-note">사람 ${PD ? PD.p.length.toLocaleString('ko-KR') : ''}명 각자의 외출 시각은 페르소나 자료(근무 시간, 조선소 08~17시 등)에서 정해져 사람마다 다릅니다. 여기서는 부류 전체를 앞뒤로 옮깁니다.</p>
+      <table class="ts-tb"><tbody>
+      ${segs.map((k, i) => `<tr data-seg="${i}"><td>${esc(SEG_KO[k] || k)}</td><td class="n">${(segCount[i] || 0).toLocaleString('ko-KR')}명</td><td colspan="3"><select data-k="seg">${shOpts(D.seg[i] || 0)}</select></td></tr>`).join('')}
+      <tr data-ship="1"><td>조선소 출퇴근(평일, 조선소 문을 지나는 사람)</td><td class="n">${nShip.toLocaleString('ko-KR')}명</td><td colspan="3"><select data-k="ship">${shOpts(D.ship)}</select></td></tr>
+      </tbody></table></section>
+    </div>
+    <footer class="ts-ft"><button type="button" class="btn-sub ts-reset" id="ts-reset">모두 기본값으로</button><button type="button" class="btn-primary" id="ts-apply">적용하고 다시 계산</button></footer>
+  </form>`;
+  tsShops();
+}
+function tsShops() {
+  const q = ($('ts-q') && $('ts-q').value || '').trim(), ul = $('ts-shops'), D = tsDraft; if (!ul) return;
+  const edited = Object.keys(D.shop).map(Number), list = [];
+  for (const i of edited) list.push(SHOPS[i]);
+  if (q) for (const x of SHOPS) { if (list.length >= 30) break; if (!x.virtual && x.n.includes(q) && !D.shop[x.i]) list.push(x); }
+  ul.innerHTML = list.length ? list.map(x => { const h = D.shop[x.i] || D.sub[x.sub] || hoursOf(x.sub, x.c), ch = !!D.shop[x.i];
+    return `<li data-shop="${x.i}" class="${ch ? 'ch' : ''}"><div><b>${esc(x.n)}</b><span>${esc(SUB[x.sub] ? SUB[x.sub].ko : CFG.cats[x.c].ko)}${x.f ? ' · ' + x.f + '층' : ''}</span></div>
+      <select data-k="o" aria-label="여는 시각">${tOpts(0, 1380, h[0])}</select><select data-k="c" aria-label="닫는 시각">${tOpts(360, T1, h[1])}</select>
+      ${ch ? '<button type="button" class="ts-undo" data-undo-shop="' + x.i + '">기본값</button>' : '<span class="ts-undo-sp"></span>'}</li>`; }).join('')
+    : `<li class="ts-empty">${q ? '찾는 가게가 없습니다' : '바꾼 가게가 없습니다. 위 칸에 이름을 넣으세요'}</li>`;
+}
+function tsOpen() { tsDraft = tsClone(TS); tsRender(); dlg.showModal(); }
+$('ts-open').onclick = tsOpen;
+dlg.addEventListener('input', (e) => { if (e.target.id === 'ts-q') tsShops(); });
+dlg.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); dlg.close(); } });   // 찾기 칸에 글자가 있어도 Esc 한 번에 닫기
+dlg.addEventListener('change', (e) => {
+  const t = e.target, D = tsDraft; if (t.tagName !== 'SELECT') return;
+  if (t.id === 'ts-p0') D.p0 = +t.value; else if (t.id === 'ts-p1') D.p1 = +t.value;
+  else if (t.dataset.k === 'seg') D.seg[t.closest('tr').dataset.seg] = +t.value;
+  else if (t.dataset.k === 'ship') D.ship = +t.value;
+  else { const tr = t.closest('[data-sub],[data-shop]'), row = [...tr.querySelectorAll('select')].map(x => +x.value);
+    if (tr.dataset.sub) { const d = SUB_DEF[tr.dataset.sub]; if (row[0] === d[0] && row[1] === d[1]) delete D.sub[tr.dataset.sub]; else D.sub[tr.dataset.sub] = row; tsRender(); }
+    else { D.shop[tr.dataset.shop] = row; tsShops(); } }
+});
+dlg.addEventListener('click', (e) => {
+  const t = e.target, D = tsDraft;
+  if (t.id === 'ts-close') dlg.close();
+  else if (t.dataset.undoSub) { delete D.sub[t.dataset.undoSub]; tsRender(); }
+  else if (t.dataset.undoShop) { delete D.shop[t.dataset.undoShop]; tsShops(); }
+  else if (t.id === 'ts-reset') { tsDraft = tsDefault(); tsRender(); }
+  else if (t.id === 'ts-apply') {
+    if (tsDraft.p1 - tsDraft.p0 < 120) { alert('재생 범위는 2시간 이상이어야 합니다.'); return; }
+    for (const k in tsDraft.shop) { const h = tsDraft.shop[k]; if (h[1] <= h[0]) h[1] += 1440; }   // 닫는 시각이 여는 시각보다 이르면 다음 날
+    for (const k in tsDraft.sub) { const h = tsDraft.sub[k]; if (h[1] <= h[0]) h[1] += 1440; }
+    dlg.close(); applyTS(tsDraft);
+  }
+  else if (t === dlg) dlg.close();   // 바깥(어두운 바탕)을 누르면 닫기
+});
+function applyTS(D) {
+  Object.assign(TS, tsClone(D)); TS.ver++;
+  applyHours();
+  CK.m.clear(); CK.key = null; liveKey = null; for (const k in NODEFLOW) delete NODEFLOW[k];
+  const R = $('sim-range'); R.min = TS.p0; R.max = TS.p1; ticks();
+  playing = false; playBtn();
+  seek(Math.max(TS.p0, Math.min(TS.p1, simT)));
+  const n = Object.keys(TS.sub).length, m = Object.keys(TS.shop).length, g = Object.values(TS.seg).filter(v => v).length + (TS.ship ? 1 : 0);
+  const chip = $('ts-chip'), on = tsChanged(TS);
+  chip.hidden = !on;
+  if (on) chip.innerHTML = `바꾼 시간: ${[TS.p0 !== T0 || TS.p1 !== T1 ? `재생 ${tLabel(TS.p0)}~${tLabel(TS.p1)}` : '', n ? `업종 ${n}개` : '', m ? `가게 ${m}곳` : '', g ? `외출 시각 ${g}개 부류` : ''].filter(Boolean).join(' · ')} <button type="button" id="ts-chip-reset">기본값으로</button>`;
+  document.dispatchEvent(new CustomEvent('sim-config', { detail: { ver: TS.ver } }));
+}
+document.addEventListener('click', (e) => { if (e.target.id === 'ts-chip-reset') applyTS(tsDefault()); });
+
 function tick(now) {
   requestAnimationFrame(tick);
   if (!lastNow) lastNow = now; const dt = Math.min(0.1, (now - lastNow) / 1000); lastNow = now;
   if (playing) {
-    const to = Math.min(T1, simT + speed * dt);
+    const to = Math.min(TS.p1, simT + speed * dt);
     for (let s = Math.floor(simT) + 1; s <= Math.floor(to); s++) { step(s, true); keep(s); }
-    simT = to; if (simT >= T1) { playing = false; playBtn(); }
+    simT = to; if (simT >= TS.p1) { playing = false; playBtn(); }
     ui();
   }
   if (playing || drawDirty) { const n = draw(simT); points.visible = n > 0; drawDirty = false; need(); }
 }
 seek(Q('simt') ? parseT(Q('simt')) : 14 * 60);   // 첫 화면은 낮 14시(빈 층 주황이 또렷하게). 밤은 '하루 돌려 보기'로 넘어가며 보임
 function Q(k) { return new URLSearchParams(location.search).get(k); }
-function parseT(s) { const [h, m] = s.split(':').map(Number); return Math.max(T0, Math.min(T1, h * 60 + (m || 0) + (h < 5 ? 1440 : 0))); }
+function parseT(s) { const [h, m] = s.split(':').map(Number); return Math.max(TS.p0, Math.min(TS.p1, h * 60 + (m || 0) + (h < 5 ? 1440 : 0))); }
 requestAnimationFrame(tick);
 
 // ── 빈 층에 가게 열어 보기 ───────────────────────────────────
@@ -788,7 +906,7 @@ function addVirtual(bi, floor, sub, price, seats) {
   const sb = SUB[sub], cat = sb.cat;
   const b = MP.buildings[bi]; let cx = 0, cz = 0; for (const p of b.p) { cx += p[0]; cz += p[1]; } cx /= b.p.length; cz /= b.p.length;
   const s = { i: SHOPS.length, n: '새 가게(실험)', c: cat, sub, cs: '', x: cx, z: cz, b: bi, f: floor, node: nearest(cx, cz), ref: sb.basket,
-    price, seats, open: sb.open, close: sb.close, stay: sb.stay, attract: 1.0 * (floor >= 2 ? CFG.upperFloor : 1), virtual: true };
+    price, seats, open: hoursOf(sub, cat)[0], close: hoursOf(sub, cat)[1], stay: sb.stay, attract: 1.0 * (floor >= 2 ? CFG.upperFloor : 1), virtual: true };
   staticWeights(s); SHOPS.push(s); BYCAT[cat].push(s); SHOPNODE = null;
   s._win = CAT_WIN[cat] ? CAT_WIN[cat].slice() : null;   // 새 가게 영업시간만큼 업종 문 여는 시간을 넓혔다가 지울 때 되돌림
   CAT_WIN[cat] = [Math.min(s._win ? s._win[0] : Infinity, s.open), Math.max(s._win ? s._win[1] : -Infinity, s.close)];
@@ -968,7 +1086,7 @@ function flowSteps(F, t0, t1) {
   }
 }
 function nodeFlow(we) {
-  const key = we ? 'we' : 'wd'; if (NODEFLOW[key]) return NODEFLOW[key];
+  const key = (we ? 'we' : 'wd') + ':' + TS.ver; if (NODEFLOW[key]) return NODEFLOW[key];
   const live = swapState(blank(false)); reset(we, 0);
   const F = new Float32Array(24 * NN); flowSteps(F, T0, T1);
   swapState(live); NODEFLOW[key] = F; return F;
@@ -976,7 +1094,7 @@ function nodeFlow(we) {
 // 화면이 멈추지 않게 1시간씩 나눠 계산(조각 사이에 화면이 그려짐). 조각마다 재생 상태를 비켜 두고 돌려놓는다
 const NF_WAIT = {};
 function nodeFlowAsync(we) {
-  const key = we ? 'we' : 'wd';
+  const key = (we ? 'we' : 'wd') + ':' + TS.ver;
   if (NODEFLOW[key]) return Promise.resolve(NODEFLOW[key]);
   if (NF_WAIT[key]) return NF_WAIT[key];
   return (NF_WAIT[key] = new Promise((res) => {
@@ -999,6 +1117,6 @@ function trySlot(bi, floor, sub, price, seats, runs = 3) {
   removeVirtual(s);
   return r;
 }
-window.__sim = { get _fig() { return figMesh; }, _active: () => ACTIVE, _md: { MDX, MDZ, NX, NZ }, peakTxt, _ck: CK, runDay, experiment, seek, nodesNear, flowDay, trySlot, nodeFlow, nodeFlowAsync, restore: () => { drawDirty = true; need(); }, won, wonX, GROUPS, SUB, SUBS_OF, subOptions, NAT,
+window.__sim = { get _fig() { return figMesh; }, get cfgVer() { return TS.ver; }, TS, applyTS, _shops: () => SHOPS, _active: () => ACTIVE, _md: { MDX, MDZ, NX, NZ }, peakTxt, _ck: CK, runDay, experiment, seek, nodesNear, flowDay, trySlot, nodeFlow, nodeFlowAsync, restore: () => { drawDirty = true; need(); }, won, wonX, GROUPS, SUB, SUBS_OF, subOptions, NAT,
   graph: { NX, NZ, ADJ, NN }, get scen() { return scen; }, get A() { return A; }, get W() { return W; }, SHOPS, CFG, nodes: NN, get t() { return simT; } };
 })();

@@ -57,7 +57,7 @@ lab.after(legend);
 document.getElementById('L-flow').onchange = (e) => { on = e.target.checked; if (mesh) mesh.visible = on; legend.hidden = !on; need(); };
 let pend = null;
 document.addEventListener('sim-time', (e) => {
-  const { t, scen } = e.detail, key = scen + Math.floor(t / 60);
+  const { t, scen } = e.detail, key = scen + Math.floor(t / 60) + ':' + SIM.cfgVer;   // 시간 정하기를 바꾸면 다시
   if (key === last) return; last = key;
   clearTimeout(pend); pend = setTimeout(() => SIM.nodeFlowAsync(scen === 'we').then(F => { if (last === key) build(F, t); }), 30);
 });
