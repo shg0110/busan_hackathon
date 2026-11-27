@@ -245,18 +245,29 @@ table.floors .use { font-size: 14px; color: var(--g700); margin-bottom: 4px; }
 
 /* ── 가상 손님 하루(sim.js 가 만드는 #sim): 지도 아래 가운데 ── */
 #sim { position: fixed; left: calc(var(--side) + (100% - var(--side)) / 2); bottom: 16px; transform: translateX(-50%);
-  width: min(600px, calc(100% - var(--side) - 150px)); background: #fff; border-radius: 16px; box-shadow: var(--shadow); padding: 14px 18px 18px; z-index: 5; }
+  width: min(700px, calc(100% - var(--side) - 150px)); container-type: inline-size; background: #fff; border-radius: 16px; box-shadow: var(--shadow); padding: 14px 18px 18px; z-index: 5; }
 .sim-head { display: flex; align-items: center; gap: 12px; }
 .sim-play { flex: none; min-width: 48px; height: 48px; padding: 0 16px; border: 0; border-radius: 12px; background: var(--g100); color: var(--g900);
   font-size: 15.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
 .sim-play:hover { background: var(--g200); }
-.sim-time { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; flex: 1; }
+.sim-time { display: flex; flex-direction: column; line-height: 1.25; min-width: 64px; flex: 1 1 auto; white-space: nowrap; }
 .sim-time b { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
 .sim-time span { font-size: 13px; color: var(--g600); }
 .seg { display: inline-flex; flex: none; background: var(--g100); border-radius: 12px; padding: 3px; }
 .seg button { min-width: 56px; height: 44px; border: 0; border-radius: 10px; background: transparent; padding: 0 14px; font-size: 15px; font-weight: 600; cursor: pointer; color: var(--g600); }
 .seg button.on { background: #fff; color: var(--g900); font-weight: 700; box-shadow: 0 1px 3px rgba(0, 20, 60, .12); }
 #sim-fold { width: 44px; height: 44px; }
+#sim .seg button { min-width: 52px; padding: 0 12px; }
+/* 머리줄 [돌려 보기][시각][평일|주말][느리게|보통|빠르게][펼치기]가 한 줄에 안 들어가는 폭(폰·옆에 층 정보가 열린 노트북):
+   첫 줄 [돌려 보기][시각][펼치기], 둘째 줄 [요일][속도]. 접혀 있으면 둘째 줄은 숨긴다(펼쳐서 고름) */
+@container (max-width: 610px) {
+  .sim-head { flex-wrap: wrap; row-gap: 8px; }
+  #sim-fold { order: 1; }
+  #sim-day, #sim-speed { order: 2; flex: 2 1 0; }
+  #sim-speed { flex-grow: 3; }
+  #sim-day button, #sim-speed button { flex: 1; }
+  #sim.folded #sim-day, #sim.folded #sim-speed { display: none; }
+}
 #sim-fold svg { transition: transform .2s; }
 #sim.folded #sim-fold svg { transform: rotate(180deg); }
 #sim.folded .sim-body { display: none; }
