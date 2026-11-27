@@ -485,3 +485,61 @@ body.nomap #r-where, body.nomap #r-layers { display: none; }   /* 꺾은선·카
   body.street-mode #rail { padding-bottom: 156px; }
   body:has(#info:not([hidden])) #tour-btn, body:has(#info:not([hidden])) .st-rank, body:has(#info:not([hidden])) #rail::after { display: none; }
 }
+
+/* ── 가상 시민 페르소나(sim.js) ── */
+.key li i.occ { width: 18px; height: 12px; border-radius: 6px; background: #212529; }
+.pa-who { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 17px; letter-spacing: -.02em; }
+.pa-who i, .pa-chip i, .pa-bar-lg i { flex: none; display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+.pa-seg { margin: 2px 0 0 18px; font-size: 13.5px; color: var(--g600); }
+.pa-dim { font-weight: 500; font-size: 13px; color: var(--g600); }
+.pa-btns { display: flex; gap: 8px; margin: 12px 0 4px; }
+.pa-btns .btn-sub { flex: 1; min-height: 40px; padding: 8px 12px; font-size: 14.5px; text-align: center; }
+.pa-btns .btn-sub[aria-pressed="true"] { background: var(--primary-soft); color: var(--primary-ink); }
+.pa-now { margin: 12px 0 0; padding: 10px 12px; background: var(--g50); border-radius: 10px; font-size: 14.5px; line-height: 1.55; }
+.pa-now .st { display: inline-block; margin: 0 4px; padding: 1px 7px; border-radius: 6px; font-size: 12.5px; font-weight: 700; background: var(--g200); color: var(--g800); }
+.pa-now .st1 { background: #e7f0ff; color: var(--primary-ink); } .pa-now .st2 { background: #e6f6ee; color: #1e7a4c; } .pa-now .st3 { background: #fff4ec; color: var(--vac); }
+.pa-plan { margin: 0; padding: 0; list-style: none; font-size: 13.5px; line-height: 1.5; }
+.pa-plan li { padding: 4px 0; border-bottom: 1px solid var(--g100); }
+.pa-plan li b { font-variant-numeric: tabular-nums; margin-right: 6px; }
+.pa-plan li.past { color: var(--g600); }
+.pa-plan li.cur { font-weight: 600; }
+.pa-plan li.cur b::before { content: '▸ '; color: var(--primary); }
+.pa-stop { padding: 0 5px; border-radius: 5px; background: var(--primary-soft); color: var(--primary-ink); font-weight: 600; }
+.pa-won { float: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.pa-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--g100); }
+.pa-bar i { display: block; height: 100%; }
+.pa-bar-lg { display: flex; flex-wrap: wrap; gap: 2px 12px; margin-top: 6px; font-size: 13px; color: var(--g700); }
+.pa-bar-lg i { margin-right: 5px; vertical-align: -1px; }
+.pa-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.pa-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid var(--g200); border-radius: 999px; background: #fff;
+  font: inherit; font-size: 13px; color: var(--g800); cursor: pointer; }
+.pa-chip:hover { background: var(--primary-soft); border-color: #c7d8fb; }
+.pa-chip.wait { border-style: dashed; }
+
+/* 건물 안 인원 */
+.lbl.occ { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px 2px 6px; border-radius: 999px; font-size: 12.5px; font-weight: 800;
+  font-variant-numeric: tabular-nums; color: #fff; background: #495057; text-shadow: none; box-shadow: 0 1px 4px rgba(0,0,0,.25); white-space: nowrap; }
+.lbl.occ svg { width: 11px; height: 11px; fill: currentColor; }
+.lbl.occ.o2 { background: #1c64f2; } .lbl.occ.o3 { background: #212529; font-size: 13.5px; }
+.occ-box { margin: 0 0 16px; padding: 12px 14px; background: var(--g50); border-radius: 12px; }
+.occ-h { margin: 0; font-size: 15px; }
+.occ-h strong { font-size: 19px; font-weight: 800; color: var(--primary-ink); font-variant-numeric: tabular-nums; }
+.occ-sub { margin: 4px 0 8px; font-size: 13px; color: var(--g600); }
+table.occ-t { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+table.occ-t th { text-align: left; font-weight: 600; color: var(--g600); font-size: 12.5px; padding: 4px 0; }
+table.occ-t th:not(:first-child), table.occ-t td.n { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+table.occ-t td { padding: 5px 0; border-top: 1px solid var(--g200); vertical-align: top; }
+table.occ-t td span { display: block; font-size: 12px; color: var(--g600); }
+table.occ-t td.n { font-weight: 700; padding-left: 10px; }
+table.occ-t small { font-weight: 500; color: var(--g600); }
+table.occ-t em { font-style: normal; color: var(--vac); margin-left: 3px; font-size: 12px; }
+.sim-top { margin-top: 10px; }
+.sim-top-h { margin: 0 0 4px; font-size: 13px; font-weight: 700; color: var(--g700); }
+.sim-top-h span { font-weight: 500; color: var(--g600); margin-left: 4px; }
+.sim-top ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 2px; }
+.sim-top button { width: 100%; display: flex; justify-content: space-between; gap: 8px; padding: 4px 8px; border: 0; border-radius: 8px; background: none;
+  font: inherit; font-size: 13px; color: var(--g800); cursor: pointer; text-align: left; }
+.sim-top button:hover { background: var(--primary-soft); }
+.sim-top .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sim-top b { font-variant-numeric: tabular-nums; }
+@media (max-height: 880px) and (min-width: 721px) { .sim-top { display: none; } }

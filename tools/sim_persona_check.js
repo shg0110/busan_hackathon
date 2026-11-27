@@ -42,7 +42,8 @@ const S = ctx.__sim, PD = ctx.PERSONAS, SD = ctx.SIM_DATA;
 const VAL = JSON.parse(fs.readFileSync(path.join(ROOT, 'data', 'processed', 'personas', 'validation.json'), 'utf8'));
 const csv = fs.readFileSync(path.join(ROOT, 'data', 'processed', 'okpo', '14_flow_hourly.csv'), 'utf8').replace(/^﻿/, '').trim().split('\n').map(l => l.split(','));
 const HOUR_TGT = csv.slice(1).map(r => +r[csv[0].indexOf('카드건수_2026비율')]);
-const TX_TGT = VAL.scale.daily_total_transactions_incl_cash_weekday;
+const TX_TGT = VAL.scale.daily_total_transactions_map_weekday || VAL.scale.daily_total_transactions_incl_cash_weekday;
+const SALES_TGT = VAL.scale.map_daily_sales_target_krw || 0;
 const CAT_TGT = VAL.checks.find(c => c.name.startsWith('C9')).target;
 const R1 = VAL.reference[0];
 
@@ -86,8 +87,8 @@ const t0 = Date.now();
 const wd = measure(false), we = measure(true);
 const check = (name, value, lo, hi, note) => ({ name, value, range: [lo, hi], pass: value >= lo && value <= hi, note });
 const checks = [
-  check('S1. 평일 하루 결제 수 ÷ 페르소나 보정 결제 수(현금 포함)', +(wd.transactions / TX_TGT).toFixed(3), 0.95, 1.05,
-    `시뮬 ${wd.transactions}건 vs 페르소나 ${TX_TGT}건(카드 5,624건 ÷ (1 − 현금 15.9%))`),
+  check('S1. 평일 하루 결제 수 ÷ 페르소나 보정 결제 수(지도 범위 매출액 기준)', +(wd.transactions / TX_TGT).toFixed(3), 0.95, 1.05,
+    `시뮬 ${wd.transactions}건(${Math.round(wd.revenue_krw / 1e4).toLocaleString()}만 원) vs 목표 ${TX_TGT}건(${Math.round(SALES_TGT / 1e4).toLocaleString()}만 원)`),
   check('S2. 평일 결제 24시간 비율 최대 차이(카드 실측 대비)', wd.hour_max_abs_diff, 0, 0.018, '페르소나 C8b 와 같은 허용 폭'),
   check('S3. 평일 업종별 매출 비중 최대 차이(옥포1동 카드매출 대비)', wd.category_max_abs_diff, 0, 0.05, '페르소나 C9 와 같은 단위(업종 1인 가격 × 지출 배수)'),
   check('S4. 외국인(선주 감독관·가족 제외) 1인당 평일 매출 ÷ 내국인', wd.foreign_to_korean, R1.all_foreign_range[0], R1.all_foreign_range[1],

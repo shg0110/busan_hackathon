@@ -58,9 +58,21 @@ for bi, fl in FLO['b'].items():
     for f in fl:
         for s in f['stores']:
             shop_floor.setdefault(s['n'], []).append((int(bi), f['n']))
+# 폐업: 인허가 폐업 기록(data/processed/<지역>_closed_candidates.csv)과 상호·도로명 주소(길 이름 + 건물 번호)가 둘 다 같으면
+# 상가정보에 남아 있어도 뺀다. 이름만 같고 주소가 다르면(다른 자리의 같은 이름 가게) 그대로 둔다.
+# 한계: 명의 변경으로 폐업 후 같은 이름으로 다시 인허가받은 가게도 빠질 수 있다(지금 영업 인허가 자료와 대조 못 함)
+road = lambda a: re.split(r'\s*[,(]', a or '')[0].strip()
+nkey = lambda n: re.sub(r'\s|옥포점$', '', n or '')
+CLOSED_FP = os.path.join(ROOT, 'data', 'processed', f'{NAME}_closed_candidates.csv')
+CLOSED = {(nkey(r['사업장명']), road(r['도로명주소'])) for r in csv.DictReader(open(CLOSED_FP, encoding='utf-8-sig'))} if os.path.exists(CLOSED_FP) else set()
+closed_out = []
 shops = []
 for r in stores:
+    if (nkey(r['상호명']), road(r['도로명주소'])) in CLOSED:
+        closed_out.append(r['상호명']); continue
     sub, c = SUB_OF.get(r['상권업종소분류명'], (None, None))
+    if sub == 'burger' and re.search(r'피자|파파존스', r['상호명']):   # 상가정보가 '버거'로 적은 피자집(파파존스)
+        sub, c = SUB_OF['피자']
     if not c:
         c = sim_cat(r['상권업종대분류명'], r['상권업종중분류명'], r['상권업종소분류명'], r['상호명'])
         sub = {'meal': 'baekban', 'pub': 'hof', 'cafe': 'cafe', 'intl': 'viet', 'mart': 'grocery', 'life': 'hair'}.get(c)
@@ -110,7 +122,7 @@ in_all = sum(1 for r in stores if inside(xz(float(r['위도']), float(r['경도'
 in_sim = sum(1 for s_ in shops if s_['i'])
 out = dict(shops=shops, homes=homes, gates=gates, stops=stops, inside=dict(stores_all=in_all, stores_sim=in_sim),
            counts=dict(shops=len(shops), by_cat=collections.Counter(s['c'] for s in shops), by_sub=collections.Counter(s['sub'] for s in shops), homes=len(homes),
-                       home_area=round(sum(h['w'] for h in homes)), gates=len(gates), stops=len(stops)))
+                       home_area=round(sum(h['w'] for h in homes)), gates=len(gates), stops=len(stops), closed_dropped=closed_out))
 dst = os.path.join(ROOT, 'web', 'data', f'{NAME}_sim.js')
 with open(dst, 'w', encoding='utf-8') as f:
     f.write('/* 자동 생성: tools/okpo_sim_data.py — 손으로 고치지 말 것 */\nwindow.SIM_DATA = ')
@@ -118,3 +130,4 @@ with open(dst, 'w', encoding='utf-8') as f:
     f.write(';\n')
 print(dst, round(os.path.getsize(dst) / 1024), 'KB', out['counts'])
 print('조선소 쪽 입구', gates)
+print('폐업으로 뺀 가게', closed_out)
