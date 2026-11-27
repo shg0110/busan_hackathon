@@ -358,6 +358,7 @@ body.street-mode #hint { display: none; }
 .lbl.place.kid { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--g800); background: #fff; border-radius: 8px; padding: 3px 8px 3px 4px; text-shadow: none; box-shadow: 0 1px 3px rgba(0, 20, 60, .16); }
 .lbl.place.kid b { font-size: 10.5px; font-weight: 700; color: #4a3b00; background: #ffe066; border-radius: 5px; padding: 1px 5px; }
 /* 건물 말풍선(ea #97 .map-tip, 마우스 옆): 기록지와 같은 흰 카드. 이름 → 층 수(가게 없는 층은 주황 숫자) → 누르면 할 일(파랑) */
+body .map-tip[hidden] { display: none; }   /* menu.css 의 display:grid 가 hidden 속성을 이겨 빈 검은 상자가 화면 왼쪽 위에 늘 보이던 것 */
 body .map-tip { background: #fff; color: var(--g900); border: 1px solid var(--g200); border-radius: 10px; padding: 9px 12px 10px; box-shadow: 0 6px 20px rgba(0, 20, 60, .16);
   font-size: 13px; line-height: 1.5; gap: 2px; max-width: 280px; }
 body .map-tip strong { font-size: 14.5px; font-weight: 700; color: var(--g900); letter-spacing: -.01em; }
