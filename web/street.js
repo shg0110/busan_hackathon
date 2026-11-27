@@ -368,7 +368,7 @@ function listTable() {
   // 표 머리글은 짧게, 기준(평일 하루·250m 안)은 머리글 옆 작은 '?'에 마우스를 올리면 보이게
   const tipSame = esc(`고른 업종(${subKo})의 기존 가게가 이 건물에서 250m 안에 몇 곳 있는지. 경쟁 가게 수이며 빈 곳 수가 아닙니다.`);
   const rows = L.slice(0, LS.n).map((c, k) => `<tr data-b="${c.b}"><td>${k + 1}</td><td>${c.floor}층 · ${esc(c.name)}${c.st ? `<br><small class="th-u">${esc(c.st.ko.split(' (')[0])}</small>` : ''}</td><td>${c.area ? `${Math.round(c.area)}㎡` : '-'}</td><td>${c.flow != null ? Math.round(c.flow).toLocaleString('ko-KR') + '명' : '-'}</td><td>${c.same != null ? c.same + '곳' : '-'}</td></tr>`).join('');
-  document.getElementById('ls-t').innerHTML = `<tr><th></th><th>자리</th><th>면적</th><th><abbr class="ls-tip" title="${TIP_FLOW}">앞을 지나는 사람</abbr></th><th><abbr class="ls-tip" title="${tipSame}">근처 같은 업종</abbr></th></tr>${rows}`;
+  document.getElementById('ls-t').innerHTML = `<tr><th></th><th>자리</th><th>면적</th><th><span class="ls-tip" tabindex="0" data-tip="${TIP_FLOW}">앞을 지나는 사람</span></th><th><span class="ls-tip" tabindex="0" data-tip="${tipSame}">근처 같은 업종</span></th></tr>${rows}`;
   document.getElementById('ls-t').querySelectorAll('tr[data-b]').forEach(tr => tr.onclick = () => flyBuilding(+tr.dataset.b));
   const more = document.getElementById('ls-more'); more.hidden = L.length <= LS.n; more.textContent = `더 보기 (${L.length - LS.n}곳 더)`;
   // 버튼이 무엇을 하는지: 지금 목록(정렬 기준)의 1~10번 자리에 고른 가게를 열어 하루씩 돌려 보고 손님 많은 순으로 다시 매김

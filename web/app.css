@@ -166,8 +166,14 @@ table.ls { margin-top: 6px; }
 .rk-why { margin: 2px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--g600); word-break: keep-all; }   /* 순위 버튼이 무엇을 하는지 한 줄 */
 table.ls td:first-child { width: 1.6em; }
 table.ls th { vertical-align: bottom; white-space: normal; word-break: keep-all; line-height: 1.35; }   /* 좁은 패널에서 긴 머리글(앞을 지나는 사람·근처 같은 업종)이 밖으로 나가지 않게 두 줄로 */
-/* 도움말이 있는 이름: 오른쪽 위 모서리에 아주 작은 원 안 '?'(마우스를 올리면 title 도움말) */
-.ls-tip { text-decoration: none; cursor: help; }
+/* 도움말이 있는 이름: 오른쪽 위 모서리에 아주 작은 원 안 '?'. 마우스를 올리거나 탭으로 고르면 바로 말풍선(data-tip)이 뜬다
+   (브라우저 기본 title 말풍선은 1초쯤 기다려야 하고 안 뜰 때도 있어 쓰지 않음). 머리글이 표 오른쪽이라 오른쪽 끝에 맞춰 아래로 펼침 */
+.ls-tip { position: relative; cursor: help; outline: none; }
+.ls-tip:focus-visible { border-radius: 4px; box-shadow: 0 0 0 2px var(--primary); }
+.ls-tip::before { content: attr(data-tip); position: absolute; top: calc(100% + 6px); right: 0; z-index: 20; width: 220px; padding: 8px 10px;
+  border-radius: 8px; background: #212529; color: #fff; font-size: 12px; font-weight: 400; line-height: 1.5; text-align: left; white-space: normal;
+  word-break: keep-all; box-shadow: 0 4px 14px rgba(0,0,0,.18); opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .1s; }
+.ls-tip:hover::before, .ls-tip:focus::before { opacity: 1; visibility: visible; }
 .ls-tip::after { content: '?'; display: inline-grid; place-items: center; width: 10px; height: 10px; margin-left: 1px; vertical-align: super;
   border: 1px solid currentColor; border-radius: 50%; font-size: 7.5px; font-weight: 700; line-height: 1; opacity: .7; }
 #ls-more { width: 100%; margin-top: 8px; }
