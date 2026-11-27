@@ -173,7 +173,10 @@ body.list-mode .st-head .icon-btn { display: grid; }
 .ls-sub { font-size: 13.5px; color: var(--g700); }
 .ls-sub small { color: var(--g600); }
 .ls-meta { display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: 13px; color: var(--g600); }
-.ls-tip { text-decoration: underline dotted var(--g500, #8b95a1); text-underline-offset: 3px; cursor: help; }
+/* 도움말이 있는 이름: 오른쪽 위 모서리에 아주 작은 원 안 '?'(마우스를 올리면 title 도움말) */
+.ls-tip { text-decoration: none; cursor: help; }
+.ls-tip::after { content: '?'; display: inline-grid; place-items: center; width: 10px; height: 10px; margin-left: 1px; vertical-align: super;
+  border: 1px solid currentColor; border-radius: 50%; font-size: 7.5px; font-weight: 700; line-height: 1; opacity: .7; }
 .ls-meta b { color: var(--g900); font-size: 14px; font-variant-numeric: tabular-nums; margin-left: 2px; }
 #ls-more { width: 100%; margin-top: 8px; }
 
