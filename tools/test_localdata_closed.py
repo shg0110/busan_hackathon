@@ -1,11 +1,11 @@
-"""tools/localdata_nampo_closed.py 자동 점검. 실제 인허가 파일 없이 가짜 행으로 돌린다.
-실행: python3 -I tools/test_localdata_nampo.py   (끝에 '모두 통과'가 나오면 된다)
+"""tools/localdata_closed.py 자동 점검. 실제 인허가 파일 없이 가짜 행으로 돌린다.
+실행: python3 -I tools/test_localdata_closed.py   (끝에 '모두 통과'가 나오면 된다)
 """
 import csv, os, sys, tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from localdata_epsg5174 import from_wgs, to_wgs
-import localdata_nampo_closed as L
+import localdata_closed as L
 
 IN_PT = (35.0995, 129.0300)    # 남포동 경계 안(광복로·BIFF 사이)
 IN_PT2 = (35.1010, 129.0280)   # 경계 안(국제시장 쪽)
@@ -67,10 +67,14 @@ def main():
         (got.get('빈가게A', {}).get('층') == '2', '도로명주소에서 층을 뽑음'),
         (cnt['행사제외'] == 2, f'행사 부스 2곳 제외(기간 31일 이하, 이름에 축제): {cnt["행사제외"]}'),
         (cnt['좌표없음'] == 1, '좌표 없는 행은 셈만 함'),
-        (cnt['부산중구'] == 11, f'다른 구는 처음부터 뺌: {cnt["부산중구"]}'),
+        (cnt['대상구'] == 11, f'다른 구는 처음부터 뺌: {cnt["대상구"]}'),
         (abs(got['빈가게A']['위도'] - IN_PT[0]) < 1e-5 and abs(got['빈가게A']['경도'] - IN_PT[1]) < 1e-5, '위경도가 원래 점으로 돌아옴'),
         (os.path.exists(out_path) and next(csv.reader(open(out_path, encoding='utf-8-sig')))[0] == '빈점포등급', 'CSV 첫 열'),
     ]
+    out2, cnt2 = L.main([os.path.join(d, 'new.csv'), '--gu', '부산광역시 서구', '--out', os.path.join(d, 'out2.csv')])
+    checks.append(([o['사업장명'] for o in out2] == ['다른구'] and cnt2['대상구'] == 1, f'--gu로 지역을 바꿈: {[o["사업장명"] for o in out2]}'))
+    out3, cnt3 = L.main([os.path.join(d, 'new.csv'), '--gu', '부산광역시 중', '--out', os.path.join(d, 'out3.csv')])
+    checks.append((cnt3['대상구'] == 0, '시·군·구 이름 앞부분만 같은 것(중 → 중구)은 고르지 않음'))
     bad = [msg for ok, msg in checks if not ok]
     for msg in bad:
         print('실패:', msg)

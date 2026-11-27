@@ -1,13 +1,14 @@
-"""남포동 상권 경계 안의 인허가 폐업 기록으로 빈 점포 후보를 뽑고 등급을 매긴다.
-대구 동성로 작업(extract_closed.py + merge_candidates.py)을 부산 남포동용으로 옮겼다.
+"""상권 경계 안의 인허가 폐업 기록으로 빈 점포 후보를 뽑고 등급을 매긴다(지역은 인자로 정한다).
+대구 동성로 작업(extract_closed.py + merge_candidates.py)을 옮겼다. 기본값은 부산 중구 남포동이다.
 
 입력
   - 행정안전부 지방행정 인허가 CSV 여러 개(일반음식점·휴게음식점 등). 전국 파일이든 지역 파일이든 된다.
     cp949·utf-8 모두 읽는다. 옛 열 이름(도로명주소·좌표정보(X))과 새 열 이름(도로명전체주소·좌표정보x(epsg5174)) 모두 받는다.
-  - 남포동 상권 경계: data/processed/nampo_rone_boundary.geojson (R-ONE 상권구획도에서 추적한 근사 경계)
-  - 선택: --shops 소상공인시장진흥공단 상가(상권)정보 부산 CSV. 지금 영업 중인 가게와 맞춰 보는 데 쓴다.
-출력: data/processed/nampo_closed_candidates.csv
-실행: python3 -I tools/localdata_nampo_closed.py data/raw/localdata/*.csv [--since 2024-01-01] [--shops 파일] [--out 파일]
+  - --boundary 상권 경계 GeoJSON(Polygon). 기본: data/processed/nampo_rone_boundary.geojson
+  - --gu 시·군·구(주소 앞부분, 여러 개 가능). 기본: "부산광역시 중구". 예: --gu "경상남도 창원시 마산합포구" "경상남도 창원시 마산회원구"
+  - 선택: --shops 소상공인시장진흥공단 상가(상권)정보 시·도 CSV. 지금 영업 중인 가게와 맞춰 보는 데 쓴다(--gu와 같은 시·군·구만 읽음).
+출력: --out (기본 data/processed/nampo_closed_candidates.csv)
+실행: python3 -I tools/localdata_closed.py data/raw/localdata/*.csv [--gu ...] [--boundary ...] [--since 2024-01-01] [--shops 파일] [--out 파일]
 
 등급(대구와 같은 기준)
   A_빈점포가능성높음 : 같은 주소에 지금 영업 중인 가게가 하나도 없다
@@ -22,7 +23,6 @@ from localdata_epsg5174 import to_wgs
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BOUNDARY = os.path.join(ROOT, 'data/processed/nampo_rone_boundary.geojson')
-GU = '부산광역시 중구'
 
 ALIAS = {
     'status': ['영업상태명'],
@@ -107,8 +107,18 @@ def inside(ring, lat, lon):
     return c
 
 
-def in_gu(r, m):
-    return any(re.sub(r'\s+', ' ', r.get(m[k], '') or '').startswith(GU) for k in ('road', 'jibun') if k in m)
+def in_gu(r, m, gus):
+    for k in ('road', 'jibun'):
+        if k in m:
+            a = re.sub(r'\s+', ' ', r.get(m[k], '') or '')
+            if any(a.startswith(g + ' ') for g in gus):
+                return True
+    return False
+
+
+def shop_in_gu(r, gus):
+    full = re.sub(r'\s+', ' ', f"{r.get('시도명', '')} {r.get('시군구명', '')}").strip()
+    return any(full == g or full.startswith(g + ' ') for g in gus)
 
 
 def main(argv=None):
@@ -117,6 +127,7 @@ def main(argv=None):
     ap.add_argument('--since', default='2024-01-01')
     ap.add_argument('--shops')
     ap.add_argument('--boundary', default=BOUNDARY)
+    ap.add_argument('--gu', nargs='+', default=['부산광역시 중구'])
     ap.add_argument('--out', default=os.path.join(ROOT, 'data/processed/nampo_closed_candidates.csv'))
     a = ap.parse_args(argv)
     ring = load_ring(a.boundary)
@@ -127,9 +138,9 @@ def main(argv=None):
             rd = csv.DictReader(f); m = colmap(rd.fieldnames)
             for r in rd:
                 cnt['전체'] += 1
-                if not in_gu(r, m):
+                if not in_gu(r, m, a.gu):
                     continue
-                cnt['부산중구'] += 1
+                cnt['대상구'] += 1
                 road, jibun = r.get(m.get('road'), '') or '', r.get(m.get('jibun'), '') or ''
                 st = (r[m['status']] or '').strip()
                 if st in OPEN:
@@ -138,7 +149,7 @@ def main(argv=None):
     if a.shops:
         with open_text(a.shops) as f:
             for r in csv.DictReader(f):
-                if r.get('시도명') == '부산광역시' and r.get('시군구명') == '중구':
+                if shop_in_gu(r, a.gu):
                     openset[base(r.get('도로명주소', ''))].add(r.get('층정보', ''))
 
     out = []

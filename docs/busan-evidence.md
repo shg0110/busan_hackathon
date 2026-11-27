@@ -293,11 +293,11 @@
 - 대구 때 쓴 처리 스크립트가 있다. 좌표 변환은 `~/Desktop/git_workspace/dongseongno-3d/raw/vacancy/scripts/epsg5174.py`이고, 6.5m 오차로 검증했다. 폐업 추출은 `extract_closed.py`, 후보 합치기는 `merge_candidates.py`다. 부산 중구에 맞춰 `tools/localdata_*.py`로 옮겨 쓸 수 있다.
 - 걸러낼 범위: 부산 중구(남포동·광복동·신창동·창선동·부평동 등) 가운데 6-2 경계 안.
 - **소상공인시장진흥공단 상가(상권)정보**(공공데이터포털 15083033, 2026-09-30 기준, 2026-10-30 등록, zip 안에 시도별 utf-8 CSV): "지금 이 주소에 영업 중인 가게가 있는지" 판정에 쓴다. 3D 가게 표시에도 쓴다. 내려받기 단추가 페이지 스크립트로 동작해서 직접 받지 않았다. **사용자가 받아 부산 CSV를 `data/raw/sbiz/`에 둔다.** https://www.data.go.kr/data/15083033/fileData.do
-- 처리 스크립트(대구 것을 옮김, 가짜 자료 점검 14개 통과)
+- 처리 스크립트(대구 것을 옮김, 가짜 자료 점검 16개 통과, 지역은 인자로 바꿀 수 있음)
   - `tools/localdata_epsg5174.py`: EPSG:5174 → WGS84 변환
-  - `tools/localdata_nampo_closed.py`: 부산 중구만 한 줄씩 걸러 읽는다(전국 파일 가능). 6-2 경계 안의 2024년 이후 폐업을 고르고, 행사 부스는 뺀다(이름·주소의 축제·행사 같은 말, 또는 인허가~폐업 31일 이하). 그다음 A·B·C 등급을 매긴다. 옛 열 이름과 새 열 이름(좌표정보x(epsg5174) 등), cp949·utf-8을 모두 읽는다.
-  - `tools/test_localdata_nampo.py`: 자동 점검
-  - 실행: `python3 -I tools/localdata_nampo_closed.py data/raw/localdata/*.csv --shops data/raw/sbiz/<부산 상가정보>.csv` → `data/processed/nampo_closed_candidates.csv`
+  - `tools/localdata_closed.py`: `--gu`로 정한 시·군·구만 한 줄씩 걸러 읽는다(기본 부산광역시 중구, 전국 파일 가능). 경계는 `--boundary`로 바꾼다(기본 6-2 남포동). 6-2 경계 안의 2024년 이후 폐업을 고르고, 행사 부스는 뺀다(이름·주소의 축제·행사 같은 말, 또는 인허가~폐업 31일 이하). 그다음 A·B·C 등급을 매긴다. 옛 열 이름과 새 열 이름(좌표정보x(epsg5174) 등), cp949·utf-8을 모두 읽는다.
+  - `tools/test_localdata_closed.py`: 자동 점검(16개 통과)
+  - 실행: `python3 -I tools/localdata_closed.py data/raw/localdata/*.csv --gu "부산광역시 중구" --shops data/raw/sbiz/<부산 상가정보>.csv` → `data/processed/nampo_closed_candidates.csv`
 - 전국 인허가 CSV는 크기가 커서 저장소에 넣지 않는다(`.gitignore`). 걸러 낸 결과만 올린다.
 
 ---
