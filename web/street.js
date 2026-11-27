@@ -363,9 +363,14 @@ function listTable() {
   const firstN = candidates().filter(c => c.first).length;
   panel.querySelector('h2').textContent = LS.upper ? '빈 층 자리 목록' : '빈 1층 자리 목록';
   document.getElementById('ls-n').innerHTML = `${LS.upper ? '빈 층이 있는 건물' : '가게 없는 1층'} <b>${L.length}곳</b>${L.length !== (LS.upper ? candidates().length : firstN) ? ` (조건에 맞는 곳)` : ''} · ${{ flow: '앞을 지나는 사람 많은 순', area: '넓은 순', near: '지금 보는 곳에서 가까운 순' }[LS.sort]}`;
-  const rows = L.slice(0, LS.n).map((c, k) => `<tr data-b="${c.b}"><td>${k + 1}</td><td>${c.floor}층 · ${esc(c.name)}${c.st ? `<br><small class="th-u">${esc(c.st.ko.split(' (')[0])}</small>` : ''}</td><td>${c.area ? `${Math.round(c.area)}㎡` : '-'}</td><td>${c.flow != null ? Math.round(c.flow).toLocaleString('ko-KR') + '명' : '-'}</td><td>${c.same != null ? c.same + '곳' : '-'}</td></tr>`).join('');
-  document.getElementById('ls-t').innerHTML = `<tr><th></th><th>자리</th><th>면적</th><th>앞을 지나는 사람<br><small class="th-u">평일 하루</small></th><th>같은 업종<br><small class="th-u">250m 안</small></th></tr>${rows}`;
-  document.getElementById('ls-t').querySelectorAll('tr[data-b]').forEach(tr => tr.onclick = () => flyBuilding(+tr.dataset.b));
+  // 한 자리 = 한 칸(표 머리글과 숫자가 떨어져 무슨 숫자인지 읽기 어려웠음): 위 줄 이름·층·면적, 아래 줄 숫자마다 이름을 바로 붙임
+  document.getElementById('ls-t').innerHTML = L.slice(0, LS.n).map((c, k) => `<li><button type="button" class="ls-row" data-b="${c.b}">
+    <span class="ls-k">${k + 1}</span>
+    <span class="ls-main"><span class="ls-name"><b>${esc(c.name)}</b>${c.st ? `<em>${esc(c.st.ko.split(' (')[0])}</em>` : ''}</span>
+      <span class="ls-sub">${c.floor}층${c.area ? ` · ${Math.round(c.area)}㎡ <small>(${Math.round(c.area / 3.3058)}평)</small>` : ''}</span>
+      <span class="ls-meta"><span>앞을 지나는 사람 <b>${c.flow != null ? Math.round(c.flow).toLocaleString('ko-KR') + '명' : '-'}</b></span><span>근처 ${esc(subKo)} <b>${c.same != null ? c.same + '곳' : '-'}</b></span></span></span>
+  </button></li>`).join('');
+  document.getElementById('ls-t').querySelectorAll('.ls-row').forEach(el => el.onclick = () => flyBuilding(+el.dataset.b));
   const more = document.getElementById('ls-more'); more.hidden = L.length <= LS.n; more.textContent = `더 보기 (${L.length - LS.n}곳 더)`;
   document.getElementById('rk-run').textContent = `위 ${Math.min(10, L.length)}곳에 ${subKo} 열어 순위 내기`;
   document.getElementById('rk-run').disabled = !L.length;
@@ -388,9 +393,9 @@ function openList() {
       <label class="ls-up"><input type="checkbox" id="ls-up"><span>위층도 넣기 <small>건물마다 가장 낮은 빈 층</small></span></label>
     </div>
     <p class="st-tip" id="ls-n"></p>
-    <div class="ls-wrap"><table class="exp-cmp rk ls" id="ls-t"></table></div>
+    <ol class="ls-list" id="ls-t"></ol>
     <button type="button" class="btn-sub" id="ls-more" hidden></button>
-    <details class="st-how"><summary>어떻게 셌나요</summary><p>‘가게 없는 1층’은 건축물대장 층별개요의 상가 층 가운데 2026년 9월 상가정보에 그 층 가게가 없는 곳입니다. 사무실·창고로 쓰거나 등록이 늦은 가게도 들어 있을 수 있습니다. 면적은 그 층 면적입니다. ‘앞을 지나는 사람’은 가상 시민이 평일 하루 이 건물 앞 길(가장 가까운 길 지점에서 20m 더, 최대 40m 안의 가장 붐비는 곳)을 지나간 횟수로, 실제 유동인구가 아닙니다. ‘같은 업종’은 아래에서 고른 업종의 기존 가게가 250m 안에 몇 곳 있는지입니다. 지도 위 번호는 목록 위 10곳입니다.</p></details>
+    <details class="st-how"><summary>어떻게 셌나요</summary><p>‘가게 없는 1층’은 건축물대장 층별개요의 상가 층 가운데 2026년 9월 상가정보에 그 층 가게가 없는 곳입니다. 사무실·창고로 쓰거나 등록이 늦은 가게도 들어 있을 수 있습니다. 면적은 그 층 면적입니다. ‘앞을 지나는 사람’은 가상 시민이 <b>평일 하루</b> 이 건물 앞 길(가장 가까운 길 지점에서 20m 더, 최대 40m 안의 가장 붐비는 곳)을 지나간 횟수로, 실제 유동인구가 아닙니다. ‘근처 ○○’는 아래에서 고른 업종의 기존 가게가 <b>250m 안</b>에 몇 곳 있는지(경쟁 가게 수)입니다. 지도 위 번호는 목록 위 10곳입니다.</p></details>
     <div class="st-rank">
       <select id="rk-cat" aria-label="업종">${SIM.subOptions ? SIM.subOptions('viet') : ''}</select>
       <div class="rk-hours"><label>여는 시각<select id="rk-open"></select></label><label>닫는 시각<select id="rk-close"></select></label></div>
