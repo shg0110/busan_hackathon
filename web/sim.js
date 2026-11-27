@@ -1102,8 +1102,16 @@ const fmtQ = (q) => (Math.round(q * 100) / 100).toString();
 function fillHours(oSel, cSel, sub) { const h = hoursOf(sub, SUB[sub].cat); oSel.innerHTML = tOpts(0, 1380, h[0]); cSel.innerHTML = tOpts(360, T1, h[1]); }
 function readHours(oSel, cSel) { const o = +oSel.value; let c = +cSel.value; if (c <= o) c += 1440; return [o, Math.min(c, T1)]; }
 const hoursTxt = (h) => `${tLabel(h[0])}~${tLabel(h[1])}`;
+// 업종 수요 시간(CAT_WIN, 그 업종 가게들 보통 영업시간을 합친 것 + 이 세부 업종 보통 시간) 한 줄: 내 가게를 그보다 일찍 열거나 늦게 닫아도 손님이 늘지 않음을 밝힌다
+function demandTxt(sub, h) {
+  const sb = SUB[sub]; if (!sb) return ''; const c = sb.cat, d = hoursOf(sub, c), w = CAT_WIN[c] ? [Math.min(CAT_WIN[c][0], d[0]), Math.max(CAT_WIN[c][1], d[1])] : d, to = w[1] - LAST_ORDER;
+  let t = `${CFG.cats[c].ko} 손님은 ${tLabel(w[0])}~${tLabel(to)}에 새로 옵니다(옥포 ${CFG.cats[c].ko} 가게들의 보통 영업시간을 합친 것, 가정).`;
+  if (h && h[0] < w[0]) t += ` ${tLabel(w[0])}보다 일찍 열어도 손님이 늘지 않습니다.`;
+  if (h && h[1] - LAST_ORDER > to) t += ` ${tLabel(to)} 뒤로 늦게 닫아도 손님이 늘지 않습니다.`;
+  return t;
+}
 function hoursNote() { const el = $('x-hours-note'); if (!el) return; const sub = $('x-cat').value, d = hoursOf(sub, SUB[sub].cat), h = readHours($('x-open'), $('x-close'));
-  el.textContent = (h[0] === d[0] && h[1] === d[1] ? `${SUB[sub].ko} 보통 영업시간(가정)입니다. 내 가게 시간으로 바꿔 보세요.` : `${SUB[sub].ko} 보통(${hoursTxt(d)})과 다르게 ${hoursTxt(h)}로 셉니다.`) + ' 새 손님은 마감 30분 전(라스트 오더)까지 받습니다. 하루는 05:00~다음 날 05:00(24시간)을 셉니다.'; }
+  el.textContent = (h[0] === d[0] && h[1] === d[1] ? `${SUB[sub].ko} 보통 영업시간(가정)입니다. 내 가게 시간으로 바꿔 보세요.` : `${SUB[sub].ko} 보통(${hoursTxt(d)})과 다르게 ${hoursTxt(h)}로 셉니다.`) + ' 새 손님은 마감 30분 전(라스트 오더)까지 받습니다. 하루는 05:00~다음 날 05:00(24시간)을 셉니다. ' + demandTxt(sub, h); }
 function fillDefaults() {
   const sb = SUB[$('x-cat').value]; if (!sb) return;
   $('x-seats').value = sb.seats;
@@ -1529,6 +1537,6 @@ uiHooks.push(() => { updOcc(false); renderLive(false); });
 $('sim-play').addEventListener('click', () => { if (!playing) { updOcc(true); renderLive(true); } });   // 멈춘 순간 값으로 맞춤(재생 중엔 0.25~0.3초마다)
 updOcc(true);
 
-window.__sim = { _pass: { PASSF, nearest, passbyAt, frontFlow, get mean() { return PASS_MEAN; } }, get passby() { return { beta: PASSBY, ms: PASSBY_MS, mean: PASS_MEAN }; }, get playing() { return playing; }, get _fig() { return figMesh; }, get cfgVer() { return TS.ver; }, TS, applyTS, _catwin: CAT_WIN, hoursOf, fillHours, readHours, hoursTxt, _shops: () => SHOPS, _active: () => ACTIVE, _md: { MDX, MDZ, NX, NZ, NSW, NWD }, peakTxt, _ck: CK, runDay, experiment, seek, nodesNear, flowDay, trySlot, nodeFlow, nodeFlowAsync, restore: () => { drawDirty = true; need(); }, won, wonX, GROUPS, SUB, SUBS_OF, subOptions, NAT,
+window.__sim = { demandTxt, _pass: { PASSF, nearest, passbyAt, frontFlow, get mean() { return PASS_MEAN; } }, get passby() { return { beta: PASSBY, ms: PASSBY_MS, mean: PASS_MEAN }; }, get playing() { return playing; }, get _fig() { return figMesh; }, get cfgVer() { return TS.ver; }, TS, applyTS, _catwin: CAT_WIN, hoursOf, fillHours, readHours, hoursTxt, _shops: () => SHOPS, _active: () => ACTIVE, _md: { MDX, MDZ, NX, NZ, NSW, NWD }, peakTxt, _ck: CK, runDay, experiment, seek, nodesNear, flowDay, trySlot, nodeFlow, nodeFlowAsync, restore: () => { drawDirty = true; need(); }, won, wonX, GROUPS, SUB, SUBS_OF, subOptions, NAT,
   graph: { NX, NZ, ADJ, NN }, selectAgent, pickAt, occNow, get selAgent() { return curSel(); }, get scen() { return scen; }, get A() { return A; }, get W() { return W; }, SHOPS, CFG, nodes: NN, get t() { return simT; } };
 })();

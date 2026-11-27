@@ -102,3 +102,6 @@ body:not(:has(#rail)) .st-how p, body:not(:has(#rail)) .st-from { font-size: 11.
 .rk-hours select { min-height: 44px; padding: 6px 10px; border: 0; border-radius: 10px; background: var(--g100); font: inherit; font-size: 15px; color: var(--g900); min-width: 0; }
 .exp-cmp .th-u { font-size: 11.5px; font-weight: 400; color: var(--g600); }   /* 칸 제목 아래 단위(하루) */
 .exp-nb .why { display: block; margin-top: 4px; color: var(--g600); }   /* 같은 업종 비교의 차이의 까닭 한 줄 */
+/* 자리 순위 번호(지도 건물 위, street.js rankLabel): 진한 남색 바탕 흰 글자 — 주황(가게 없는 층)과 헷갈리지 않게. 누르면 그 건물로 */
+.lbl.rk-n { background: #1b2a4a; color: #fff; font-weight: 700; font-size: 13px; padding: 3px 8px; border-radius: 999px; box-shadow: 0 1px 3px rgba(0,0,0,.35); pointer-events: auto; cursor: pointer; text-shadow: none; }
+#rk-out { scroll-margin-top: 16px; }   /* 결과로 스크롤할 때 윗줄이 잘리지 않게 */
