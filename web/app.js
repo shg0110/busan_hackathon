@@ -194,15 +194,29 @@ const EDGE_IN = 160, HALF = D.meta.half || [R, R];
 function edgeFade(x, z) { const d = Math.min(HALF[0] - Math.abs(x), HALF[1] - Math.abs(z)), k = Math.max(0, Math.min(1, d / EDGE_IN)); return k * k * (3 - 2 * k); }
 // 위경도 → 지도 좌표(m). tools/map_build.py xz() 와 같은 식
 const xz = (lat, lon) => [(lon - D.meta.lon0) * D.meta.kx, -(lat - D.meta.lat0) * D.meta.kz];
-// R-ONE 상권 경계: 땅 위 굵은 선(닫힌 고리) + 이름표
-if (D.boundary) {
-  const ring = D.boundary.concat([D.boundary[0]]);
-  const pos = []; ribbon(ring, 3.2, 0, pos);
+// R-ONE 상권 경계: 지도에서 흔한 경계 표시처럼 진한 회색 점선(주황은 '가게 없는 층' 색이라 쓰지 않음).
+// 가까이 볼수록 가늘게(정류장·노면 표시를 덮지 않게), 바닥 표시(8.9)보다 먼저 그려 노면 표시가 위에 오게
+let bndMesh = null, bndK = 0;
+function drawBoundary(k) {
+  if (!D.boundary) return;
+  if (bndMesh) { scene.remove(bndMesh); bndMesh.geometry.dispose(); }
+  const ring = D.boundary.concat([D.boundary[0]]), pos = [], DASH = 9, GAP = 6, w = 2.4 * k;
+  let carry = 0, on = true;
+  for (let i = 0; i < ring.length - 1; i++) {
+    const [ax, az] = ring[i], [bx, bz] = ring[i + 1], L = Math.hypot(bx - ax, bz - az); if (L < 0.01) continue;
+    let d = 0;
+    while (d < L) {
+      const left = (on ? DASH : GAP) - carry, e = Math.min(L, d + left);
+      if (on) ribbon([[ax + (bx - ax) * d / L, az + (bz - az) * d / L], [ax + (bx - ax) * e / L, az + (bz - az) * e / L]], w, 0.04, pos);
+      carry += e - d; d = e;
+      if (carry >= (on ? DASH : GAP) - 1e-6) { carry = 0; on = !on; }
+    }
+  }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  const nrm = new Float32Array(pos.length); for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1; g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
-  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: '#d9480f', depthWrite: false, side: THREE.DoubleSide, transparent: true, opacity: 0.85 }));
-  m.renderOrder = 9; scene.add(m);
+  bndMesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: '#3d434a', depthWrite: false, side: THREE.DoubleSide, transparent: true, opacity: 0.75 }));
+  bndMesh.renderOrder = 8.8; bndMesh.frustumCulled = false; scene.add(bndMesh); need && need();
 }
+function boundaryK() { const d = camera.position.distanceTo(controls.target); return d < 250 ? 0.35 : d < 550 ? 0.7 : 1.5; }
 
 // ── 건물 ───────────────────────────────────────────────
 // 모든 건물을 한 덩어리로 합친다. triOwner[삼각형 번호] = 건물 번호 → 누른 건물 찾기.
@@ -694,5 +708,7 @@ requestAnimationFrame(() => requestAnimationFrame(() => {
 window.__map = { select, buildings: B, signedArea, camera, controls, HOME, labels, need, orbit, scene, renderer, R, esc, tint, setRoofs,
   roads: roadMeshes, ground, greens: greenMeshes, water: waterMesh, xz, meta: D.meta, dayLight, edgeFade, get night() { return Math.max(0, nightNow); },
   get selected() { return selIdx; }, infoExtra: null };
+bndK = boundaryK(); drawBoundary(bndK);
+controls.addEventListener('change', () => { const k = boundaryK(); if (k !== bndK) { bndK = k; drawBoundary(k); } });
 document.dispatchEvent(new Event('map-ready'));
 })();
