@@ -39,6 +39,7 @@ function rng(seed) {           // mulberry32: 씨앗 고정 난수
 }
 const rand = rng(20261127);
 const key = (p) => p[0].toFixed(1) + ',' + p[1].toFixed(1);
+function polyArea(p) { let s = 0; for (let i = 0; i < p.length; i++) { const a = p[i], b = p[(i + 1) % p.length]; s += a[0] * b[1] - b[0] * a[1]; } return Math.abs(s / 2); }
 function inPoly(x, z, p) {
   let c = false;
   for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
@@ -224,7 +225,7 @@ for (const g of D.greens) {
     const px = x + (rand() - 0.5) * gap * 0.7, pz = z + (rand() - 0.5) * gap * 0.7;
     if (!inPoly(px, pz, g.p) || !inside(px, pz, 5) || inWater(px, pz)) continue;
     if (nearBuilding(px, pz, 2.2) || nearRoad(px, pz, 1.5, -1)) continue;
-    if (g.k === 'playground') {   // 놀이터는 가운데를 비워 놀이기구 자리로: 나무는 가장자리 3m 띠에만(실제 어린이공원처럼)
+    if (g.k === 'playground' && polyArea(g.p) <= 800) {   // 놀이터는 가운데를 비워 놀이기구 자리로: 나무는 가장자리 3m 띠에만(실제 어린이공원처럼). 800㎡ 넘는 곳은 공원 전체가 놀이터로 표시된 것이라 공원처럼(31도 녹지로 둠)
       let e = Infinity; for (let i = 0; i < g.p.length; i++) e = Math.min(e, segDist(px, pz, g.p[i], g.p[(i + 1) % g.p.length]));
       if (e > 3) continue;
     }
@@ -635,7 +636,7 @@ function playgrounds() {
   let swings = 0, slides = 0;
   const area = (p) => { let s = 0; for (let i = 0; i < p.length; i++) { const a = p[i], b = p[(i + 1) % p.length]; s += a[0] * b[1] - b[0] * a[1]; } return Math.abs(s / 2); };
   for (const g of D.greens) {
-    if (g.k !== 'playground' || area(g.p) < 45) continue;
+    if (g.k !== 'playground' || area(g.p) < 45 || area(g.p) > 800) continue;   // 800㎡ 넘는 곳은 공원 전체(고무칩 없이 녹지)
     const P = g.p; let best = 0, ux = 1, uz = 0;
     for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i + 1) % P.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L > best) { best = L; ux = (b[0] - a[0]) / L; uz = (b[1] - a[1]) / L; } }
     const vx = -uz, vz = ux, rot0 = -Math.atan2(uz, ux);
@@ -866,7 +867,17 @@ function areaLabels() {
   if (!best) return 0;
   const el = document.createElement('div'); el.className = 'lbl place water'; el.textContent = '옥포만';
   box.appendChild(el); M.labels.push({ el, x: best.x, y: 0, z: best.z, pri: 9, kind: 'place', w: 0, h: 0 });
-  return 1;
+  // 지도 밖 큰 곳(한화오션 옥포조선소 등): 가운데에서 그쪽으로 그은 선이 지도 가장자리(안쪽 45m)와 만나는 곳에 '…방향' 이름표.
+  // 가상 손님의 큰 몫이 조선소 통근자라 어디서 오는지 보이게 한다
+  let n = 1;
+  for (const pl of D.places || []) {
+    const px = pl.x !== undefined ? pl.x : pl.p && pl.p[0], pz = pl.z !== undefined ? pl.z : pl.p && pl.p[1];
+    if (px === undefined || inside(px, pz, 0) || pl.k !== 'industrial') continue;
+    const t = Math.min((HX - 45) / Math.abs(px || 1), (HZ - 45) / Math.abs(pz || 1));
+    const e2 = document.createElement('div'); e2.className = 'lbl place major edge'; e2.textContent = pl.n + ' 방향';
+    box.appendChild(e2); M.labels.push({ el: e2, x: px * t, y: 0, z: pz * t, pri: 8, kind: 'place', w: 0, h: 0 }); n++;
+  }
+  return n;
 }
 
 function afterLoad() {
