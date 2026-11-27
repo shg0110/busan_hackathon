@@ -261,7 +261,6 @@ for (const g of D.greens) {
 if (shrubs.length > MAX_SHRUBS) shrubs.length = MAX_SHRUBS;
 
 // ── 나무 그리기 ─────────────────────────────────────────
-const TREE_MESHES = [];   // 나무·관목 InstancedMesh(가벼운 보기에서 줄임)
 const treeRefs = [];   // 나무마다 {x, z, parts: [[InstancedMesh, 번호]..]} — 나중에 버스 정류장 자리의 나무를 숨길 때 쓴다
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
 function hideTreesNear(x, z, r) {
@@ -377,7 +376,6 @@ function hideTreesNear(x, z, r) {
     });
     meshes.push(bush);
   }
-  TREE_MESHES.push(...meshes);
   for (const m of meshes) {
     m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true;
     m.castShadow = true; m.receiveShadow = false; m.renderOrder = 10; m.name = 'decor-trees';
@@ -582,30 +580,8 @@ if (document.readyState === 'complete') afterLoad(); else addEventListener('load
 if (M.renderer) M.renderer.shadowMap.needsUpdate = true;
 M.need && M.need();
 
-// ── 가벼운 보기(느린 컴퓨터, shell.js 가 부름): 녹지 나무를 3그루 중 1그루만 남기고(인스턴스를 앞으로 모아 count 를 줄임 → 그리는 양이 실제로 준다),
-// 나무 그림자를 끈다. 되돌리기는 다시 불러오기(?lite=0)로 한다
-let liteDone = false;
-function lite() {
-  if (liteDone) return null; liteDone = true;
-  const m4 = new THREE.Matrix4(), c = new THREE.Color(); let before = 0, after = 0;
-  for (const m of TREE_MESHES) {
-    let k = 0; before += m.count;
-    for (let i = 0; i < m.count; i++) {
-      m.getMatrixAt(i, m4); if (m4.elements[5] === 0) continue;   // 이미 숨긴 것(정류장 자리 등)
-      if (i % 3 !== 0) continue;
-      m.setMatrixAt(k, m4); if (m.instanceColor) { m.getColorAt(i, c); m.setColorAt(k, c); } k++;
-    }
-    m.count = k; after += k; m.castShadow = false;
-    m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true;
-  }
-  treeRefs.length = 0; PG.clear(); pgN = 0;   // 인스턴스 번호가 바뀌었으니 숨기기 참조는 버린다(가벼운 보기는 load 뒤라 더 숨길 일이 없다)
-  if (M.renderer) M.renderer.shadowMap.needsUpdate = true; M.need && M.need();
-  return { before, after };
-}
-
 // 점검용(자동 시험이 읽음)
 window.__decor = {
-  lite,
   trees: trees.length,
   street: trees.filter(t => t[4] === 'street').length,
   green: trees.filter(t => t[4] !== 'street').length,

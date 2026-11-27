@@ -425,11 +425,6 @@ body.nomap #r-where, body.nomap #r-layers, body.nomap .spark, body.nomap #card-t
 #loading.fail div { display: grid; gap: 10px; max-width: 440px; }
 #loading.fail b { font-size: 18px; font-weight: 700; color: var(--g900); }
 #loading.fail span { font-size: 14.5px; line-height: 1.6; color: var(--g700); }
-/* 가벼운 보기로 바뀌었음을 알림(shell.js #lite-note): 지도 왼쪽 위 작은 띠 */
-#lite-note { position: fixed; left: calc(var(--side) + 16px); top: 16px; z-index: 4; margin: 0; font-size: 13px; color: var(--g700); background: #fff;
-  padding: 8px 12px; border-radius: 10px; box-shadow: var(--shadow); }
-#lite-note a { margin-left: 8px; color: var(--primary-ink); font-weight: 700; text-decoration: none; }
-#lite-note a:hover { text-decoration: underline; }
 
 /* ── 좁은 노트북 ────────────────────────── */
 @media (max-width: 1180px) and (min-width: 721px) {
