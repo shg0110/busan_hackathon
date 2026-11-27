@@ -340,8 +340,8 @@ scene.add(bMesh);
 }
 
 // 거리 집중: keep(건물 번호 Set) 밖 건물은 땅 색 쪽으로 흐리게. null 이면 원래대로
-let keepSet = null, estOn = false;
-function tint(keep) { keepSet = keep; paintEstimated(estOn); }
+let keepSet = null, estOn = false, tintK = 0.45;
+function tint(keep, k = 0.45) { keepSet = keep; tintK = k; paintEstimated(estOn); }
 // 층수 추정 건물 강조 켜고 끄기
 function paintEstimated(on) {
   estOn = on;
@@ -350,7 +350,7 @@ function paintEstimated(on) {
   if (keepSet) {
     const g = [0.9, 0.91, 0.925];   // 거리 밖 건물: 옅은 회색 쪽으로 조금만(하얗게 날리지 않게)
     B.forEach((b, bi) => { if (keepSet.has(bi)) return; const [s0, e0] = bRange[bi];
-      for (let v = s0; v < e0; v++) for (let k = 0; k < 3; k++) arr[v * 3 + k] = arr[v * 3 + k] * 0.55 + g[k] * 0.45; });
+      for (let v = s0; v < e0; v++) for (let k = 0; k < 3; k++) arr[v * 3 + k] = arr[v * 3 + k] * (1 - tintK) + g[k] * tintK; });
   }
   if (on) B.forEach((b, bi) => { if (!b.real) { const [s, e] = bRange[bi]; for (let v = s; v < e; v++) { arr[v * 3] = est.r; arr[v * 3 + 1] = est.g; arr[v * 3 + 2] = est.b; } } });
   colAttr.needsUpdate = true; need();
