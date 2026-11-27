@@ -5,6 +5,7 @@
 처리
   - web/data/<지역>_map.js meta 의 bbox 를 덮는 z15 타일을 읽어, 지도 미터 좌표 CELL m 격자마다 쌍선형으로 높이를 뽑는다
   - 바다(okpo_map.js water 다각형 안)는 0 으로 고정. 땅은 3×3 평균으로 한 번 부드럽게(타일 계단 줄이기), 0 아래로는 내리지 않는다
+  - 단, 땅에 맞닿은 바다 격자점은 음수(직선이 실제 해안선에서 0 을 지나게, 최저 -15m). 그래서 해안선 위치가 맞고 바닷가는 가파른 둑이 된다
 결과: web/data/<지역>_terrain.js  window.TERRAIN = { src, cell, x0, z0, nx, nz, scale, h: base64(Int16, 작은 끝, 단위 scale m) }
 실행: python3 -I tools/terrain_build.py okpo
 """
@@ -91,6 +92,33 @@ def main():
                 continue
             vs = [grid[jj][ii] for jj in range(max(0, j - 1), min(nz, j + 2)) for ii in range(max(0, i - 1), min(nx, i + 2))]
             sm[j][i] = max(0.0, sum(vs) / len(vs))
+    # 해안: 땅에 맞닿은 바다 격자점은 0 대신 음수로 둔다. 그 점과 옆 땅 점을 잇는 직선이 실제 해안선(물 다각형 변, 지도 테두리 변 제외)에서
+    # 0 을 지나도록(h_sea = -h_land × 바다 점→해안 거리 / 땅 점→해안 거리, 최저 -15m). 그렇지 않으면 6m 격자의 완만한 경사로가 물 다각형 안쪽까지
+    # 땅을 물 위로 올려, 항구 바닷가가 모래 언덕처럼 보이고 해안선이 최대 6m 바다 쪽으로 밀렸다(11-27)
+    on_frame = lambda a, b: (abs(abs(a[0]) - hx) < 2 and abs(abs(b[0]) - hx) < 2) or (abs(abs(a[1]) - hz) < 2 and abs(abs(b[1]) - hz) < 2)
+    coast = [(p[k - 1], p[k]) for p in water for k in range(len(p)) if not on_frame(p[k - 1], p[k])]
+    def cdist(x, z):
+        best = 1e9
+        for a, b in coast:
+            dx, dz = b[0] - a[0], b[1] - a[1]; l2 = dx * dx + dz * dz
+            t = max(0.0, min(1.0, ((x - a[0]) * dx + (z - a[1]) * dz) / l2)) if l2 else 0.0
+            d = math.hypot(x - a[0] - t * dx, z - a[1] - t * dz)
+            if d < best: best = d
+        return best
+    n_coast, low = 0, 0.0
+    for j in range(nz):
+        for i in range(nx):
+            if not sea[j][i]:
+                continue
+            nb = [(jj, ii) for jj in range(max(0, j - 1), min(nz, j + 2)) for ii in range(max(0, i - 1), min(nx, i + 2)) if not sea[jj][ii] and sm[jj][ii] > 0.05]
+            if not nb:
+                continue
+            ds = cdist(x0 + i * CELL, z0 + j * CELL); h = 0.0
+            for jj, ii in nb:
+                dl = max(0.5, cdist(x0 + ii * CELL, z0 + jj * CELL))
+                h = min(h, -sm[jj][ii] * ds / dl)
+            sm[j][i] = max(-15.0, h); n_coast += 1; low = min(low, sm[j][i])
+    print('해안 바다 점', n_coast, '가장 낮게', round(low, 1), 'm')
     a = array.array('h', [max(-32768, min(32767, round(v / SCALE))) for row in sm for v in row])
     if sys.byteorder != 'little':
         a.byteswap()
@@ -99,7 +127,7 @@ def main():
     dst = os.path.join(ROOT, 'web', 'data', f'{NAME}_terrain.js')
     with open(dst, 'w', encoding='utf-8') as f:
         f.write('/* 자동 생성: tools/terrain_build.py. 손으로 고치지 말 것 */\nwindow.TERRAIN = '); json.dump(out, f, separators=(',', ':')); f.write(';\n')
-    land = [v for j, row in enumerate(sm) for i, v in enumerate(row) if not sea[j][i]]
+    land = [v for j, row in enumerate(sm) for i, v in enumerate(row) if not sea[j][i]]   # 해안 바다 점의 음수는 땅 통계에 넣지 않음
     print(os.path.relpath(dst, ROOT), f'{nx}×{nz} 칸({CELL}m)', '파일', os.path.getsize(dst) // 1024, 'KB', '땅 높이 최소', round(min(land), 1), '최대', round(max(land), 1), '바다 칸', sum(map(sum, sea)))
 
 

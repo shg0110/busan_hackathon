@@ -320,7 +320,8 @@ function faceUp(pos, uv) {
   }
 }
 const made = [];
-const NO_DENSIFY = new Set(['water']);   // 바다는 높이 0 이라 잘게 나눌 필요 없음
+const NO_DENSIFY = new Set(['water']);
+const ZERO_BASE = new Set(['water', 'foam']);   // 바다는 높이 0 이라 잘게 나눌 필요 없음
 const ROADLIKE = new Set(['foot', 'service', 'minor-edge', 'minor', 'link', 'major-edge', 'major', 'walk', 'corner', 'alley-edge']);   // 길 띠는 8m 로(삼각형 수 줄이기)
 function flat(pos, color, order, glow, name, tex) {
   if (!pos.length) return null;
@@ -329,7 +330,8 @@ function flat(pos, color, order, glow, name, tex) {
   if (TON) {   // 6m 이하로 나눈 뒤 꼭짓점마다 땅 높이를 더하고, 법선은 땅 기울기
     if (!NO_DENSIFY.has(name)) pos = densify(pos, ROADLIKE.has(name) ? 8 : 6);
     const n2 = new Float32Array(pos.length);
-    for (let i = 0; i < pos.length; i += 3) { const x = pos[i], z = pos[i + 2]; pos[i + 1] += TH(x, z) + LIFT; const n = terrainNormal(x, z); n2[i] = n[0]; n2[i + 1] = n[1]; n2[i + 2] = n[2]; }
+    const zb = ZERO_BASE.has(name);   // 물·물거품은 바다 높이 0 에 고정(해안 바다 격자점은 지형이 음수라 따라가면 물이 꺼진다)
+    for (let i = 0; i < pos.length; i += 3) { const x = pos[i], z = pos[i + 2]; pos[i + 1] += (zb ? 0 : TH(x, z)) + LIFT; const n = zb ? [0, 1, 0] : terrainNormal(x, z); n2[i] = n[0]; n2[i + 1] = n[1]; n2[i + 2] = n[2]; }
     var nrmT = n2;
   } else for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1;
   const g = new THREE.BufferGeometry();
