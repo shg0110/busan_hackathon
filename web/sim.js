@@ -910,7 +910,8 @@ $('sim-src-d').addEventListener('toggle', () => {
   const per = wv / SHOPS.filter(x => !x.virtual).length;
   el.innerHTML = `가상: 하루 가게 방문 평일 ${Math.round(wv).toLocaleString('ko-KR')}명·${man(ww)}, 주말 ${Math.round(ev).toLocaleString('ko-KR')}명·${man(ew)}. 지도 안 가게 ${SHOPS.filter(x => !x.virtual).length.toLocaleString('ko-KR')}곳이라 가게당 평일 약 ${per.toFixed(1)}명. ` +
     `실제(경남빅데이터허브 소비동향, 카드 점유율 보정 추정, 2026-09): 옥포1동 52.66억·옥포2동 67.24억 원, 옥포1동은 약 17.7만 건(건당 약 3만 원). 하루로 나누면 두 동 약 4억 원, 건당 3만 원이면 약 1.3만 건. ` +
-    `가상 매출은 그 약 ${Math.round(100 * ww / 4e8)}% 입니다. 지도 범위·업종 범위(가상은 음식·생활 21개 세부 업종만)가 두 동 전체보다 좁고 카드 1건은 여럿이 낸 값일 수 있지만, 가상 손님 수가 실제보다 적게 나올 수 있습니다. ` +
+    `가상 매출은 그 약 ${Math.round(100 * ww / 4e8)}%입니다. 두 동 상가정보 1,714곳 중 가상으로 돌리는 가게가 ${SHOPS.filter(x => !x.virtual).length.toLocaleString('ko-KR')}곳(${Math.round(100 * SHOPS.filter(x => !x.virtual).length / 1714)}%)이라 실제를 그만큼 줄여 견줘도 약 ${Math.round(100 * ww / (4e8 * SHOPS.filter(x => !x.virtual).length / 1714))}%입니다. ` +
+    `카드 1건은 여럿이 낸 값일 수 있고 현금은 빠졌지만, 가상 손님 수나 1인 지출이 실제보다 작게 잡혀 있을 가능성이 큽니다. ` +
     `그래서 '가게 열어 보기'는 손님 수 자체보다 같은 업종 기존 가게들 가운데 순위로 보세요.`;
 });
 
