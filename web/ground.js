@@ -308,6 +308,25 @@ const spotsCross = [];
   flat(lane, G.lane, 8, '#202020', 'lane');
 }
 
+// ── 바퀴 자국: 차로 가운데에서 ±0.9m 에 폭 0.7m 로 살짝 어두운 띠(차가 늘 지나는 자리라 실제 아스팔트가 이렇게 바랜다). 큰길 + 골목 ──
+{
+  const pos = [];
+  const tracks = (m, laneOffs, clear) => { for (const [a, b] of openSpans(m, clear)) for (const o of laneOffs) for (const t of [-0.9, 0.9]) stripe(m, o + t, 0.7, a, b, 0.012, pos); };
+  for (const m of majors) {
+    if (m.r.br) continue;
+    const per = lanesPerDir(m.r), w = m.r.w, offs = [];
+    for (let k = 0; k < per; k++) { if (m.r.ow) offs.push(-w / 2 + (k + 0.5) * w / per); else offs.push((k + 0.5) * (w / 2) / per, -(k + 0.5) * (w / 2) / per); }
+    tracks(m, offs, 6);
+  }
+  D.roads.forEach((r, ri) => {                         // 골목: 차가 가운데로 다니므로 가운데 한 쌍
+    if (!vehicle[ri] || r.k !== 'residential' || r.br || r.p.length < 2) return;
+    const w = walker(r.p), js = []; r.p.forEach((p, i) => { if (isJunction(p)) js.push({ s: w.cum[i] }); });
+    tracks({ r, w, js }, [0], 4);
+  });
+  const tm = flat(pos, '#2b3036', 7.65, null, 'tire-tracks');
+  if (tm) { tm.material.transparent = true; tm.material.opacity = 0.07; }
+}
+
 // ── 주차장(OSM 실제 위치): 아스팔트 면 + 흰 테두리 + 긴 변을 따라 주차 칸(칸은 장식) ──
 if (D.parking && D.parking.length) {
   const fill = [], line = [];
@@ -499,7 +518,7 @@ function speedBumps(schoolSpans) {
 
 // ── 진행 방향 화살표: 횡단보도가 있는 큰길 교차로로 들어오는 차로에, 정지선 바깥 8~13m 자리에 흰 직진 화살표 ──
 // 우측 통행이라 들어오는 차로는 진행 방향 오른쪽(정지선과 같은 쪽). 일방통행은 진행 방향(선의 +s) 쪽에서만.
-const arrowsAt = [];
+const arrowsAt = [], diamondAt = [];
 {
   const pos = [], done = new Set();
   // 화살표 하나(길이 5m: 몸통 3.4m × 0.3m, 머리 1.6m × 폭 1.1m). 끝(머리 꼭짓점)이 (hx, hz), 방향 (dx, dz)
@@ -536,6 +555,34 @@ const arrowsAt = [];
       }
       arrowsAt.push([+q.x.toFixed(1), +q.z.toFixed(1)]);
     }
+  }
+  // 횡단보도 예고 마름모(◇): 횡단보도(교차로 10m)에서 50m 앞, 들어오는 차로마다. 길이 5m × 폭 1.6m 테두리 0.3m. 다른 교차로 20m 안이면 뺀다
+  {
+    const diamond = (cx, cz, dx, dz) => {
+      const nx = -dz, nz = dx, y = 0.031, P = (a, sd) => [cx + dx * a + nx * sd, cz + dz * a + nz * sd];
+      const pts = [P(2.5, 0), P(0, 0.8), P(-2.5, 0), P(0, -0.8)];
+      for (let i = 0; i < 4; i++) {
+        const p0 = pts[i], p1 = pts[(i + 1) % 4], ddx = p1[0] - p0[0], ddz = p1[1] - p0[1], l = Math.hypot(ddx, ddz) || 1, ex = -ddz / l * 0.15, ez = ddx / l * 0.15;
+        pos.push(p0[0] + ex, y, p0[1] + ez, p1[0] + ex, y, p1[1] + ez, p0[0] - ex, y, p0[1] - ez, p0[0] - ex, y, p0[1] - ez, p1[0] + ex, y, p1[1] + ez, p1[0] - ex, y, p1[1] - ez);
+      }
+    };
+    let nd = 0; const seen = new Set(); diamondAt.length = 0;
+    for (const m of majors) for (const j of m.js) {
+      if (j.major < 3 || m.ring || m.r.br) continue;
+      for (const dir of [-1, 1]) {
+        if (m.r.ow && dir === 1) continue;
+        const sd = j.s + dir * 60;
+        if (sd < 5 || sd > m.w.L - 5 || m.js.some(o => o !== j && Math.abs(o.s - sd) < 20)) continue;
+        const q = m.w.at(sd), k = Math.round(q.x / 6) + ':' + Math.round(q.z / 6);
+        if (seen.has(k)) continue; seen.add(k);
+        const per = lanesPerDir(m.r), w = m.r.w;
+        for (let kk = 0; kk < per; kk++) {
+          const offT = m.r.ow ? -w / 2 + (kk + 0.5) * w / per : (kk + 0.5) * (w / 2) / per, off = -dir * offT;
+          diamond(q.x + q.nx * off, q.z + q.nz * off, q.dx, q.dz); nd++; diamondAt.push([+(q.x + q.nx * off).toFixed(1), +(q.z + q.nz * off).toFixed(1)]);
+        }
+      }
+    }
+    stats.diamonds = nd;
   }
   flat(pos, G.zebra, 8.9, '#3c3c3c', 'arrow');
   stats.arrows = arrowsAt.length;
@@ -578,6 +625,8 @@ const schoolSpots = [];
     else for (const dir of [1, -1]) items.push({ x: q.x + q.nx * dir * w / 4, z: q.z + q.nz * dir * w / 4, fx: q.dx * dir, fz: q.dz * dir, across: Math.min(w / 2 - 0.5, 3.2), along: 7 });
   }
   roadText(['보호구역', '어린이'], '#ffffff', '#3c3c3c', items, 'school-text', 512, 1024);
+  // 제한속도 30: 글자보다 운전자 쪽으로 9.5m 앞(붉은 포장 40m 안). 노면 숫자도 진행 방향으로 길쭉하게
+  roadText(['30'], '#ffffff', '#3c3c3c', items.map(it => ({ ...it, x: it.x - it.fx * 9.5, z: it.z - it.fz * 9.5, along: 5 })), 'school-30', 256, 512);
   text.length = items.length;
   stats.schoolZones = schoolSpots.length; stats.schoolTexts = text.length;
   speedBumps(schoolSpans);
@@ -718,7 +767,31 @@ function busMarks() {
   if (window.__ground) window.__ground.busMarks = txt.length;
   M.need && M.need();
 }
-if (document.readyState === 'complete') setTimeout(busMarks, 0); else addEventListener('load', busMarks);   // decor.js 의 load 처리 다음에 돈다
+// ── 가로수 보호판: seohogyun-20 이 load 뒤 spots.streetTree([[x, z]..], 보이는 가로수)를 채우면, 나무 밑에 1.2m 네모 격자 덮개. 방향은 가장 가까운 큰길에 맞춤 ──
+function treePits() {
+  const T = (window.__decor && window.__decor.spots && window.__decor.spots.streetTree) || [];
+  if (!T.length) return;
+  const items = [];
+  for (const [x, z] of T) {
+    let best = null;
+    for (const m of majors) for (let i = 0; i < m.r.p.length - 1; i++) { const d = segDist(x, z, m.r.p[i], m.r.p[i + 1]); if (!best || d < best.d) best = { d, a: m.r.p[i], b: m.r.p[i + 1] }; }
+    let fx = 1, fz = 0;
+    if (best) { const dx = best.b[0] - best.a[0], dz = best.b[1] - best.a[1], l = Math.hypot(dx, dz) || 1; fx = dx / l; fz = dz / l; }
+    items.push({ x, z, fx, fz, across: 1.2, along: 1.2 });
+  }
+  const tex = (() => {
+    const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
+    g.fillStyle = '#6f747b'; g.fillRect(0, 0, 64, 64); g.fillStyle = '#4a4f56'; g.fillRect(4, 4, 56, 56);
+    g.strokeStyle = '#80868d'; g.lineWidth = 2; for (let r = 8; r < 32; r += 6) { g.beginPath(); g.arc(32, 32, r, 0, Math.PI * 2); g.stroke(); }
+    g.fillStyle = '#5b4a3a'; g.beginPath(); g.arc(32, 32, 6, 0, Math.PI * 2); g.fill();   // 가운데 흙
+    const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; return t;
+  })();
+  decal(items, tex, 'tree-pit', null, 0.034, false);
+  if (window.__ground) window.__ground.treePits = items.length;
+  M.need && M.need();
+}
+function afterLoad() { busMarks(); treePits(); }
+if (document.readyState === 'complete') setTimeout(afterLoad, 0); else addEventListener('load', () => setTimeout(afterLoad, 0));   // decor.js 의 load 처리 다음에 돈다
 
 if (M.renderer) M.renderer.shadowMap.needsUpdate = true;
 M.need && M.need();
@@ -730,6 +803,7 @@ window.__ground = {
   crosswalks: stats.crosswalks, stopLines: stats.stopLines, parking: stats.parking, stalls: stats.stalls,
   minorCrosswalks: stats.minorCrosswalks || 0, manholes: stats.manholes || 0, busMarks: 0,
   speedBumps: stats.speedBumps || 0, drains: stats.drains || 0, bumpAt,
+  diamonds: stats.diamonds || 0, treePits: 0, diamondAt,
   arrows: stats.arrows || 0, schoolZones: stats.schoolZones || 0, schoolTexts: stats.schoolTexts || 0, waterCells: stats.waterCells || 0, coastM: stats.coastM || 0,
   schoolSpots, arrowsAt,
 };
