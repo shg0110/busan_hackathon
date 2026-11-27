@@ -317,7 +317,8 @@ body:has(#info:not([hidden])) #credit { display: none; }
 .lbl.place { font-size: 12.5px; color: var(--g800); text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 6px #fff; }
 .lbl.place.major { font-size: 14px; font-weight: 700; }
 .lbl.road { font-size: 11px; color: var(--g600); font-weight: 600; text-shadow: 0 0 3px #fff, 0 0 3px #fff; }
-.lbl.off { display: none; }
+/* 숨김은 이름표 종류(.vac·.hot 등 display 를 따로 주는 것)보다 늘 이긴다: id 를 붙여 우선순위를 올림 */
+#labels .lbl.off { display: none; }
 /* 문 닫은 가게 이름표: 흰 말풍선 + 빨간 점 */
 .lbl.vac { display: inline-flex; align-items: center; gap: 6px; background: #fff; color: var(--g900); font-size: 12px; font-weight: 700; border-radius: 8px;
   padding: 4px 9px; text-shadow: none; box-shadow: 0 1px 4px rgba(0, 20, 60, .18); }
