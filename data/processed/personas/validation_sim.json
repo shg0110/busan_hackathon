@@ -1,6 +1,6 @@
 {
  "generated_by": "tools/sim_persona_check.js",
- "persona_version": "0.6.0",
+ "persona_version": "0.6.1",
  "runs_per_day": 3,
  "seconds": 3,
  "summary": {
@@ -15,11 +15,11 @@
     1.05
    ],
    "pass": true,
-   "note": "시뮬 6602건 vs 페르소나 6687건(카드 5,624건 ÷ (1 − 현금 15.9%))"
+   "note": "시뮬 6600건 vs 페르소나 6687건(카드 5,624건 ÷ (1 − 현금 15.9%))"
   },
   {
    "name": "S2. 평일 결제 24시간 비율 최대 차이(카드 실측 대비)",
-   "value": 0.0099,
+   "value": 0.0085,
    "range": [
     0,
     0.018
@@ -29,7 +29,7 @@
   },
   {
    "name": "S3. 평일 업종별 매출 비중 최대 차이(옥포1동 카드매출 대비)",
-   "value": 0.0308,
+   "value": 0.0329,
    "range": [
     0,
     0.05
@@ -39,7 +39,7 @@
   },
   {
    "name": "S4. 외국인(선주 감독관·가족 제외) 1인당 평일 매출 ÷ 내국인",
-   "value": 0.623,
+   "value": 0.612,
    "range": [
     0.35,
     0.68
@@ -49,7 +49,7 @@
   },
   {
    "name": "S5. 평일 헛걸음 비율(갈 가게 없음·돈 부족·자리 포기 ÷ 시도)",
-   "value": 0.0009,
+   "value": 0.0011,
    "range": [
     0,
     0.05
@@ -59,167 +59,167 @@
   }
  ],
  "weekday": {
-  "transactions": 6602,
-  "revenue_krw": 73416967,
+  "transactions": 6600,
+  "revenue_krw": 73841300,
   "failed": {
-   "no_open_shop": 2,
+   "no_open_shop": 3,
    "no_money": 3,
    "gave_up_waiting": 1,
-   "share_of_tries": 0.0009
+   "share_of_tries": 0.0011
   },
   "hour_share": [
-   0.0072,
-   0.0048,
+   0.0069,
+   0.0061,
    0,
    0,
    0,
-   0.0053,
-   0.0137,
-   0.0213,
-   0.0233,
-   0.0487,
-   0.0618,
-   0.0649,
-   0.0938,
-   0.0693,
-   0.0715,
-   0.0714,
-   0.0673,
-   0.0767,
-   0.0811,
-   0.0715,
-   0.0641,
-   0.0453,
-   0.023,
+   0.0046,
+   0.0133,
+   0.0225,
+   0.0242,
+   0.0502,
+   0.0596,
+   0.0686,
+   0.0912,
+   0.0682,
+   0.0728,
+   0.0677,
+   0.0674,
+   0.0776,
+   0.0829,
+   0.0743,
+   0.0626,
+   0.0433,
+   0.022,
    0.0138
   ],
-  "hour_max_abs_diff": 0.0099,
+  "hour_max_abs_diff": 0.0085,
   "category_spend_share": {
-   "cafe": 0.0338,
-   "life": 0.1495,
-   "mart": 0.367,
-   "meal": 0.3978,
-   "pub": 0.0519
+   "cafe": 0.0342,
+   "life": 0.1599,
+   "mart": 0.3696,
+   "meal": 0.3866,
+   "pub": 0.0498
   },
-  "category_max_abs_diff": 0.0308,
+  "category_max_abs_diff": 0.0329,
   "per_capita_krw": {
-   "korean": 3158,
-   "foreign_non_expat": 1966,
-   "expat": 4558
+   "korean": 3167,
+   "foreign_non_expat": 1940,
+   "expat": 4832
   },
-  "foreign_to_korean": 0.623,
+  "foreign_to_korean": 0.612,
   "by_key": {
    "resident": {
-    "transactions": 3677,
-    "per_capita_krw": 3398
+    "transactions": 3682,
+    "per_capita_krw": 3410
    },
    "worker": {
-    "transactions": 2050,
-    "per_capita_krw": 2798
-   },
-   "foreign.etc": {
-    "transactions": 282,
-    "per_capita_krw": 2003
-   },
-   "foreign.vn": {
-    "transactions": 203,
-    "per_capita_krw": 2021
+    "transactions": 2033,
+    "per_capita_krw": 2793
    },
    "foreign.halal": {
-    "transactions": 196,
-    "per_capita_krw": 1856
+    "transactions": 200,
+    "per_capita_krw": 2003
    },
-   "tourist": {
-    "transactions": 83,
-    "per_capita_krw": 3796
+   "foreign.etc": {
+    "transactions": 291,
+    "per_capita_krw": 1956
+   },
+   "foreign.vn": {
+    "transactions": 181,
+    "per_capita_krw": 1849
    },
    "foreign.expat": {
-    "transactions": 111,
-    "per_capita_krw": 4558
+    "transactions": 124,
+    "per_capita_krw": 4832
+   },
+   "tourist": {
+    "transactions": 90,
+    "per_capita_krw": 4004
    }
   }
  },
  "weekend": {
-  "transactions": 5486,
-  "revenue_krw": 61768100,
+  "transactions": 5469,
+  "revenue_krw": 60910467,
   "failed": {
-   "no_open_shop": 3,
-   "no_money": 5,
-   "gave_up_waiting": 2,
-   "share_of_tries": 0.0018
+   "no_open_shop": 2,
+   "no_money": 3,
+   "gave_up_waiting": 1,
+   "share_of_tries": 0.0012
   },
   "hour_share": [
-   0.001,
-   0.0007,
+   0.0012,
+   0.0013,
    0,
    0,
    0,
    0,
    0.0001,
-   0.0068,
-   0.0273,
-   0.0366,
-   0.0507,
+   0.0082,
+   0.0255,
+   0.0357,
+   0.0525,
    0.0628,
-   0.0665,
-   0.0707,
-   0.0649,
-   0.0656,
-   0.0738,
-   0.0944,
-   0.1177,
-   0.102,
-   0.0754,
-   0.0575,
-   0.0227,
-   0.003
+   0.0685,
+   0.0659,
+   0.0636,
+   0.0714,
+   0.0723,
+   0.0915,
+   0.1156,
+   0.1026,
+   0.0786,
+   0.0564,
+   0.0215,
+   0.005
   ],
-  "hour_max_abs_diff": 0.0369,
+  "hour_max_abs_diff": 0.0347,
   "category_spend_share": {
-   "cafe": 0.036,
-   "life": 0.157,
-   "mart": 0.3674,
-   "meal": 0.3796,
-   "pub": 0.06
+   "cafe": 0.0363,
+   "life": 0.152,
+   "mart": 0.3699,
+   "meal": 0.386,
+   "pub": 0.0558
   },
-  "category_max_abs_diff": 0.0227,
+  "category_max_abs_diff": 0.0269,
   "per_capita_krw": {
-   "korean": 3139,
-   "foreign_non_expat": 2204,
-   "expat": 5125
+   "korean": 3075,
+   "foreign_non_expat": 2219,
+   "expat": 5192
   },
-  "foreign_to_korean": 0.702,
+  "foreign_to_korean": 0.722,
   "by_key": {
    "resident": {
-    "transactions": 3820,
-    "per_capita_krw": 3643
+    "transactions": 3790,
+    "per_capita_krw": 3553
    },
    "worker": {
-    "transactions": 715,
-    "per_capita_krw": 1854
-   },
-   "tourist": {
-    "transactions": 119,
-    "per_capita_krw": 3334
+    "transactions": 732,
+    "per_capita_krw": 1819
    },
    "foreign.vn": {
-    "transactions": 222,
-    "per_capita_krw": 2238
-   },
-   "foreign.halal": {
-    "transactions": 200,
-    "per_capita_krw": 2219
-   },
-   "foreign.expat": {
-    "transactions": 118,
-    "per_capita_krw": 5125
+    "transactions": 190,
+    "per_capita_krw": 2152
    },
    "foreign.etc": {
-    "transactions": 293,
-    "per_capita_krw": 2168
+    "transactions": 310,
+    "per_capita_krw": 2326
+   },
+   "foreign.halal": {
+    "transactions": 190,
+    "per_capita_krw": 2128
+   },
+   "tourist": {
+    "transactions": 123,
+    "per_capita_krw": 3565
+   },
+   "foreign.expat": {
+    "transactions": 133,
+    "per_capita_krw": 5192
    }
   }
  },
- "weekend_to_weekday_transactions": 0.831,
+ "weekend_to_weekday_transactions": 0.829,
  "note": "보정에 쓰지 않는다. 시뮬이 페르소나를 의도대로 쓰는지 보는 점검. 주말은 비교할 실측이 없어 값만 남긴다."
 }
