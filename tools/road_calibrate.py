@@ -2,7 +2,7 @@
 도로명별 '횡단보도연장'(길을 건너는 길이 ≈ 차도 폭)과 '차로수'로, OSM 등급별 기본값(tertiary 는 모두 12m)이던 큰길 폭을 바꾼다.
 
 규칙
-  - 대상: tertiary 이상 큰길 중 이름이 같은 횡단보도 기록이 3건 이상인 것
+  - 대상: tertiary 이상 큰길과 골목(residential 등) 중 이름이 같은 횡단보도 기록이 3건 이상인 것. 골목은 폭만(3~22m), 차로 수는 그대로
   - 폭 = 그 도로명 기록의 연장 중앙값(6~22m 로 제한). 차로 수 = OSM lanes 가 없을 때만 기록의 최빈값
   - OSM lanes 가 적힌 가닥은 폭을 차로 수 × 3m 아래로 줄이지 않는다(그 가닥의 실제 차로 수가 들어가게)
   - 중앙분리 도로(같은 이름의 일방 가닥이 둘 이상, 예: 거제대로): 횡단보도가 두 가닥을 함께 건넌다고 보고 폭·차로 수를 반으로(폭 최소 6m)
@@ -15,6 +15,7 @@ import collections, csv, json, os, statistics, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NAME = sys.argv[1] if len(sys.argv) > 1 else 'okpo'
 MAJOR = {'trunk', 'primary', 'secondary', 'tertiary'}
+MINOR = {'residential', 'unclassified', 'living_street'}   # 골목: 폭만 바꾼다(차로 수·인도는 그대로)
 
 
 def main():
@@ -30,19 +31,21 @@ def main():
     out, rows = {}, []
     for i, r in enumerate(M['roads']):
         nm = r.get('n') or ''
-        if r['k'] not in MAJOR or len(rec.get(nm, [])) < 3:
+        if (r['k'] not in MAJOR and r['k'] not in MINOR) or len(rec.get(nm, [])) < 3:
             continue
         lens = [l for l, _ in rec[nm] if l > 0]; lanes = [n for _, n in rec[nm] if n > 0]
         if not lens:
             continue
         w = statistics.median(lens); ln = collections.Counter(lanes).most_common(1)[0][0] if lanes else 0
-        twin = bool(r.get('ow')) and oneway_n[nm] >= 2
+        twin = r['k'] in MAJOR and bool(r.get('ow')) and oneway_n[nm] >= 2
         if twin:
             w, ln = w / 2, max(1, round(ln / 2))
-        new_ln = r.get('ln') or ln
+        new_ln = r.get('ln') or (ln if r['k'] in MAJOR else 0)
         if r.get('ln'):   # OSM lanes 가 적힌 가닥은 그 차로 수가 들어갈 폭(차로당 3m) 아래로 줄이지 않는다
             w = max(w, r['ln'] * 3.0)
-        w = round(max(6.0, min(22.0, w)), 1)
+        w = round(max(6.0 if r['k'] in MAJOR else 3.0, min(22.0, w)), 1)   # 골목은 3m 까지 좁을 수 있음
+        if r['k'] in MINOR:
+            ln = r.get('ln') or 0   # 골목은 차로 수를 바꾸지 않는다
         out[i] = [w, new_ln]
         rows.append((nm, r['w'], w, r.get('ln') or 0, new_ln, twin, len(rec[nm])))
     res = {'src': '전국횡단보도표준데이터(공공데이터포털, 거제시 2026-07-20) 도로명별 횡단보도연장 중앙값·차로수 최빈값, tools/road_calibrate.py',
@@ -55,7 +58,8 @@ def main():
         summ.setdefault((nm, w0, w, l0, l1, twin, n), 0); summ[(nm, w0, w, l0, l1, twin, n)] += 1
     for (nm, w0, w, l0, l1, twin, n), k in summ.items():
         print(f'{nm}: 가닥 {k}, 폭 {w0}→{w}m, 차로 {l0}→{l1}{" (분리 도로, 반으로)" if twin else ""}, 기록 {n}건')
-    print('보정한 큰길 가닥', len(out), '/', sum(1 for r in M['roads'] if r['k'] in MAJOR))
+    print('보정한 큰길 가닥', sum(1 for i in out if M['roads'][int(i)]['k'] in MAJOR), '/', sum(1 for r in M['roads'] if r['k'] in MAJOR),
+          '골목 가닥', sum(1 for i in out if M['roads'][int(i)]['k'] in MINOR), '/', sum(1 for r in M['roads'] if r['k'] in MINOR))
 
 
 if __name__ == '__main__':
