@@ -220,7 +220,12 @@ function roadText(lines, color, glow, items, name, cw, ch) {
   lines.forEach((t, i) => { g.save(); g.translate(cw / 2, rowH * (i + 0.5)); g.scale(1, Math.min(2.6, rowH * 0.82 / fs)); g.fillText(t, 0, 0); g.restore(); });
   const tex = new THREE.CanvasTexture(c); tex.encoding = THREE.sRGBEncoding;
   if (M.renderer && M.renderer.capabilities) tex.anisotropy = Math.min(8, M.renderer.capabilities.getMaxAnisotropy());
-  const pos = [], uv = [], y = 0.032;
+  return decal(items, tex, name, glow, 0.032, true);
+}
+// 길 방향에 맞춘 판(질감 좌표가 운전자 기준: u 는 오른쪽, v 는 진행 방향). items: [{ x, z, fx, fz, across, along }]
+function decal(items, tex, name, glow, y, transparent) {
+  if (!items.length) return null;
+  const pos = [], uv = [];
   for (const { x, z, fx, fz, across, along } of items) {
     const rx = -fz, rz = fx;   // 운전자 오른쪽
     const P = (u, v) => [x + rx * (u - 0.5) * across + fx * (v - 0.5) * along, z + rz * (u - 0.5) * across + fz * (v - 0.5) * along];
@@ -230,8 +235,15 @@ function roadText(lines, color, glow, items, name, cw, ch) {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   const nrm = new Float32Array(pos.length); for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1; geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
-  const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide, emissive: glow || '#000000' }));
-  mesh.renderOrder = 8.9; mesh.name = 'ground-' + name; scene.add(mesh); made.push(mesh); return mesh;
+  const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map: tex, transparent: !!transparent, depthWrite: false, side: THREE.DoubleSide, emissive: glow || '#000000' }));
+  mesh.renderOrder = 8.9; mesh.name = 'ground-' + name; mesh.receiveShadow = true; scene.add(mesh); made.push(mesh); return mesh;
+}
+// 한 방향 차로 수. OSM 차로 수(ln)가 없는 큰길이 대부분(12m 왕복)이라 폭으로 추정한다(3.0~3.5m 한 차로, 추정값)
+function lanesPerDir(r) {
+  const ln = r.ln || 0, w = r.w;
+  if (r.ow) return ln >= 1 ? ln : Math.max(1, Math.min(3, Math.floor(w / 3.5)));
+  if (ln >= 2) return Math.max(1, Math.floor(ln / 2));
+  return w >= 11 ? 2 : 1;
 }
 function openSpans(m, clear) {
   const cuts = m.js.map(j => [j.s - clear, j.s + clear]).sort((a, b) => a[0] - b[0]);
@@ -277,9 +289,16 @@ const spotsCross = [];
     const w = m.r.w, ow = !!m.r.ow, ln = m.r.ln || 0;
     for (const [a, b] of openSpans(m, JUNC_CLEAR)) {
       if (!ow) { stripe(m, 0, 0.3, a, b, 0.03, center); stats.centerM += b - a; }
-      const dash = (off) => { for (let s = a; s + 3 <= b; s += 8) { stripe(m, off, 0.15, s, s + 3, 0.03, lane); stats.laneM += 3; } };
-      if (ow && ln >= 2) for (let k = 1; k < ln; k++) dash(-w / 2 + k * w / ln);
-      if (!ow && ln >= 4) { const per = Math.floor(ln / 2); for (let k = 1; k < per; k++) for (const sgn of [1, -1]) dash(sgn * k * (w / 2) / per); }
+      // 교차로 쪽 끝 18m 는 실선(진로변경 제한선), 그 사이는 3m 칠하고 5m 비우는 점선
+      const SOLID = 18, sa = a > 0.5 ? Math.min(b, a + SOLID) : a, sb = b < m.w.L - 0.5 ? Math.max(sa, b - SOLID) : b;
+      const dash = (off) => {
+        if (sa > a) { stripe(m, off, 0.15, a, sa, 0.03, lane); stats.laneM += sa - a; }
+        for (let s = sa; s + 3 <= sb; s += 8) { stripe(m, off, 0.15, s, s + 3, 0.03, lane); stats.laneM += 3; }
+        if (b > sb) { stripe(m, off, 0.15, sb, b, 0.03, lane); stats.laneM += b - sb; }
+      };
+      const per = lanesPerDir(m.r);
+      if (ow) for (let k = 1; k < per; k++) dash(-w / 2 + k * w / per);
+      else for (let k = 1; k < per; k++) for (const sgn of [1, -1]) dash(sgn * k * (w / 2) / per);
     }
     // 연석: 길 가장자리 바로 바깥 0.35m(인도 쪽), 교차로 앞뒤 8m 는 비움
     if (!m.r.br) for (const [a, b] of openSpans(m, 8)) for (const sgn of [1, -1]) stripe(m, sgn * (w / 2 + 0.17), 0.35, a, b, 0.02, curb);
@@ -436,18 +455,68 @@ const spotsMinor = [];
   stats.manholes = n;
 }
 
+// ── 과속방지턱(장식): 노란 바탕에 흰 사선(국내 도색 방식), 길 방향 3.6m. 학교 앞 붉은 포장 구간 양 끝 + 골목(주거 도로) 90m 마다(교차점·길 끝 20m 안은 피함) ──
+const bumpAt = [];
+function speedBumps(schoolSpans) {
+  const items = [], far = (x, z) => bumpAt.every(([bx, bz]) => Math.hypot(bx - x, bz - z) > 30);
+  const put = (r, w, s) => { const q = w.at(s); if (!far(q.x, q.z)) return; bumpAt.push([q.x, q.z]); items.push({ x: q.x, z: q.z, fx: q.dx, fz: q.dz, across: r.w - 0.6, along: 3.6 }); };
+  for (const { r, w, a0, b0 } of schoolSpans) { put(r, w, a0 + 3); put(r, w, b0 - 3); }
+  D.roads.forEach((r, ri) => {
+    if (!vehicle[ri] || r.k !== 'residential' || r.br || r.p.length < 2) return;
+    const w = walker(r.p); if (w.L < 70) return;
+    const js = []; r.p.forEach((p, i) => { if (isJunction(p)) js.push(w.cum[i]); });
+    for (let s = 35; s < w.L - 20; s += 90) if (js.every(j => Math.abs(j - s) > 20)) put(r, w, s);
+  });
+  const tex = (() => {
+    const c = document.createElement('canvas'); c.width = 256; c.height = 64; const g = c.getContext('2d');
+    g.fillStyle = '#f0bf2e'; g.fillRect(0, 0, 256, 64); g.fillStyle = '#f7f6f0';
+    for (let x = -64; x < 256 + 64; x += 32) { g.beginPath(); g.moveTo(x, 64); g.lineTo(x + 14, 64); g.lineTo(x + 14 + 40, 0); g.lineTo(x + 40, 0); g.closePath(); g.fill(); }
+    const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; t.wrapS = THREE.RepeatWrapping; return t;
+  })();
+  decal(items, tex, 'speed-bump', '#2a2208', 0.033, false);
+  stats.speedBumps = items.length;
+}
+
+// ── 빗물받이(장식): 큰길 양쪽 연석 바로 안쪽에 25m 마다 0.9×0.45m 진회색 격자 뚜껑 ──
+{
+  const items = [];
+  for (const m of majors) {
+    if (m.r.br) continue;
+    for (const [a, b] of openSpans(m, 12)) for (let s = a + 6; s < b - 3; s += 25) for (const sgn of [1, -1]) {
+      const q = m.w.at(s), off = sgn * (m.r.w / 2 - 0.35);
+      items.push({ x: q.x + q.nx * off, z: q.z + q.nz * off, fx: q.dx, fz: q.dz, across: 0.45, along: 0.9 });
+    }
+  }
+  const tex = (() => {
+    const c = document.createElement('canvas'); c.width = 32; c.height = 64; const g = c.getContext('2d');
+    g.fillStyle = '#9aa0a7'; g.fillRect(0, 0, 32, 64); g.fillStyle = '#3e434a'; g.fillRect(3, 3, 26, 58);
+    g.fillStyle = '#7d838b'; for (let y = 8; y < 60; y += 7) g.fillRect(5, y, 22, 2);
+    const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; return t;
+  })();
+  decal(items, tex, 'drain', null, 0.029, false);
+  stats.drains = items.length;
+}
+
 // ── 진행 방향 화살표: 횡단보도가 있는 큰길 교차로로 들어오는 차로에, 정지선 바깥 8~13m 자리에 흰 직진 화살표 ──
 // 우측 통행이라 들어오는 차로는 진행 방향 오른쪽(정지선과 같은 쪽). 일방통행은 진행 방향(선의 +s) 쪽에서만.
 const arrowsAt = [];
 {
   const pos = [], done = new Set();
   // 화살표 하나(길이 5m: 몸통 3.4m × 0.3m, 머리 1.6m × 폭 1.1m). 끝(머리 꼭짓점)이 (hx, hz), 방향 (dx, dz)
-  const arrow = (hx, hz, dx, dz) => {
+  // turn: 0 직진, -1 직진+좌회전(왼쪽 가지), 1 직진+우회전(오른쪽 가지). side 는 진행 방향 오른쪽이 +
+  const arrow = (hx, hz, dx, dz, turn) => {
     const nx = -dz, nz = dx, y = 0.031;
     const P = (along, side) => [hx - dx * along + nx * side, hz - dz * along + nz * side];
-    const tip = P(0, 0), hl = P(1.6, 0.55), hr = P(1.6, -0.55), sl0 = P(1.6, 0.15), sr0 = P(1.6, -0.15), sl1 = P(5, 0.15), sr1 = P(5, -0.15);
-    pos.push(tip[0], y, tip[1], hl[0], y, hl[1], hr[0], y, hr[1]);
-    pos.push(sl0[0], y, sl0[1], sl1[0], y, sl1[1], sr0[0], y, sr0[1], sr0[0], y, sr0[1], sl1[0], y, sl1[1], sr1[0], y, sr1[1]);
+    const tri = (a, b, c) => pos.push(a[0], y, a[1], b[0], y, b[1], c[0], y, c[1]);
+    const seg = (a0, s0, a1, s1, wd) => { const p0 = P(a0, s0), p1 = P(a1, s1), ddx = p1[0] - p0[0], ddz = p1[1] - p0[1], l = Math.hypot(ddx, ddz) || 1, ex = -ddz / l * wd / 2, ez = ddx / l * wd / 2;
+      tri([p0[0] + ex, p0[1] + ez], [p1[0] + ex, p1[1] + ez], [p0[0] - ex, p0[1] - ez]); tri([p0[0] - ex, p0[1] - ez], [p1[0] + ex, p1[1] + ez], [p1[0] - ex, p1[1] - ez]); };
+    tri(P(0, 0), P(1.6, 0.55), P(1.6, -0.55));       // 직진 머리
+    seg(1.6, 0, 5, 0, 0.3);                           // 몸통
+    if (turn) {                                       // 옆 가지: 몸통 3.6m 지점에서 비스듬히 나가 옆을 보는 머리
+      const t = turn;
+      seg(3.6, 0, 2.9, t * 0.85, 0.28);
+      tri(P(2.9, t * 1.65), P(2.35, t * 0.85), P(3.45, t * 0.85));
+    }
   };
   for (const m of majors) for (const j of m.js) {
     if (j.major < 3 || m.ring) continue;
@@ -457,9 +526,14 @@ const arrowsAt = [];
       if (sTip < 6 || sTip > m.w.L - 6) continue;
       const q = m.w.at(sTip), k = Math.round(q.x / 5) + ':' + Math.round(q.z / 5);
       if (done.has(k)) continue; done.add(k);
-      const off = m.r.ow ? 0 : -dir * m.r.w / 4;     // 양방향은 오른쪽 차로 가운데, 일방은 길 가운데
       const tdx = -dir * q.dx, tdz = -dir * q.dz;     // 교차로 쪽을 향한 방향
-      arrow(q.x + q.nx * off, q.z + q.nz * off, tdx, tdz);
+      const per = lanesPerDir(m.r), w = m.r.w;
+      for (let k = 0; k < per; k++) {                 // k=0 이 가장 안쪽(중앙선 쪽) 차로
+        const offT = m.r.ow ? -w / 2 + (k + 0.5) * w / per : (k + 0.5) * (w / 2) / per;   // 진행 방향 오른쪽으로 잰 거리
+        const off = -dir * offT;                       // 길 법선(q.n) 기준으로 바꿈
+        const turn = per === 1 ? 0 : k === 0 ? -1 : k === per - 1 ? 1 : 0;
+        arrow(q.x + q.nx * off, q.z + q.nz * off, tdx, tdz, turn);
+      }
       arrowsAt.push([+q.x.toFixed(1), +q.z.toFixed(1)]);
     }
   }
@@ -472,7 +546,7 @@ const arrowsAt = [];
 const schoolSpots = [];
 {
   const GD = window.GROUND_DATA || {}, schools = (GD.schools || []).filter(s => s.p && s.p.length > 2);
-  const red = [], text = [];
+  const red = [], text = [], schoolSpans = [];
   const near = (x, z, sp) => inPoly(x, z, sp) || sp.some((a, i) => segDist(x, z, a, sp[(i + 1) % sp.length]) < 12);   // 학교와 바로 맞닿은 길만
   D.roads.forEach((r, ri) => {
     if (!vehicle[ri] || r.k === 'service' || r.br || r.p.length < 2) return;
@@ -492,6 +566,7 @@ const schoolSpots = [];
         const pts = []; for (let s = a0; s <= b0 + 1e-6; s += 4) { const q = w.at(Math.min(s, b0)); pts.push([+q.x.toFixed(1), +q.z.toFixed(1)]); }
         schoolSpots.push({ p: pts, w: r.w, n: sc.n });
         if (b0 - a0 >= 16) text.push({ q: w.at((a0 + b0) / 2), w: r.w, ow: !!r.ow });
+        schoolSpans.push({ r, w, a0, b0 });
       }
     }
   });
@@ -505,6 +580,7 @@ const schoolSpots = [];
   roadText(['보호구역', '어린이'], '#ffffff', '#3c3c3c', items, 'school-text', 512, 1024);
   text.length = items.length;
   stats.schoolZones = schoolSpots.length; stats.schoolTexts = text.length;
+  speedBumps(schoolSpans);
 }
 
 // ── 바다: 해안에서 멀어질수록 진해지는 색(격자에 꼭짓점 색), 해안 물거품 띠, 부두 안벽 ──
@@ -653,6 +729,7 @@ window.__ground = {
   centerM: Math.round(stats.centerM), laneM: Math.round(stats.laneM), edgeM: Math.round(stats.edgeM),
   crosswalks: stats.crosswalks, stopLines: stats.stopLines, parking: stats.parking, stalls: stats.stalls,
   minorCrosswalks: stats.minorCrosswalks || 0, manholes: stats.manholes || 0, busMarks: 0,
+  speedBumps: stats.speedBumps || 0, drains: stats.drains || 0, bumpAt,
   arrows: stats.arrows || 0, schoolZones: stats.schoolZones || 0, schoolTexts: stats.schoolTexts || 0, waterCells: stats.waterCells || 0, coastM: stats.coastM || 0,
   schoolSpots, arrowsAt,
 };
