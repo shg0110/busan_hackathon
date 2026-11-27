@@ -181,17 +181,6 @@ whenReady(() => {
     out.toBlob((b) => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }, 'image/png');
   };
 
-  // 항공사진 바닥(31 ground.js: __map.setGroundPhoto·groundPhotoOn·'ground-photo' 이벤트, 사진 정보 window.ORTHO): 사진이 있을 때만 스위치를 보이고,
-  // 켜져 있으면 지도 출처(#credit)와 그림 저장본에 사진 출처를 붙인다(공공누리·출처 표시)
-  const O = window.ORTHO, togP = $('tog-photo'), inP = $('L-photo'), credit = $('credit'), credit0 = credit ? credit.textContent : '';
-  if (O && togP && inP && M.setGroundPhoto) {
-    const srcTxt = `${O.src || '국토지리정보원 정사영상'}${O.year ? ` (${O.year}년 촬영)` : ''}`;
-    togP.hidden = false; $('photo-src').textContent = srcTxt;
-    const sync = () => { const on = !!(M.groundPhotoOn && M.groundPhotoOn()); inP.checked = on; if (credit) credit.textContent = on ? `${credit0} · 항공사진 ${srcTxt}` : credit0; };
-    inP.onchange = () => { M.setGroundPhoto(inP.checked); sync(); };
-    document.addEventListener('ground-photo', sync); sync();
-  }
-
   // 주소 공유: index.html#빛의거리 로 열면 그 거리로, 거리를 고르면 주소 끝이 바뀐다(발표 때 링크로 바로 보여 주기)
   const short = (s) => s.ko.split(' (')[0].replace(/\s/g, '');
   const fromHash = () => { const h = decodeURIComponent(location.hash.slice(1)).replace(/\s/g, ''); if (!h) return null;

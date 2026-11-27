@@ -849,43 +849,10 @@ function busTactile() {
     pos.push(A[0], y, A[1], B2[0], y, B2[1], C[0], y, C[1], A[0], y, A[1], C[0], y, C[1], E[0], y, E[1]); n++;
   }
   const m = flat(pos, '#ffffff', 8.9, null, 'bus-tactile', TEX.dots);
-  if (m && M.groundPhotoOn && M.groundPhotoOn()) m.visible = false;   // 사진 바닥이면 숨김(사진에 이미 있음)
   if (window.__ground) window.__ground.busTactile = n;
   M.need && M.need();
 }
 if (document.readyState === 'complete') setTimeout(busTactile, 0); else addEventListener('load', () => setTimeout(busTactile, 0));   // decor.js 의 load 처리 다음
-
-// ── 사진 바닥(정사영상, 세션 20 이 만드는 data/okpo_ortho.js → window.ORTHO = { img, src, year }): ?ground=photo 또는 __map.setGroundPhoto(true) ──
-// 지형 면 그림을 사진으로 바꾸고, 사진에 이미 있는 길·인도·연석·노면 표시·물거품은 숨긴다(사진과 OSM 선이 어긋나 겹쳐 보이지 않게). 건물·이름표·흐름 띠는 그대로.
-// 사진은 지형 격자 범위(x0 ~ x0+(nx-1)·cell, z0 ~ …)에 꽉 차고 위쪽이 북쪽이어야 한다. 자료가 없으면 아무것도 하지 않고 false
-{
-  // 물(바다 바탕·깊이 색)은 남긴다: 지형 면에 바다 칸이 없어(#131) 숨기면 바다가 비어 보였다
-  const KEEP = new Set(['ground-terrain', 'ground-edge-fade', 'ground-water', 'ground-water-depth']);
-  let photoTex = null, photoOn = false;
-  const tm = made.find(m => m.name === 'ground-terrain');
-  const apply = (on) => {
-    for (const m of made) if (!KEEP.has(m.name)) m.visible = !on;
-    tm.material.map = on ? photoTex : landTex; tm.material.needsUpdate = true;
-    if (M.water) M.water.visible = false;
-    photoOn = on; if (window.__ground) window.__ground.photo = on;
-    if (M.renderer) M.renderer.shadowMap.needsUpdate = true; M.need && M.need();
-    document.dispatchEvent(new CustomEvent('ground-photo', { detail: { on } }));
-  };
-  M.setGroundPhoto = (on) => {
-    const O = window.ORTHO;
-    if (!tm || !O || !O.img) return false;
-    if (!on) { if (photoOn) apply(false); return true; }
-    if (photoTex) { apply(true); return true; }
-    new THREE.TextureLoader().load(O.img, (t) => {
-      t.encoding = THREE.sRGBEncoding;
-      if (M.renderer && M.renderer.capabilities) t.anisotropy = Math.min(8, M.renderer.capabilities.getMaxAnisotropy());
-      photoTex = t; apply(true);
-    }, undefined, () => console.warn('사진 바닥: 정사영상을 불러오지 못함', O.img));
-    return true;
-  };
-  M.groundPhotoOn = () => photoOn;
-  if (/[?&]ground=photo/.test(location.search)) M.setGroundPhoto(true);
-}
 
 // 지형 그림에 넓은 면을 순서대로 칠한다(토지 이용 0.5~ → 숲 1 → 잔디 2 → 놀이터 2.5 → 인조잔디 3 → 주차장 4.5)
 if (TON && LC) { paintQ.sort((a, b) => a[0] - b[0]); for (const [, p, col, tk] of paintQ) paintArea(p, col, tk); stats.painted = paintQ.length; }
