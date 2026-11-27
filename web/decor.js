@@ -8,7 +8,7 @@
      - 중앙선·차선: OSM 일방(ow)·차로 수(ln)를 따른다. 일방통행은 중앙선 없음, 차로 수가 없는 길은 점선 없음.
      - 주차장 바닥·테두리는 OSM 실제 위치, 그 안의 주차 칸 선은 장식이다.
      - 나무 모양(활엽·침엽·관목)과 비율도 가정이다. 버스 정류장 쉼터만 OSM 정류장 실제 위치(SIM_DATA.stops)다.
-     - 가로등(큰길 양쪽 25m)·벤치·화분(빛의 거리·옥포성안로 14m)은 장식이다. 실제 위치 자료가 없다.
+     - 가로등(큰길 양쪽 30m)·벤치·화분(빛의 거리·옥포성안로 14m)은 장식이다. 실제 위치 자료가 없다.
    난수는 씨앗을 고정해 화면이 열 때마다 같게 나온다. */
 (() => {
 'use strict';
@@ -198,6 +198,7 @@ function openSpans(m, clear) {
 
 // ── 중앙선·차선 ─────────────────────────────────────────
 const stats = { centerM: 0, laneM: 0, crosswalks: 0, stopLines: 0 };
+const spots = { crosswalk: [], bus: [] };   // 다른 파일(주차된 차 등)이 피할 자리: [x, z, 길 폭] / [x, z]
 {
   const center = [], lane = [];
   for (const m of majors) {
@@ -283,7 +284,7 @@ if (D.parking && D.parking.length) {
       // 줄 하나 = 길 방향 4m × 가로 0.5m, 0.5m 간격으로 길 폭만큼
       const half = m.r.w / 2 - 0.5;
       for (let o = -half; o <= half; o += 1.0) stripe(m, o, 0.55, s - 2.5, s + 2.5, 0.03, pos);
-      stats.crosswalks++;
+      stats.crosswalks++; spots.crosswalk.push([+q.x.toFixed(1), +q.z.toFixed(1), m.r.w]);
       // 선의 오른쪽 법선 = 진행 방향 오른쪽. 교차로로 들어오는 차는 -dir 방향으로 달리므로 그 오른쪽은 -dir 쪽
       const ss = s + dir * 4;
       if (ss > 0.5 && ss < m.w.L - 0.5) { stripe(m, -dir * m.r.w / 4, m.r.w / 2 - 0.4, ss - 0.225, ss + 0.225, 0.03, stop); stats.stopLines++; }
@@ -450,19 +451,20 @@ function hideTreesNear(x, z, r) {
   stats.broad = broad.length; stats.cone = cone.length; stats.shrubs = shrubs.length;
 }
 
-// ── 가로등: 큰길 양쪽 25m 간격, 인도 쪽(길 가장자리 + 0.7m), 팔은 길 쪽으로. 위치는 장식(실제 가로등 자료 없음) ──
+// ── 가로등: 큰길 양쪽 30m 간격, 인도 쪽(길 가장자리 + 0.7m), 팔은 길 쪽으로. 위치는 장식(실제 가로등 자료 없음) ──
+// 가로수가 5m·15m·25m…(10m 간격)에 서므로 가로등은 10m·40m·70m…에 세워 늘 나무와 나무 한가운데(5m 떨어짐)에 오게 한다.
 const nearProp = (x, z, r) => treeRefs.some(t => (t.parts.length || t.prop) && Math.abs(t.x - x) < r && Math.abs(t.z - z) < r && Math.hypot(t.x - x, t.z - z) < r);
 {
   const L = [];   // [x, z, 각도]
   for (const m of majors) {
     if (m.r.br || m.ring) continue;
     const off = m.r.w / 2 + 0.7;
-    for (let s = 12.5; s < m.w.L - 5; s += 25) {
+    for (let s = 10; s < m.w.L - 5; s += 30) {
       if (m.js.some(j => Math.abs(j.s - s) < 9)) continue;
       const q = m.w.at(s);
       for (const sgn of [1, -1]) {
         const x = q.x + q.nx * off * sgn, z = q.z + q.nz * off * sgn;
-        if (!inside(x, z, 5) || inWater(x, z) || nearBuilding(x, z, 0.8) || nearRoad(x, z, 0.3, m.ri) || nearProp(x, z, 2)) continue;
+        if (!inside(x, z, 5) || inWater(x, z) || nearBuilding(x, z, 0.8) || nearRoad(x, z, 0.3, m.ri) || nearProp(x, z, 3.5)) continue;
         const dx = -sgn * q.nx, dz = -sgn * q.nz;              // 길 쪽 방향
         L.push([x, z, Math.atan2(-dz, dx)]);
       }
@@ -585,7 +587,8 @@ function busStops() {
       rot = -Math.atan2(dz, dx);
       if (side < 0) rot += Math.PI;   // 쉼터 등판이 길 반대쪽(인도 안쪽)으로 가게
     }
-    stats.hiddenTrees = (stats.hiddenTrees || 0) + hideTreesNear(cx, cz, 4.5);   // 쉼터·표지 기둥과 겹치는 가로수는 숨긴다
+    stats.hiddenTrees = (stats.hiddenTrees || 0) + hideTreesNear(cx, cz, 4.5);
+    spots.bus.push([+cx.toFixed(1), +cz.toFixed(1)]);   // 쉼터·표지 기둥과 겹치는 가로수는 숨긴다
     // 지붕·등판·기둥 2개·표지 기둥·표지판
     box(3.4, 0.12, 1.5, 0, 2.5, 0.1, rot, cx, cz, '#5b6573');
     box(3.2, 1.9, 0.06, 0, 1.25, 0.8, rot, cx, cz, '#cfe0ec');
@@ -619,6 +622,6 @@ window.__decor = {
   broad: stats.broad || 0, cone: stats.cone || 0, shrubs: stats.shrubs || 0,
   centerM: Math.round(stats.centerM), laneM: Math.round(stats.laneM), edgeM: Math.round(stats.edgeM || 0),
   crosswalks: stats.crosswalks, stopLines: stats.stopLines, busStops: stats.busStops || 0, lamps: stats.lamps || 0,
-  majorRoads: majors.length, oneway: majors.filter(m => m.r.ow).length, parking: stats.parking || 0, stalls: stats.stalls || 0,
+  spots, majorRoads: majors.length, oneway: majors.filter(m => m.r.ow).length, parking: stats.parking || 0, stalls: stats.stalls || 0,
 };
 })();
