@@ -1255,7 +1255,7 @@ function nodeFlow(we) {
   const F = new Float32Array(24 * NN); flowSteps(F, T0, T1);
   swapState(live); NODEFLOW[key] = F; return F;
 }
-// 화면이 멈추지 않게 1시간씩 나눠 계산(조각 사이에 화면이 그려짐). 조각마다 재생 상태를 비켜 두고 돌려놓는다
+// 화면이 멈추지 않게 한 조각 8ms까지만 나눠 계산(조각 사이에 화면이 그려짐). 조각마다 재생 상태를 비켜 두고 돌려놓는다
 const NF_WAIT = {};
 function nodeFlowAsync(we) {
   const key = (we ? 'we' : 'wd') + ':' + TS.ver;
@@ -1265,7 +1265,7 @@ function nodeFlowAsync(we) {
     const F = new Float32Array(24 * NN);
     let live = swapState(blank(false)); reset(we, 0); let mine = swapState(live), t = T0;
     (function chunk() {
-      live = swapState(mine); const t1 = Math.min(T1, t + 59); flowSteps(F, t, t1); t = t1 + 1; mine = swapState(live);
+      live = swapState(mine); const c0 = performance.now(); do { flowSteps(F, t, t); t++; } while (t <= T1 && performance.now() - c0 < 8); mine = swapState(live);   // 한 조각 8ms까지: 1시간 조각은 붐비는 시간에 한 프레임(16ms)을 넘겨 첫 화면 연출이 끊겼음
       if (t <= T1) setTimeout(chunk, 0); else { NODEFLOW[key] = F; delete NF_WAIT[key]; res(F); }
     })();
   }));
