@@ -698,6 +698,47 @@ function measureCover() {
   if (changed) need();
 }
 setInterval(measureCover, 400);
+
+// ── 건물 뒤 이름표 숨기기 ─────────────────────────────────
+// 이름표는 화면 위 글자라 3D 건물에 가려지지 않아, 눈높이로 보면 뒤쪽 길·가게 이름이 앞 건물 벽 위에 떠 보였음.
+// 0.3초마다(카메라가 움직였을 때만) 카메라 → 이름표 선을 3m 간격으로 따라가며, 그 점이 어떤 건물 발자국 안·높이 사이면 가림(L.occ).
+// 20m 격자로 건물을 찾는다. 이름표 자리의 건물(가게·장소 이름표가 서 있는 건물)과 층 단면으로 치운 건물은 빼고,
+// 꼭 보여야 하는 이름표(①②③ 몰린 곳 .hot, 층 단면 abs·nudge)는 가리지 않음
+const OG = 20, ogrid = new Map();
+B.forEach((b, bi) => { if (b.k === 'roof') return; let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+  for (const q of b.p) { if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0]; if (q[1] < z0) z0 = q[1]; if (q[1] > z1) z1 = q[1]; }
+  b._bb = [x0, z0, x1, z1];
+  for (let gx = Math.floor(x0 / OG); gx <= Math.floor(x1 / OG); gx++) for (let gz = Math.floor(z0 / OG); gz <= Math.floor(z1 / OG); gz++) {
+    const k = gx * 100003 + gz; let c = ogrid.get(k); if (!c) ogrid.set(k, c = []); c.push(bi); } });
+function inPoly(p, x, z) { let ins = false; for (let i = 0, j = p.length - 1; i < p.length; j = i++) { const a = p[i], c = p[j];
+  if ((a[1] > z) !== (c[1] > z) && x < (c[0] - a[0]) * (z - a[1]) / (c[1] - a[1]) + a[0]) ins = !ins; } return ins; }
+function bldAt(x, z) { const c = ogrid.get(Math.floor(x / OG) * 100003 + Math.floor(z / OG)); if (c) for (const bi of c) { const bb = B[bi]._bb;
+  if (x >= bb[0] && x <= bb[2] && z >= bb[1] && z <= bb[3] && inPoly(B[bi].p, x, z)) return bi; } return -1; }
+function occluded(cx, cy, cz, px, py, pz, own) {
+  const dx = px - cx, dy = py - cy, dz = pz - cz, n = Math.min(500, Math.ceil(Math.hypot(dx, dz) / 3));
+  for (let k = 1; k < n; k++) { const t = k / n, x = cx + dx * t, y = cy + dy * t, z = cz + dz * t;
+    const c = ogrid.get(Math.floor(x / OG) * 100003 + Math.floor(z / OG)); if (!c) continue;
+    for (const bi of c) { if (bi === own || bi === hiddenB) continue; const b = B[bi];
+      if (y > b.b + b.h || y < b.b) continue; const bb = b._bb; if (x < bb[0] || x > bb[2] || z < bb[1] || z > bb[3]) continue;
+      if (inPoly(b.p, x, z)) return true; } }
+  return false;
+}
+let occKey = '';
+function measureOcc() {
+  const c = camera.position, key = c.x.toFixed(1) + ',' + c.y.toFixed(1) + ',' + c.z.toFixed(1) + ',' + hiddenB + ',' + labels.length;
+  if (key === occKey) return; occKey = key; let ch = false;
+  for (const L of labels) {
+    const exempt = L.abs || L.nudge || L.el.classList.contains('hot');   // 층 단면 이름표, ①②③ 몰린 곳 표시만 늘 보임
+    if (exempt) { if (L.occ) { L.occ = false; ch = true; } continue; }
+    if (L.own === undefined) L.own = bldAt(L.x, L.z);
+    // 검사할 점: 건물에 선 이름표는 그 건물 옥상(+1m), 길·땅 이름표는 6m 위 — 비스듬히 보면 좁은 골목 한가운데 점은 모서리에 가려도 골목은 보이므로
+    const ty = L.own >= 0 ? B[L.own].b + B[L.own].h + 1 : L.y + Math.max(0, hAt(L.x, L.z)) + 6;
+    const o = occluded(c.x, c.y, c.z, L.x, ty, L.z, L.own);
+    if (o !== !!L.occ) { L.occ = o; ch = true; }
+  }
+  if (ch) need();
+}
+setInterval(measureOcc, 300);
 function coverBoxes() { return coverCache.map(b => b.slice()); }
 let labN = -1;
 function placeLabels() {
@@ -708,7 +749,7 @@ function placeLabels() {
   for (const L of labels) {
     // 멀리(카메라 700m 넘게, 상권 전체 보기)서는 큰길(pri ≥ 4)·큰 지명(pri ≥ 8)과 ①②③·폐업·거리 이름표만 — 빈 층 주황이 이름표에 묻히지 않게(seohogyun-20 제안 C)
     const far = L.kind === 'road' ? (L.pri < 4 ? 700 : R * 3) : (L.pri <= 2 ? R * 0.5 : L.pri < 8 ? 700 : R * 3);
-    if (!show[L.kind] || dist > far) { L.el.classList.add('off'); continue; }
+    if (!show[L.kind] || dist > far || L.occ) { L.el.classList.add('off'); continue; }   // L.occ: 건물 뒤(measureOcc)
     _v.set(L.x, L.y + (L.abs ? 0 : Math.max(0, hAt(L.x, L.z))), L.z).project(camera);   // 바다 위 이름표는 물 높이 0 아래로 내리지 않음   // 땅 기준 이름표는 지형 높이를 더함(abs 는 이미 절대 높이)
     if (_v.z > 1 || _v.x < -1.1 || _v.x > 1.1 || _v.y < -1.1 || _v.y > 1.1) { L.el.classList.add('off'); continue; }
     if (!L.w) { L.el.classList.remove('off'); L.w = L.el.offsetWidth; L.h = L.el.offsetHeight; }
@@ -876,7 +917,7 @@ requestAnimationFrame(() => requestAnimationFrame(() => {
 }));
 
 // 점검용(자동 시험이 읽음)
-window.__map = { select, hideBuilding, get selMesh() { return selMesh; }, buildings: B, signedArea, camera, controls, HOME, labels, need, orbit, scene, renderer, R, esc, tint, setRoofs,
+window.__map = { _occ: () => { occKey = ""; measureOcc(); }, select, hideBuilding, get selMesh() { return selMesh; }, buildings: B, signedArea, camera, controls, HOME, labels, need, orbit, scene, renderer, R, esc, tint, setRoofs,
   roads: roadMeshes, ground, greens: greenMeshes, water: waterMesh, xz, meta: D.meta, dayLight, edgeFade, hAt, TON, GL, get night() { return Math.max(0, nightNow); },
   get selected() { return selIdx; }, infoExtra: null };
 function syncFog() { if (!scene.fog) return; const h = camera.position.y, k = 1 + Math.max(0, Math.min(1, (420 - h) / 380)) * 0.9; scene.fog.near = R * 1.15 * k; scene.fog.far = R * 2.6 * k; }

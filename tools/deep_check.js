@@ -28,6 +28,15 @@ const ok = (name, pass, detail) => { if (detail && detail.__err) pass = false; r
     const bad = L.filter(e => !e.style.transform).map(e => e.textContent.slice(0, 20)); return { 보이는이름표: L.length, 자리없음: bad.slice(0, 5), 자리없는수: bad.length }; });
   ok('보이는 이름표 모두 자리 있음', lbl.자리없는수 === 0, lbl);
 
+  // 2-1) 건물 뒤 이름표: 빛의 거리 눈높이(앞 건물 뒤)에서 가린 이름표가 있고, 가린 이름표는 화면에 없음
+  const occ = await ev(pg, async () => { const M = window.__map; if (!M._occ) return { __err: '가림 기능 없음' }; const t0 = M.controls.target.clone(), c0 = M.camera.position.clone();
+    const st = window.__street; if (st) st.choose('light'); await new Promise(r => setTimeout(r, 1200));
+    const t = M.controls.target; M.camera.position.set(t.x + 40, t.y + 12, t.z + 70); M.controls.update(); M._occ(); M.need(); await new Promise(r => setTimeout(r, 300));
+    const L = M.labels, hid = L.filter(l => l.occ), shown = hid.filter(l => !l.el.classList.contains('off'));
+    if (st) st.choose(''); M.controls.target.copy(t0); M.camera.position.copy(c0); M.controls.update(); M.need(); await new Promise(r => setTimeout(r, 300));
+    return { 가린수: hid.length, 가렸는데보임: shown.length }; });
+  ok('건물 뒤 이름표는 숨김(눈높이)', occ.가린수 > 0 && occ.가렸는데보임 === 0, occ);
+
   // 2) 재생 되돌리기 = 처음부터 계산
   const ck = await ev(pg, () => { const S = window.__sim, sig = () => { let x = 0, act = 0; S.A.forEach((a, i) => { x += (a.st * 7 + a.spent * 1e-3 + (a.cur || 0) * 1e-4 + (a.t1 || 0) * 1e-2 + a.shop * 1e-3 + a.oi) * (1 + (i % 13)); if (a.st) act++; }); return x.toFixed(3) + '/' + act; };
     const o = []; for (const t of [1100, 1380]) { S._ck.m.clear(); S._ck.key = null; S.seek(t); const f = sig(); S.seek(Math.min(1560, t + 120)); S.seek(t); o.push(f === sig()); } S.seek(1110); return o; });
