@@ -1,0 +1,16 @@
+# API 키·비밀 값
+.env
+*.key
+# 맥·편집기
+.DS_Store
+.vscode/
+.idea/
+# 파이썬
+__pycache__/
+*.pyc
+.venv/
+# 노드(캡처 도구 등)
+node_modules/
+# 큰 원자료(받는 방법은 docs/data-sources.md 에)
+data/raw/**/*.zip
+data/raw/**/*.shp
