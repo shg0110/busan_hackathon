@@ -19,14 +19,14 @@ const HX = D.meta.half[0], HZ = D.meta.half[1];
 
 // ── 색·치수 ───────────────────────────────────────────
 const C = {
-  trunk: '#7a5c3e', leaf: ['#5a9a4a', '#6fae5a', '#7cb864', '#8cc26e'],
+  trunk: '#6b5440', leaf: ['#4e7c45', '#5b8a4f', '#68975a', '#77a465'],
   center: '#f2c94c', lane: '#ffffff', walk: '#e6e9ed', zebra: '#ffffff', curb: '#9aa2ac', edge: '#aeb5bf',
   lampPole: '#3d434b', lampHead: '#f4f1e6', benchWood: '#a47b55', benchLeg: '#4a5260', planter: '#cfc9bf',
-  parking: '#d3d8de', coneA: '#4a8550', coneB: '#5f9c5c', shrubA: '#6aa85a', shrubB: '#88c06c',
+  parking: '#d3d8de', coneA: '#3e6a47', coneB: '#4e7b53', shrubA: '#5c8b50', shrubB: '#73a062',
 };
 const MAJOR = new Set(['trunk', 'primary', 'secondary', 'tertiary']);          // 가로수·인도·중앙선을 그리는 큰길
 const VEHICLE_SKIP = new Set(['service', 'footway', 'path', 'steps', 'cycleway', 'pedestrian', 'track']);
-const MAX_TREES = 5200;
+const MAX_TREES = 6500;
 const WALK_W = 2.5;            // 인도 폭(m)
 const STREET_GAP = 10;         // 가로수 간격(m)
 const JUNC_CLEAR = 15;         // 교차로 앞뒤로 선을 비우는 길이(m)
@@ -212,7 +212,7 @@ for (const m of majors) {
 }
 // 녹지 안: 종류마다 [간격(m), 키 최소, 키 최대, 침엽 비율]
 const GREEN = {
-  wood: [8, 9, 13, 0.55], forest: [8, 9, 13, 0.55], park: [9, 8.5, 11.5, 0.15], garden: [9, 6.5, 9, 0.15],
+  wood: [8.5, 10, 14, 0.45], forest: [8.5, 10, 14, 0.45], park: [9, 8.5, 11.5, 0.15], garden: [9, 6.5, 9, 0.15],
   playground: [10, 7.5, 10.5, 0.1], meadow: [15, 7.5, 10.5, 0.2],
 };
 const greenTrees = { wood: [], other: [] };
@@ -225,7 +225,8 @@ for (const g of D.greens) {
     if (!inPoly(px, pz, g.p) || !inside(px, pz, 5) || inWater(px, pz)) continue;
     if (nearBuilding(px, pz, 2.2) || nearRoad(px, pz, 1.5, -1)) continue;
     const shape = rand() < coneP ? 'cone' : 'broad';
-    (g.k === 'wood' || g.k === 'forest' ? greenTrees.wood : greenTrees.other).push([px, pz, h0 + rand() * (h1 - h0), shape === 'cone' ? 0.24 : 0.38, g.k, shape]);
+    const isWood = g.k === 'wood' || g.k === 'forest';
+    (isWood ? greenTrees.wood : greenTrees.other).push([px, pz, h0 + rand() * (h1 - h0), shape === 'cone' ? (isWood ? 0.27 : 0.24) : (isWood ? 0.46 : 0.38), g.k, shape]);
   }
 }
 // 4,000그루를 넘으면 숲부터 고르게 솎는다
@@ -286,7 +287,14 @@ function hideTreesNear(x, z, r) {
   const broadIdx = [], coneIdx = [];
   trees.forEach((t, i) => (t[5] === 'cone' ? coneIdx : broadIdx).push(i));
   const broad = broadIdx.map(i => trees[i]), cone = coneIdx.map(i => trees[i]);
-  const mk = (geo, color, n) => { const m = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({ color }), Math.max(1, n)); m.count = n; return m; };
+  const mk = (geo, color, n) => { const m = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({ color, vertexColors: !!geo.attributes.color }), Math.max(1, n)); m.count = n; return m; };
+  // 높이에 따라 밝기를 바꾸는 꼭짓점 색: 아래 lo배 → 위 hi배(인스턴스 색과 곱해진다)
+  const shade = (geo, lo, hi) => {
+    const p = geo.attributes.position, n = p.count; geo.computeBoundingBox();
+    const y0 = geo.boundingBox.min.y, y1 = geo.boundingBox.max.y, c = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { const t = (p.getY(i) - y0) / ((y1 - y0) || 1), k = lo + (hi - lo) * Math.pow(t, 0.8); c[i * 3] = c[i * 3 + 1] = c[i * 3 + 2] = k; }
+    geo.setAttribute('color', new THREE.BufferAttribute(c, 3)); return geo;
+  };
   const meshes = [];
   trees.forEach(t => treeRefs.push({ x: t[0], z: t[1], parts: [] }));
   if (trees.length) {
@@ -302,7 +310,7 @@ function hideTreesNear(x, z, r) {
   if (broad.length) {
     // 잎 세 덩이: 가운데 큰 덩이 + 양옆으로 비켜 난 덩이 둘(풍성하게, 공 하나로 보이지 않게)
     // 색은 4단계 초록 중 하나를 고르고, 옆 덩이는 조금 밝거나 어둡게
-    const leaf = mk(new THREE.IcosahedronGeometry(1, 1), '#ffffff', broad.length * 3);
+    const leaf = mk(shade(new THREE.IcosahedronGeometry(1, 1), 0.66, 1.06), '#ffffff', broad.length * 3);
     broad.forEach(([x, z, h, rr], i) => {
       const r = h * rr, k = Math.floor(rand() * LEAF.length), base = LEAF[k].clone().lerp(LEAF[Math.min(LEAF.length - 1, k + 1)], rand() * 0.5);
       const sy = 0.82 + rand() * 0.22;
@@ -321,7 +329,7 @@ function hideTreesNear(x, z, r) {
   }
   if (cone.length) {
     // 침엽: 원뿔 두 단(아래가 넓고 위가 좁게)
-    const coneGeo = new THREE.ConeGeometry(1, 1, 8, 1); coneGeo.translate(0, 0.5, 0);
+    const coneGeo = new THREE.ConeGeometry(1, 1, 8, 1); coneGeo.translate(0, 0.5, 0); shade(coneGeo, 0.7, 1.04);
     const needle = mk(coneGeo, '#ffffff', cone.length * 2);
     cone.forEach(([x, z, h, rr], i) => {
       const r = h * rr, c = col.copy(CONE[0]).lerp(CONE[1], rand()).clone();
@@ -333,7 +341,7 @@ function hideTreesNear(x, z, r) {
     meshes.push(needle);
   }
   if (shrubs.length) {
-    const bush = mk(new THREE.IcosahedronGeometry(1, 1), '#ffffff', shrubs.length);
+    const bush = mk(shade(new THREE.IcosahedronGeometry(1, 1), 0.7, 1.05), '#ffffff', shrubs.length);
     shrubs.forEach(([x, z, sz], i) => {
       q.setFromAxisAngle(up, rand() * Math.PI * 2);
       pos.set(x, sz * 0.38, z); scl.set(sz * 0.6, sz * 0.45, sz * 0.6); mtx.compose(pos, q, scl); bush.setMatrixAt(i, mtx);

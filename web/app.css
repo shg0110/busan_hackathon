@@ -79,6 +79,7 @@ body.street-mode #card { display: none; }
 .fs-sub { display: block; font-size: 14px; font-weight: 500; color: var(--g700); }
 .fs-note { margin: 8px 0 0; font-size: 13px; color: var(--g600); line-height: 1.6; }
 .floor-sum .src { margin-top: 4px; }
+.fs-key { margin: 12px 0 0; padding: 12px 14px; background: var(--g50); border-radius: 12px; font-size: 13.5px; line-height: 1.6; color: var(--g700); }
 
 /* ── 버튼 ───────────────────────────────── */
 /* 주 버튼: 화면마다 하나. 상권 전체 = '빈 층에 가게 열어 보기', 거리 = 고른 업종으로 빈 층에 열어 보기, 건물 실험 = 실행 */
@@ -316,7 +317,8 @@ body:has(#info:not([hidden])) #credit { display: none; }
 .lbl.place { font-size: 12.5px; color: var(--g800); text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 6px #fff; }
 .lbl.place.major { font-size: 14px; font-weight: 700; }
 .lbl.road { font-size: 11px; color: var(--g600); font-weight: 600; text-shadow: 0 0 3px #fff, 0 0 3px #fff; }
-.lbl.off { display: none; }
+/* 숨김은 이름표 종류(.vac·.hot 등 display 를 따로 주는 것)보다 늘 이긴다: id 를 붙여 우선순위를 올림 */
+#labels .lbl.off { display: none; }
 /* 문 닫은 가게 이름표: 흰 말풍선 + 빨간 점 */
 .lbl.vac { display: inline-flex; align-items: center; gap: 6px; background: #fff; color: var(--g900); font-size: 12px; font-weight: 700; border-radius: 8px;
   padding: 4px 9px; text-shadow: none; box-shadow: 0 1px 4px rgba(0, 20, 60, .18); }
