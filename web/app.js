@@ -876,7 +876,7 @@ const LKEY = [
   [1035, LK({ zen: '#93a6d4', bg: '#f0e5d8', sky: '#fff0dc', gnd: '#9d9590', hI: 0.58, sunC: '#ffd2a6', sunI: 0.5, lit: 0.15 })], // 17:15 해 짐(노을, 은은하게)
   [1062, LK({ zen: '#232a4a', bg: '#4b4f6b', sky: '#8a8fb8', gnd: '#3d3f52', hI: 0.44, sunC: '#ff9a6b', sunI: 0.14, lit: 0.7 })], // 17:42 땅거미
   [1100, LK({ zen: '#0b1020', bg: '#1e2433', sky: '#5d6f96', gnd: '#262b38', hI: 0.4, sunC: '#a9bde3', sunI: 0.1, lit: 1 })],    // 18:20 밤
-  [1560, LK({ zen: '#0b1020', bg: '#1e2433', sky: '#5d6f96', gnd: '#262b38', hI: 0.4, sunC: '#a9bde3', sunI: 0.1, lit: 1 })],
+  [1740, LK({ zen: '#0b1020', bg: '#1e2433', sky: '#5d6f96', gnd: '#262b38', hI: 0.4, sunC: '#a9bde3', sunI: 0.1, lit: 1 })],
 ];
 let dayBg = null, lastBg = null, nightNow = -1;
 const _c = new THREE.Color();
