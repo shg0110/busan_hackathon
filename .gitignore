@@ -14,3 +14,5 @@ node_modules/
 # 큰 원자료(받는 방법은 docs/data-sources.md 에)
 data/raw/**/*.zip
 data/raw/**/*.shp
+# 인허가 전국 원본(수백 MB~GB): 받는 법은 docs/busan-evidence.md 6-5
+data/raw/localdata/*.csv
