@@ -12,7 +12,9 @@
 .m-name b { font-weight: 600; color: #212529; }
 .m-name .u { color: #868e96; font-size: 11px; }
 .m-name .src { font-size: 10.5px; padding: 0 5px; border-radius: 4px; }
-.m-name .src.ok { background: #e6f4ea; color: #2b7a3d; }
+.m-name .src.okpo { background: #e6f4ea; color: #2b7a3d; }       /* 옥포 업소 가격 */
+.m-name .src.geoje { background: #e7f0fb; color: #2f5f9e; }      /* 옥포 밖 거제 값 */
+.m-name .src.wide, .m-name .src.card { background: #fff4e0; color: #8a5a00; }   /* 전국·경남, 카드 건당 계산 */
 .m-name .src.guess { background: #f1f3f5; color: #868e96; }
 .m-calc { display: flex; align-items: center; gap: 5px; margin-top: 4px; }
 .m-calc input { font: inherit; padding: 3px 6px; border: 1px solid #dee2e6; border-radius: 6px; text-align: right; background: #fff; box-sizing: border-box; min-width: 0; }

@@ -5,49 +5,67 @@
 - 1인 지출 = Σ(가격 × 1인 수량 × 주문 비율). 업종마다 계산해 basket 으로 넣는다.
 실행: python3 -I tools/menu_build.py okpo
 """
-import csv, json, os, sys
+import collections, csv, json, os, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NAME = sys.argv[1]
 P = os.path.join(ROOT, 'data', 'processed')
 M = json.load(open(os.path.join(P, f'{NAME}_menu.json'), encoding='utf-8'))
 SUB_KO = {s['ko']: s['id'] for s in M['subs']}
-SUB_KO.update({'목욕탕': 'sauna', '호프·요리주점': 'hof'})
-# (세부업종 id, 우리 메뉴 이름) ← (가격표 메뉴 이름) 이 다를 때만
-ALIAS = {('sauna', '목욕료'): '목욕료', ('hair', '파마'): '파마', ('hof', '병맥주'): '병맥주', ('chicken', '병맥주'): '병맥주'}
+SUB_KO.update({'목욕탕': 'sauna', '호프·요리주점': 'hof', '할랄·중앙아시아': 'halal'})
+# 우리 메뉴 이름 → 가격표 (메뉴, 단위). 단위가 None 이면 단위는 보지 않는다. 없으면 같은 이름
+MAP = {('baekban', '김치찌개백반'): ('김치찌개백반', None), ('hoe', '광어회'): ('실속 광어회', None), ('hoe', '매운탕'): ('매운탕', '1냄비'),
+       ('hof', '안주'): ('대표 안주', None), ('noraebang', '노래방 1시간'): ('노래방 이용료', None), ('viet', '분짜·반미'): ('분짜 또는 반미', None),
+       ('halal', '나시고랭·플로프'): ('나시고랭 또는 플로프', None)}
 # 평균이 대표값이 아닌 것: 커피(프랜차이즈 4,700 vs 저가 1,800), 햄버거(단품 3,800 vs 레스토랑 18,000)
 NO_OVERRIDE = {('cafe', '커피'), ('western', '햄버거')}
+DRINKS = {'소주', '병맥주', '생맥주'}
+
+def level(r):
+    """근거 수준: okpo(옥포 업소 값) < geoje(옥포 밖 거제·옆 동) < wide(전국 정가·경남 평균)"""
+    ok = r['확인여부']
+    if ok == '확인' and '옥포' in (r['지역'] + r['범위']):
+        return 0, 'okpo', '옥포'
+    if '거제' in ok or '옆 동' in ok or '거제' in r['지역']:
+        return 1, 'geoje', '거제'
+    return 2, 'wide', '전국' if '전국' in ok else '경남' if '경남' in ok else '참고'
 
 rows = []
 for fn in (f'{NAME}_menu_prices.csv', f'{NAME}_menu_prices_extra.csv'):
     fp = os.path.join(P, fn)
     if os.path.exists(fp):
         rows += list(csv.DictReader(open(fp, encoding='utf-8-sig')))
-best = {}
+cand = {}
 for r in rows:
     sid = SUB_KO.get(r['세부업종'])
     if not sid or not r['가격_원'] or not r['확인여부'].startswith('확인'):
         continue
-    if '건당' in r['확인여부'] or '건당' in r['메뉴']:   # 카드 결제 1건당 금액(여러 명 합계일 수 있음)은 메뉴 가격으로 쓰지 않음
+    if '건당' in r['확인여부'] or '건당' in r['메뉴'] or '비교용' in r['확인여부']:   # 카드 결제 1건당·비교용 행은 메뉴 가격으로 쓰지 않음
         continue
-    key = (sid, r['메뉴'])
-    rank = 0 if '옥포' in r['지역'] and r['확인여부'] == '확인' else 1 if r['확인여부'] == '확인' else 2
-    if key not in best or rank < best[key][0]:
-        best[key] = (rank, r)
+    cand.setdefault((sid, r['메뉴']), []).append(r)
 
 used = []
 for s in M['subs']:
     for m in s['menus']:
-        names = [m['n'], m['n'].replace('백반', '') + '백반', ALIAS.get((s['id'], m['n']), '')]
-        hit = next((best[(s['id'], n)] for n in names if n and (s['id'], n) in best and (s['id'], n) not in NO_OVERRIDE), None)
-        if hit:
-            rank, r = hit
+        key = (s['id'], m['n'])
+        cm, cu = MAP.get(key, (m['n'], None))
+        rs = [r for r in cand.get((s['id'], cm), []) if cu is None or r['단위'] == cu]
+        if not rs and cm in DRINKS:   # 술값은 업종이 달라도 같은 옥포 가게 값(예: 횟집 소주 ← 고깃집 줄의 소주)
+            rs = [r for (sid2, n2), lst in cand.items() if n2 == cm for r in lst]
+        if rs and key not in NO_OVERRIDE:
+            r = min(rs, key=lambda r: level(r)[0])
+            _, lvl, badge = level(r)
             m['price'] = int(float(r['가격_원']))
-            m['src'] = f"{r['지역']} {r['기준시점']} — {r['범위']}" if rank == 0 else f"{r['지역']} {r['기준시점']}"
-            m['ok'] = True
-            used.append((s['id'], m['n'], m['price']))
-        else:
-            m['ok'] = m.get('src', '가정') != '가정' and not m['src'].startswith('가정')
+            m['src'] = f"{r['지역']} {r['기준시점']} — {r['범위'] or r['출처'][:80]}"
+            m['lvl'], m['badge'] = lvl, badge
+            used.append((s['id'], m['n'], m['price'], lvl))
+        elif '카드' in m.get('src', ''):
+            m['lvl'], m['badge'] = 'card', '카드'
+        elif m.get('src', '가정').startswith('가정'):
+            m['lvl'], m['badge'] = 'guess', '가정'
+        else:   # menu.json 에 직접 적은 근거(예: 카페 아메리카노 옥포1동 4,700)
+            m['lvl'], m['badge'] = 'okpo', '옥포'
+        m['ok'] = m['lvl'] != 'guess'
     s['basket'] = round(sum(m['price'] * m['qty'] * m['share'] for m in s['menus']) / 100) * 100
     s['confirmed'] = sum(1 for m in s['menus'] if m['ok']), len(s['menus'])
 
@@ -57,11 +75,11 @@ with open(dst, 'w', encoding='utf-8') as f:
     json.dump(dict(subs=M['subs'], prefs=M['prefs']), f, ensure_ascii=False, separators=(',', ':'))
     f.write(';\n')
 print(dst)
-print('가격표로 바꾼 메뉴', len(used))
+print('가격표로 바꾼 메뉴', len(used), collections.Counter(u[3] for u in used))
 for s in M['subs']:
     print(f"  {s['ko']:<12} 1인 {s['basket']:>7,}원  근거 있는 메뉴 {s['confirmed'][0]}/{s['confirmed'][1]}")
-# 메뉴 구조에 메뉴 추가가 필요한 것(가격표엔 있는데 우리 메뉴엔 없음)
-ours = {(s['id'], m['n']) for s in M['subs'] for m in s['menus']}
-miss = sorted({k for k in best if k not in ours and best[k][0] == 0})
+# 가격표에 있는데 우리 메뉴에 안 쓰인 것(필요하면 menu.json 에 추가)
+ours = {(s['id'], MAP.get((s['id'], m['n']), (m['n'], None))[0]) for s in M['subs'] for m in s['menus']}
+miss = sorted(k for k in cand if k not in ours)
 if miss:
-    print('가격표에만 있는 메뉴(필요하면 menu.json 에 추가):', miss)
+    print('가격표에만 있는 메뉴:', miss)
