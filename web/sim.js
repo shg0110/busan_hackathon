@@ -343,9 +343,10 @@ function draw(t) {
   let n = 0;
   for (const a of A) {
     if (a.st !== 1 && a.st !== 3) continue;
-    if (a.st === 1) placeOnPath(a, t); else { const s = SHOPS[a.shop]; a.x = s.x + (a.r() - 0.5) * 1.5; a.z = s.z + (a.r() - 0.5) * 1.5; }
-    // 같은 길 위 사람이 한 줄로 겹치지 않게 사람마다 조금 옆으로
+    // 같은 길 위 사람이 한 줄로 겹치지 않게 사람마다 조금 옆으로(사람마다 고정된 값)
     const j = (a.jit ?? (a.jit = (hash01(String(A.indexOf(a))) - 0.5) * 3));
+    // 자리 기다리는 사람은 가게 앞 고정 자리(예전엔 그릴 때마다 난수를 써서 점이 떨리고, 그 난수 때문에 재생 결과가 화면 속도에 따라 달라졌음)
+    if (a.st === 1) placeOnPath(a, t); else { const s = SHOPS[a.shop]; a.x = s.x + j * 0.5; a.z = s.z + (hash01('w' + j) - 0.5) * 1.5; }
     pos[n * 3] = a.x + j; pos[n * 3 + 1] = 1.2; pos[n * 3 + 2] = a.z - j * 0.6;
     const c = GCOL[a.g]; col[n * 3] = c.r; col[n * 3 + 1] = c.g; col[n * 3 + 2] = c.b; n++;
   }
@@ -357,14 +358,17 @@ function draw(t) {
 const hm = (t) => { const d = t >= 1440, m = Math.floor(t) % 1440; return (d ? '다음 날 ' : '') + String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
 const wonX = (v) => Math.round(v).toLocaleString('ko-KR') + '원';   // 메뉴·1인 지출은 원 단위 그대로
 function won(v) { if (v >= 1e8) return (v / 1e8).toFixed(v >= 1e9 ? 1 : 2) + '억 원'; if (v >= 1e4) return Math.round(v / 1e4).toLocaleString('ko-KR') + '만 원'; return Math.round(v).toLocaleString('ko-KR') + '원'; }
+// 재생 속도: 1초에 몇 분(느리게 = 하루 약 4분, 보통 = 약 1분 24초, 빠르게 = 약 28초)
+const SPEEDS = [[5, '느리게'], [15, '보통'], [45, '빠르게']];
 const panel = document.createElement('section'); panel.id = 'sim'; panel.setAttribute('aria-label', '가상 손님 하루');
 panel.innerHTML = `
   <div class="sim-head">
     <button id="sim-play" class="sim-play"><span class="ico">▶</span> 하루 돌려 보기</button>
-    <div class="sim-time"><b id="sim-clock">05:00</b><span id="sim-sub">가상 손님 하루</span></div>
-    <div class="seg" role="group" aria-label="요일">
+    <div class="sim-time"><b id="sim-clock">05:00</b><span id="sim-sub">1초에 15분</span></div>
+    <div class="seg" id="sim-day" role="group" aria-label="요일">
       <button data-s="wd" class="on">평일</button><button data-s="we">주말</button>
     </div>
+    <div class="seg" id="sim-speed" role="group" aria-label="재생 속도">${SPEEDS.map(([v, k]) => `<button data-v="${v}"${v === 15 ? ' class="on"' : ''}>${k}</button>`).join('')}</div>
     <button id="sim-fold" class="icon-btn" aria-label="접기" title="접기"><svg viewBox="0 0 20 20"><path d="M5 8l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
   </div>
   <div class="sim-body">
@@ -400,7 +404,7 @@ const assumed = GROUPS.filter(g => CFG.groups[g].src === '가정' || /가정/.te
   </ul><p>근거: docs/okpo-persona-sources.md</p>`;
 }
 $('sim-note').textContent = `가상 인물 ${' '}점 1개 = 사람 약 ${'{W}'}명. ` + (assumed ? '사람 수·교대 시간은 아직 근거 확인 전 가정 값입니다.' : '');
-let simT = T0, playing = false, speed = 20, lastNow = 0;
+let simT = T0, playing = false, speed = 15, lastNow = 0;
 let drawDirty = true;   // 멈춰 있을 때도 시각을 옮기면 점을 다시 그려야 한다
 function seek(t) { reset(scen === 'we', 0); for (let s = T0; s <= t; s++) step(s, true); simT = t; drawDirty = true; ui(); }
 function ui() {
@@ -418,8 +422,13 @@ function ui() {
 function playBtn() { $('sim-play').innerHTML = playing ? '<span class="ico">❚❚</span> 멈추기' : '<span class="ico">▶</span> 하루 돌려 보기'; $('sim-play').classList.toggle('on', playing); }
 $('sim-play').onclick = () => { playing = !playing; playBtn(); if (playing && simT >= T1) seek(T0); };
 $('sim-range').oninput = (e) => seek(+e.target.value);
-panel.querySelectorAll('.seg button').forEach(b => b.onclick = () => {
-  panel.querySelectorAll('.seg button').forEach(x => x.classList.toggle('on', x === b)); scen = b.dataset.s; seek(simT);
+$('sim-day').querySelectorAll('button').forEach(b => b.onclick = () => {
+  $('sim-day').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); scen = b.dataset.s; seek(simT);
+});
+// 속도는 다음 프레임부터 바로 반영(재생 중이어도 멈추지 않음)
+$('sim-speed').querySelectorAll('button').forEach(b => b.onclick = () => {
+  speed = +b.dataset.v; $('sim-speed').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+  $('sim-sub').textContent = `1초에 ${speed}분`;
 });
 $('sim-fold').onclick = () => { const f = panel.classList.toggle('folded'); $('sim-fold').setAttribute('aria-label', f ? '펴기' : '접기'); };
 panel.classList.add('folded'); $('sim-fold').setAttribute('aria-label', '펴기');   // 처음엔 접어 둠(지도 가운데 아래를 가리지 않게). 주 버튼은 기록지에
