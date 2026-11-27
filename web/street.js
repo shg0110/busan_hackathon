@@ -7,7 +7,7 @@
 const ST = window.STREETS, M = window.__map, SIM = window.__sim;
 if (!ST || !ST.length || !M) return;
 const { buildings: B, scene, need, esc } = M;
-const COL = { open: '#40a372', empty: '#f76707', unknown: '#adb5bd', home: '#dee2e6', other: '#e9ecef', nodata: '#f1f3f5' };
+const COL = { open: '#4fa679', empty: '#f0783a', unknown: '#adb5bd', home: '#dee2e6', other: '#e9ecef', nodata: '#f1f3f5' };
 const KO = { open: '영업 중', empty: '가게 없음', unknown: '확인 불가', home: '주거', other: '기타(주차·공공 등)', nodata: '층별 자료 없음' };
 
 // ── 탭 ───────────────────────────────────────────────

@@ -11,11 +11,13 @@ THREE.ColorManagement.legacyMode = false;   // 적은 색 그대로 나오게(r1
 
 // ── 색 ───────────────────────────────────────────────
 const C = {
-  ground: '#e4e7eb', water: '#94bde3', green: '#cfe3bd', wood: '#bcd6a9', pitch: '#cbe1ba',
-  road: '#bfc5cd', roadMinor: '#cdd2d9', ped: '#eceef1', bridge: '#c6ccd3',
+  // 땅은 아주 밝게, 도로는 중간 회색: 길 그물이 또렷해야 블록이 읽힌다
+  ground: '#eef0f2', water: '#8fb9e2', green: '#cde4b8', wood: '#b6d4a0', pitch: '#c8e2b2',
+  road: '#b9bfc8', roadMinor: '#ccd1d8', ped: '#e3e6ea', bridge: '#c2c8d0',
   // 대구처럼 옅은 회색 건물(순백이면 지붕·벽이 날아가 윤곽이 흐림). 건물마다 아주 조금씩 다르게
-  walls: ['#e9ecef', '#e4e7eb', '#eceef1', '#e6e9ed', '#efeff1', '#e2e5e9'],
-  roof: '#d3d7dc', roofApt: '#cbd0d6',
+  // 아주 옅게 따뜻한 회색·차가운 회색을 섞어 단조롭지 않게
+  walls: ['#f3f2ef', '#eceff3', '#f4f3f1', '#e9edf1', '#f1efeb', '#edf0f3'],
+  roof: '#d0d4da', roofApt: '#c8cdd4',
   est: '#f1dcc8',          // 층수 추정 건물 강조(은은하게)
   select: '#fcc419',
 };
@@ -92,8 +94,9 @@ canvas.addEventListener('pointerdown', () => { const h = document.getElementById
 
 // ── 빛 ───────────────────────────────────────────────
 // 빛: 위를 향한 면(지붕·땅)이 정한 색 그대로 나오도록(합이 약 1). 너무 세면 지붕·땅이 하얗게 잘린다
-scene.add(new THREE.HemisphereLight('#ffffff', '#9aa3ad', 0.47));
-const sun = new THREE.DirectionalLight('#ffffff', 0.68);
+// 하늘빛을 높이고 햇빛을 줄여 등진 벽도 밝은 회색, 해를 받는 벽은 더 밝게(면마다 차이). 해는 살짝 따뜻하게, 땅 반사는 살짝 푸르게
+scene.add(new THREE.HemisphereLight('#ffffff', '#a3adba', 0.64));
+const sun = new THREE.DirectionalLight('#fff3e3', 0.56);
 sun.position.set(-R * 0.5, R * 0.9, R * 0.35);
 sun.castShadow = true;
 sun.shadow.mapSize.set(SMALL ? 2048 : 4096, SMALL ? 2048 : 4096);
@@ -203,8 +206,8 @@ function floorTexture() {
   const S = 64, cv = document.createElement('canvas'); cv.width = cv.height = S;
   const g = cv.getContext('2d');
   g.fillStyle = '#ffffff'; g.fillRect(0, 0, S, S);
-  g.fillStyle = '#d9dee5'; g.fillRect(6, S * 0.22, S * 0.68, S * 0.46);   // 창(윗부분이 v 큰 쪽 → 캔버스 위쪽)
-  g.fillStyle = '#c9d0d8'; g.fillRect(6, S * 0.22, S * 0.68, 2);
+  g.fillStyle = '#e4e8ee'; g.fillRect(6, S * 0.22, S * 0.68, S * 0.46);   // 창(윗부분이 v 큰 쪽 → 캔버스 위쪽)
+  g.fillStyle = '#d6dce3'; g.fillRect(6, S * 0.22, S * 0.68, 2);
   g.fillStyle = '#f2f3f5'; g.fillRect(0, S - 4, S, 4);                     // 층 사이 슬래브(v=0 쪽)
   const t = new THREE.CanvasTexture(cv);
   t.wrapS = t.wrapT = THREE.RepeatWrapping; t.encoding = THREE.sRGBEncoding;
@@ -214,6 +217,7 @@ function floorTexture() {
 const tmpC = new THREE.Color();
 const wallCols = C.walls.map(h => new THREE.Color(h));
 const roofCol = new THREE.Color(C.roof), roofApt = new THREE.Color(C.roofApt);
+const roofCols = ['#d0d4da', '#d6d3cd', '#ccd2d8', '#d4d2ce', '#cfd3d7', '#d8d6d2'].map(h => new THREE.Color(h));
 const bRange = [];   // 건물별 [시작 꼭짓점, 끝 꼭짓점]
 function pushTri(a, b, c, n, col, owner) {
   bPos.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
@@ -255,7 +259,7 @@ B.forEach((b, bi) => {
   }
   // 지붕
   const v2 = p.map(q => new THREE.Vector2(q[0], q[1]));
-  const rc = b.k === 'apartments' ? roofApt : roofCol;
+  const rc = b.k === 'apartments' ? roofApt : roofCols[b.c % roofCols.length];
   for (const t of THREE.ShapeUtils.triangulateShape(v2, [])) {
     const a = p[t[0]], c1 = p[t[1]], c2 = p[t[2]];
     const ny = (c1[1] - a[1]) * (c2[0] - a[0]) - (c1[0] - a[0]) * (c2[1] - a[1]);
@@ -272,10 +276,35 @@ const colAttr = new THREE.Float32BufferAttribute(bCol, 3);
 bGeo.setAttribute('color', colAttr);
 const baseCol = Float32Array.from(bCol);
 bGeo.computeBoundingSphere();
-const bMat = new THREE.MeshLambertMaterial({ vertexColors: true, map: floorTexture() });
+// 창 무늬는 가까이 볼 때만(멀리서는 작은 건물이 빽빽해 무늬가 잡음처럼 보인다 → 깨끗한 덩어리로)
+const winTex = floorTexture();
+const bMat = new THREE.MeshLambertMaterial({ vertexColors: true, map: null });
+const WIN_NEAR = 330;
+function syncWindows() {
+  const want = camera.position.distanceTo(controls.target) < WIN_NEAR ? winTex : null;
+  if (bMat.map !== want) { bMat.map = want; bMat.needsUpdate = true; }
+}
 const bMesh = new THREE.Mesh(bGeo, bMat);
 bMesh.castShadow = true; bMesh.receiveShadow = true; bMesh.renderOrder = 10;
 scene.add(bMesh);
+// 접지 그늘: 건물 밑동 둘레에 바깥으로 옅어지는 어두운 띠(골목이 깊어 보이고 건물이 땅에 붙어 보이게)
+{
+  const pos = [], col = [], W0 = 0.3, OUT = 3.6;
+  for (const b of B) {
+    if (b.k === 'roof' || (b.b || 0) > 0) continue;
+    let p = b.p.slice(); if (signedArea(p) > 0) p.reverse();
+    for (let i = 0; i < p.length; i++) {
+      const a = p[i], c = p[(i + 1) % p.length], dx = c[0] - a[0], dz = c[1] - a[1], l = Math.hypot(dx, dz); if (l < 0.3) continue;
+      const nx = -dz / l * OUT, nz = dx / l * OUT, y = 0.04;
+      // 안쪽(벽 밑) 알파 W0 → 바깥 0
+      pos.push(a[0], y, a[1], c[0], y, c[1], c[0] + nx, y, c[1] + nz, a[0], y, a[1], c[0] + nx, y, c[1] + nz, a[0] + nx, y, a[1] + nz);
+      for (const al of [W0, W0, 0, W0, 0, 0]) col.push(0.12, 0.14, 0.18, al);
+    }
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
+  const ao = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
+  ao.renderOrder = 9.4; scene.add(ao);
+}
 // 지붕 윤곽선(위에서 볼 때 건물 경계가 또렷하게)
 {
   const lp = [];
@@ -503,6 +532,7 @@ function frame(now) {
   if (controls.update()) dirty = true;
   if (!dirty) return;
   dirty = false;
+  syncWindows();
   renderer.render(scene, camera);
   placeLabels();
 }
