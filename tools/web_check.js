@@ -65,6 +65,7 @@ fs.mkdirSync(OUT, { recursive: true });
         const cr = document.getElementById('c').getBoundingClientRect();
         const sx = cr.left + (v.x + 1) / 2 * cr.width, sy = cr.top + (1 - v.y) / 2 * cr.height;
         const d = Math.hypot(sx - (cr.left + cr.width / 2), sy - (cr.top + cr.height * 0.55));
+        if (document.elementFromPoint(sx, sy) !== document.getElementById('c')) return;   // 패널에 가린 건물은 누를 수 없다
         if (v.z < 1 && (!best || d < best.d)) best = { i, sx, sy, d };
       });
       return best;
@@ -107,9 +108,12 @@ fs.mkdirSync(OUT, { recursive: true });
     ui.namesOff = await pg.evaluate(() => [...document.querySelectorAll('.lbl.place:not(.off)')].length === 0);
     await pg.click('label:has(#L-names)');
     const cam0 = await pg.evaluate(() => window.__map.camera.position.toArray());
-    await pg.click('#nav [data-n="r"]'); await pg.waitForTimeout(300);
-    const cam1 = await pg.evaluate(() => window.__map.camera.position.toArray());
-    ui.rotate = Math.hypot(cam1[0] - cam0[0], cam1[2] - cam0[2]) > 5;
+    // 폰에서는 카메라 버튼을 '처음 위치로' 하나만 둔다(돌리기는 두 손가락). 보일 때만 누른다.
+    if (await pg.isVisible('#nav [data-n="r"]')) {
+      await pg.click('#nav [data-n="r"]'); await pg.waitForTimeout(300);
+      const cam1 = await pg.evaluate(() => window.__map.camera.position.toArray());
+      ui.rotate = Math.hypot(cam1[0] - cam0[0], cam1[2] - cam0[2]) > 5;
+    } else { await pg.evaluate(() => { window.__map.orbit(0.4, 0); }); await pg.waitForTimeout(200); ui.rotate = 'hidden(폰)'; }
     await pg.click('#nav [data-n="h"]'); await pg.waitForTimeout(400);
     const cam2 = await pg.evaluate(() => window.__map.camera.position.toArray());
     ui.home = Math.hypot(cam2[0] - cam0[0], cam2[1] - cam0[1], cam2[2] - cam0[2]) < 2;
