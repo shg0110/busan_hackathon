@@ -2,7 +2,7 @@
 
 - 인증키(REB_API_KEY)가 꼭 필요하다. 키 없이 부르면 R-ONE이 견본 모드로 '첫 5건'만 주고 pIndex·pSize를 무시한다
   (R-ONE 개발가이드 문구, 2026-11-27 확인). 키는 .env 에 넣거나 환경변수로 준다.
-- 통계표 ID는 대구 드래프톤 때 확인한 것: 2026년 3분기부터 쓰는 표 5개 + 그 앞 분기(2024년 3분기~2026년 2분기) 중대형·일반·소규모·1층 표 4개.
+- 통계표 ID: 2026년 3분기부터 쓰는 표 5개 + 그 앞 분기(2024년 3분기~2026년 2분기) 중대형·일반·소규모·1층 표 4개.
 실행: python3 -I tools/reb_fetch_busan.py data/raw/reb/vacancy_busan.csv [시도,시도...]
      예) 동남권: python3 -I tools/reb_fetch_busan.py data/raw/reb/vacancy_dongnam.csv 부산,울산,경남
 """
