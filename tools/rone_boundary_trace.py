@@ -1,10 +1,22 @@
+"""R-ONE 상권구획도 그림(EPSG:3857 범위를 아는 WMS 그림)에서 초록 경계선을 따라가 위경도 GeoJSON으로 바꾼다.
+실행: python3 -I tools/rone_boundary_trace.py <그림> <범위.txt> <출력.geojson> [안쪽 시작점 x,y] [선 불투명도 기준] [끊긴 곳 잇기 x1,y1,x2,y2;...]
+남포동: 인자 3개(기본값). 옥포: 120,125 20 "154,111,153,121"
+같은 폴더에 *_check.png(원래 선 위에 빨간 추적선)를 만든다. pillow 필요.
+"""
 import sys, math, json
 from PIL import Image
-img = Image.open(sys.argv[1]).convert('RGBA'); W, H = img.size; px = img.load()
+img = Image.open(sys.argv[1]).convert('RGBA'); W, H = img.size
+# 선택: 상권 이름 글자가 경계선을 덮어 끊긴 곳을 직선으로 잇는다. 인자 6: "x1,y1,x2,y2[;x1,y1,x2,y2...]"(화소)
+if len(sys.argv) > 6:
+    from PIL import ImageDraw as _D
+    for seg in sys.argv[6].split(';'):
+        _D.Draw(img).line(tuple(map(int, seg.split(','))), fill=(0, 255, 0, 255), width=3)
+px = img.load()
 x0, y0, x1, y1 = map(float, open(sys.argv[2]).read().strip().split(','))
-green = lambda p: p[3] > 100 and p[1] > 150 and p[0] < 120 and p[2] < 120
+ALPHA = int(sys.argv[5]) if len(sys.argv) > 5 else 100  # 선으로 볼 최소 불투명도. 가는 선이 대각선에서 새면 20쯤으로 낮춘다(옥포 그림)
+green = lambda p: p[3] > ALPHA and p[1] > 150 and p[0] < 120 and p[2] < 120
 # 상권 안쪽(이름 글자 근처)에서 채우기 시작해 초록 선에 막히는 영역을 구한다
-seed = (100, 140)
+seed = tuple(map(int, sys.argv[4].split(','))) if len(sys.argv) > 4 else (100, 140)  # 상권 안쪽 한 점(화소). 남포동 그림은 기본값
 inside = set(); stack = [seed]
 while stack:
     x, y = stack.pop()
