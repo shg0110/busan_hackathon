@@ -42,7 +42,17 @@ const SCALE = new URLSearchParams(location.search).has('noscale') ? 1 : ((CFG.sc
 for (const g in CFG.groups) { CFG.groups[g].wd = Math.round((CFG.groups[g].wd || 0) * SCALE); CFG.groups[g].we = Math.round((CFG.groups[g].we || 0) * SCALE); }
 function deepMerge(a, b) { const o = Array.isArray(a) ? a.slice() : { ...a }; for (const k in b) o[k] = (b[k] && typeof b[k] === 'object' && !Array.isArray(b[k]) && a[k]) ? deepMerge(a[k], b[k]) : b[k]; return o; }
 const CATS = Object.keys(CFG.cats), GROUPS = Object.keys(CFG.groups);
-const FD = (CFG.foreignDaily && CFG.foreignDaily.v) || 15000;   // 외국인 근로자 하루 쓸 돈 기준
+const FD = (CFG.foreignDaily && CFG.foreignDaily.v) || 15000;
+// ── 세부 업종·대표 메뉴(window.MENU ← tools/menu_build.py) ─────────────
+// 가게 1인 지출 = Σ(메뉴 가격 × 1인 수량 × 주문 비율). 메뉴 가격 근거: 거제시 개인서비스 가격동향(옥포1·2동), 카드 건당 금액, 나머지 가정
+const MENU = window.MENU || { subs: [], prefs: {} };
+const SUB = {}; for (const x of MENU.subs) SUB[x.id] = x;
+const SUBS_OF = {}; for (const c of CATS) SUBS_OF[c] = MENU.subs.filter(x => x.cat === c);
+const basketOf = (menus) => Math.round(menus.reduce((a, m) => a + m.price * m.qty * m.share, 0) / 100) * 100;
+// 외국인 근로자 국적: 옥포1·2동 등록 외국인 2,101명 중 베트남 576명(27.4%) — 거제시 행정동별 외국인 2026-10.
+// 할랄 음식을 찾는 국적(인도네시아·우즈베키스탄 등)은 두 동 상위 5개국 밖(동마다 57명 미만)이라 8%로 둠(가정, 상한 약 10%)
+const NAT = [['vn', 0.274, '베트남'], ['halal', 0.08, '인도네시아·우즈베키스탄 등'], ['etc', 0.646, '그 밖']];
+const WKEYS = GROUPS.flatMap(g => g === 'foreign' ? NAT.map(n => 'foreign.' + n[0]) : [g]);   // 외국인 근로자 하루 쓸 돈 기준
 const T0 = 300, T1 = 1560;   // 05:00 ~ 26:00(다음 날 02:00)
 
 // ── 난수(시드 고정) ─────────────────────────────────────
@@ -119,11 +129,13 @@ function pathFrom(a, t) { const T = tree(t), p = [a]; let u = a, guard = 0; whil
 
 // ── 가게 ─────────────────────────────────────────────────
 // 가게마다 가격·자리·매력은 업종 기준값에서 이름 해시로 ±(같은 이름 = 언제나 같은 값)
+// 기준값은 세부 업종(메뉴 바구니·자리·머무는 시간·영업시간), 세부 업종이 없으면 큰 업종
 const SHOPS = SD.shops.map((s, i) => {
-  const c = CFG.cats[s.c], h = hash01(s.n + i), h2 = hash01(s.n + 'seat' + i);
-  return { i, n: s.n, c: s.c, cs: s.cs, x: s.x, z: s.z, b: s.b, f: s.f, node: nearest(s.x, s.z),
-    price: Math.round(c.price * (0.8 + 0.4 * h) / 500) * 500, seats: Math.max(2, Math.round(c.seats * (0.6 + 0.8 * h2))),
-    open: c.open, close: c.close, attract: (0.6 + 0.8 * hash01(s.n + 'a')) * (s.f && s.f >= 2 ? CFG.upperFloor : 1), virtual: false };
+  const c = CFG.cats[s.c], sb = SUB[s.sub], h = hash01(s.n + i), h2 = hash01(s.n + 'seat' + i), ref = sb ? sb.basket : c.price;
+  return { i, n: s.n, c: s.c, sub: sb ? s.sub : null, cs: s.cs, x: s.x, z: s.z, b: s.b, f: s.f, node: nearest(s.x, s.z), ref,
+    price: Math.round(ref * (0.8 + 0.4 * h) / 500) * 500, seats: Math.max(2, Math.round((sb ? sb.seats : c.seats) * (0.6 + 0.8 * h2))),
+    open: sb ? sb.open : c.open, close: sb ? sb.close : c.close, stay: sb ? sb.stay : c.stay,
+    attract: (0.6 + 0.8 * hash01(s.n + 'a')) * (s.f && s.f >= 2 ? CFG.upperFloor : 1), virtual: false };
 });
 const BYCAT = {}; for (const c of CATS) BYCAT[c] = SHOPS.filter(s => s.c === c);
 
@@ -199,7 +211,9 @@ function populate(we, seed) {
       const d = makeDay(g, we, r);
       for (const o of d.out) o.t = Math.max(T0, Math.min(T1 - 60, o.t));
       d.out.sort((a, b) => a.t - b.t);
-      A.push({ g, out: d.out, oi: 0, st: 0, x: 0, z: 0, path: null, pd: null, t0: 0, t1: 0, goal: null, stops: null, si: 0,
+      const u = hash01('nat' + seed + ':' + A.length);
+      let wk = g; if (g === 'foreign') { let acc = 0; wk = 'foreign.etc'; for (const [n, p] of NAT) { acc += p; if (u < acc) { wk = 'foreign.' + n; break; } } }
+      A.push({ g, wk, out: d.out, oi: 0, st: 0, x: 0, z: 0, path: null, pd: null, t0: 0, t1: 0, goal: null, stops: null, si: 0,
         wallet: 0, until: 0, shop: -1, waitEnd: 0, visits: [], spent: 0, r: rng(seed * 104729 + A.length * 31 + 7) });
     }
   }
@@ -213,15 +227,16 @@ function reset(we, seed) {
 const live = (s) => !s.off;
 function seatFree(si, t) { const o = SHOP_ST[si].occ; let n = 0; for (let k = o.length - 1; k >= 0; k--) { if (o[k] > t) n++; else o.splice(k, 1); } return n < SHOPS[si].seats; }
 function openAt(s, t) { return t >= s.open && t < s.close - 10; }
-// 가게마다 부류별로 바뀌지 않는 무게(매력 × 부류 선호 × 가격 민감도)를 미리 한 번만 계산(고를 때마다 거듭제곱·글자 검사를 하지 않게)
-const SEAFOOD = /회|해물|해산물|생선/;
+// 가게마다 부류(+국적)별로 바뀌지 않는 무게를 미리 한 번만 계산(고를 때마다 거듭제곱을 하지 않게)
+// 무게 = 매력 × 세부 업종 선호(MENU.prefs, 가정) × 업종 안 가격대(세부 업종 1인 지출이 큰 업종 기준가보다 비싸면 덜, 0.25~1.6배)
+//        × 같은 세부 업종 안 가격(이 가게 1인 지출이 그 세부 업종 보통보다 비싸면 덜). 탄력은 부류별 priceElastic(가정)
 function staticWeights(s) {
-  const ref = CFG.cats[s.c].price, w = {};
-  for (const g of GROUPS) {
-    let pref = 1;
-    if (g === 'foreign') { if (s.c === 'intl') pref = 3.0; else if (s.price > 12000 && s.c !== 'pub') pref = 0.35; }
-    if (g === 'tourist' && s.c === 'meal' && SEAFOOD.test(s.cs || '')) pref = 1.8;
-    w[g] = s.attract * pref * Math.pow(ref / s.price, CFG.priceElastic[g] ?? 1);
+  const catRef = CFG.cats[s.c].price, ref = s.ref || catRef, w = {};
+  for (const k of WKEYS) {
+    const g = k.split('.')[0], e = CFG.priceElastic[g] ?? 1, P = MENU.prefs;
+    const pref = ((P[g] || {})[s.sub] ?? 1) * (k !== g ? ((P[k] || {})[s.sub] ?? 1) : 1);
+    const tier = Math.min(1.6, Math.max(0.25, Math.pow(catRef / ref, e * 0.5)));
+    w[k] = s.attract * pref * tier * Math.pow(ref / s.price, e);
   }
   s.wg = w;
 }
@@ -229,7 +244,7 @@ for (const s of SHOPS) staticWeights(s);
 const LAM = { pub: 420, mart: 220 };
 function chooseShop(a, cat, t, nodeFrom) {
   // 직선거리로 고른다(빠름). 실제 이동 시간은 길 거리로 계산. 거리 무게가 1/400 아래(약 6λ 밖)면 건너뛴다
-  const list = BYCAT[cat], fx = NX[nodeFrom], fz = NZ[nodeFrom], lam = LAM[cat] || 300, far2 = (6 * lam) ** 2, g = a.g;
+  const list = BYCAT[cat], fx = NX[nodeFrom], fz = NZ[nodeFrom], lam = LAM[cat] || 300, far2 = (6 * lam) ** 2, g = a.wk;
   let n = 0, sum = 0;
   const cw = CW.length >= list.length ? CW : (CW = new Float64Array(list.length * 2)), ci = CI.length >= list.length ? CI : (CI = new Int32Array(list.length * 2));
   for (let i = 0; i < list.length; i++) {
@@ -293,7 +308,7 @@ function step(t, render) {
   }
 }
 function enter(a, s, t) {
-  const stay = Math.max(5, CFG.cats[s.c].stay * (0.7 + 0.6 * a.r()));
+  const stay = Math.max(5, s.stay * (0.7 + 0.6 * a.r()));
   a.st = 2; a.until = t + stay; SHOP_ST[s.i].occ.push(a.until);
   a.wallet -= s.price; a.spent += s.price; a.visits.push([s.i, t]);
   STATS.visits[s.i] += W; STATS.spend[s.i] += s.price * W;
@@ -336,6 +351,7 @@ function draw(t) {
 
 // ── 화면: 하루 재생 패널 ─────────────────────────────────────
 const hm = (t) => { const d = t >= 1440, m = Math.floor(t) % 1440; return (d ? '다음 날 ' : '') + String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
+const wonX = (v) => Math.round(v).toLocaleString('ko-KR') + '원';   // 메뉴·1인 지출은 원 단위 그대로
 function won(v) { if (v >= 1e8) return (v / 1e8).toFixed(v >= 1e9 ? 1 : 2) + '억 원'; if (v >= 1e4) return Math.round(v / 1e4).toLocaleString('ko-KR') + '만 원'; return Math.round(v).toLocaleString('ko-KR') + '원'; }
 const panel = document.createElement('section'); panel.id = 'sim'; panel.setAttribute('aria-label', '가상 손님 하루');
 panel.innerHTML = `
@@ -369,9 +385,13 @@ const assumed = GROUPS.filter(g => CFG.groups[g].src === '가정' || /가정/.te
     ${CFG.scale ? li('규모 맞춤(모든 부류 × ' + CFG.scale.v + ')', CFG.scale.src) : li('규모 비교', '상권 안 하루 가게 방문(가상) 약 5,500건 ↔ 옥포1동 상권 카드 거래 환산 약 3,900건(경남빅데이터허브 2026년 9월, 카드 전체 추정 × 시뮬레이션 업종 비율). 같은 규모라 따로 맞추지 않음(행정동과 상권 경계가 달라서)')}
     ${li('교대 시간', `출근 ${sh(CFG.shift.in[0])}~${sh(CFG.shift.in[1])}, 퇴근 ${sh(CFG.shift.out[0])}~${sh(CFG.shift.out[1])} — ${CFG.shift_src || CFG.shift.src || '가정'}`)}
     ${CFG.foreignDaily ? li('외국인 하루 쓸 돈', CFG.foreignDaily.src) : ''}
-    ${CATS.map(c => li(CFG.cats[c].ko + ' 1인 가격', ps[c] || `${CFG.cats[c].price.toLocaleString('ko-KR')}원 — 가정`)).join('')}
+    ${li('세부 업종별 1인 지출(대표 메뉴 × 1인 수량)', MENU.subs.map(x => `${x.ko} ${x.basket.toLocaleString('ko-KR')}원(근거 ${x.confirmed[0]}/${x.confirmed[1]})`).join(' · '))}
+    ${li('메뉴 가격 근거', '거제시 「개인서비스품목 가격동향」 2026-11-26 옥포1·2동 업소 가격(동마다 1곳, 두 동 평균). 유흥주점·식료품·미용·사우나는 옥포1·2동 카드 건당 금액(2025-02). 그 밖은 가정. 커피·햄버거는 업소마다 종류가 달라(4,700 vs 1,800, 3,800 vs 18,000) 평균을 쓰지 않음')}
+    ${li('업종 기준가(세부 업종이 비싼지 견주는 값)', CATS.map(c => `${CFG.cats[c].ko} ${CFG.cats[c].price.toLocaleString('ko-KR')}원`).join(' · ') + (ps.meal ? ' — ' + ps.meal : ''))}
+    ${li('외국인 근로자 국적', NAT.map(n => `${n[2]} ${Math.round(n[1] * 1000) / 10}%`).join(' · ') + ' — 옥포1·2동 등록 외국인 2,101명 중 베트남 576명(거제시 2026-10). 할랄 음식 찾는 국적 8%는 가정')}
+    ${li('세부 업종 선호(조선소 통근자 → 고깃집·호프, 베트남 → 쌀국수, 할랄 → 돼지고기·술 피함 등)', '가정(근거 자료 없음)')}
     ${li('조선소 쪽 입구', 'OSM 조선소 서쪽 경계 차단기(34.88789, 128.69100), 문별 출퇴근 인원 미확인')}
-    ${li('가게', '소상공인시장진흥공단 상가정보 2026-09 영업 중 가게 중 식사·주점·카페·다국적·장보기·생활 서비스 업종')}
+    ${li('가게', `소상공인시장진흥공단 상가정보 2026-09 영업 중 가게 ${SHOPS.length.toLocaleString('ko-KR')}곳, 소분류로 세부 업종 ${MENU.subs.length}개에 나눔`)}
     ${li('업종 고르는 비율·머무는 시간·자리 수·걷는 속도', '가정(근거 자료 없음)')}
   </ul><p>근거: docs/okpo-persona-sources.md</p>`;
 }
@@ -419,19 +439,20 @@ requestAnimationFrame(tick);
 // ── 빈 층에 가게 열어 보기 ───────────────────────────────────
 // 가게를 하나 더하고(또는 끄고) 하루를 평일·주말 × 다섯 번(다른 난수) 돌려 평균을 낸다.
 const RUNS = 5;
-const EXP_CATS = [
-  ['pub', '옛날식 호프·주점'], ['intl', '가성비 다국적 식당'], ['meal', '백반·한식'], ['cafe', '카페'], ['mart', '편의점·식료품'], ['life', '생활 서비스(휴대폰·미용 등)'],
-];
-function addVirtual(bi, floor, cat, price, seats, open, close) {
+// 실험 업종 목록: 큰 업종(기획 비교 순서: 다국적 → 주점 → 식사 → 카페 → 장보기 → 생활) 아래 세부 업종
+const EXP_ORDER = ['intl', 'pub', 'meal', 'cafe', 'mart', 'life'].filter(c => SUBS_OF[c] && SUBS_OF[c].length);
+const subOptions = (sel) => EXP_ORDER.map(c => `<optgroup label="${esc(CFG.cats[c].ko)}">${SUBS_OF[c].map(x => `<option value="${x.id}"${x.id === sel ? ' selected' : ''}>${esc(x.ko)}${SD.counts && SD.counts.by_sub && !SD.counts.by_sub[x.id] ? ' (옥포에 없음)' : ''}</option>`).join('')}</optgroup>`).join('');
+function addVirtual(bi, floor, sub, price, seats) {
+  const sb = SUB[sub], cat = sb.cat;
   const b = MP.buildings[bi]; let cx = 0, cz = 0; for (const p of b.p) { cx += p[0]; cz += p[1]; } cx /= b.p.length; cz /= b.p.length;
-  const s = { i: SHOPS.length, n: '새 가게(실험)', c: cat, cs: '', x: cx, z: cz, b: bi, f: floor, node: nearest(cx, cz),
-    price, seats, open, close, attract: 1.0 * (floor >= 2 ? CFG.upperFloor : 1), virtual: true };
+  const s = { i: SHOPS.length, n: '새 가게(실험)', c: cat, sub, cs: '', x: cx, z: cz, b: bi, f: floor, node: nearest(cx, cz), ref: sb.basket,
+    price, seats, open: sb.open, close: sb.close, stay: sb.stay, attract: 1.0 * (floor >= 2 ? CFG.upperFloor : 1), virtual: true };
   staticWeights(s); SHOPS.push(s); BYCAT[cat].push(s); SHOPNODE = null; return s;
 }
 function removeVirtual(s) { SHOPS.pop(); BYCAT[s.c].splice(BYCAT[s.c].indexOf(s), 1); SHOPNODE = null; }
 function neighbors(s, R) { return SHOPS.filter(o => !o.virtual && o.c === s.c && Math.hypot(o.x - s.x, o.z - s.z) <= R).map(o => o.i); }
-function experiment(bi, floor, cat, price, seats, open, close) {
-  const s = addVirtual(bi, floor, cat, price, seats, open, close);
+function experiment(bi, floor, sub, price, seats) {
+  const s = addVirtual(bi, floor, sub, price, seats);
   const nb = neighbors(s, 250);
   const res = {};
   for (const sc of ['wd', 'we']) {
@@ -448,7 +469,7 @@ function experiment(bi, floor, cat, price, seats, open, close) {
       grp: Object.fromEntries(GROUPS.map(g => [g, avg(r => r.grp[g] || 0)])) };
   }
   removeVirtual(s);
-  res.nbCount = nb.length;
+  res.nbCount = nb.length; res.nbSub = nb.filter(i => SHOPS[i].sub === sub).length;
   seek(simT);   // 재생 화면을 원래 상태로
   return res;
 }
@@ -464,38 +485,66 @@ MP.infoExtra = (b, bi) => {
     <p class="exp-title">이 빈 층에 가게 열어 보기</p>
     <div class="exp-grid">
       <label>층<select id="x-floor">${opts}</select></label>
-      <label>업종<select id="x-cat">${EXP_CATS.map(([c, k]) => `<option value="${c}">${k}</option>`).join('')}</select></label>
-      <label>1인 가격<input id="x-price" type="number" min="1000" step="500"></label>
+      <label>업종<select id="x-cat">${subOptions(lastSub)}</select></label>
       <label>자리<input id="x-seats" type="number" min="2" max="200" step="1"></label>
     </div>
+    <div class="x-menu" id="x-menu"></div>
     <button id="x-run" class="btn-primary">하루 돌려 보기 <span>평일·주말 각 ${RUNS}번</span></button>
     <div id="x-out" aria-live="polite"></div>
   </div>`;
 };
 const HIST = [];   // 같은 자리에서 바꿔 본 결과(업종 비교표)
+let lastSub = 'hof';   // 기획 비교 기본: 옛날식 호프
 document.addEventListener('click', (e) => {
   if (e.target.closest && e.target.closest('#x-run')) runExp();
 });
-document.addEventListener('change', (e) => { if (e.target.id === 'x-cat') fillDefaults(); });
-const obs = new MutationObserver(() => { if ($('x-cat') && !$('x-price').value) fillDefaults(); });
+document.addEventListener('change', (e) => { if (e.target.id === 'x-cat') { lastSub = e.target.value; fillDefaults(); } });
+document.addEventListener('input', (e) => { if (e.target.closest && e.target.closest('#x-menu')) updateBasket(); });
+const obs = new MutationObserver(() => { if ($('x-cat') && !$('x-menu').childElementCount) fillDefaults(); });
 obs.observe($('i-body'), { childList: true });
-function fillDefaults() { const c = CFG.cats[$('x-cat').value]; $('x-price').value = c.price; $('x-seats').value = c.seats; }
+// 대표 메뉴 표: 메뉴마다 가격·1인 수량(= 1인 주문량 × 주문 비율)을 고칠 수 있다. 근거가 있는 가격은 '확인', 없는 것은 '가정'
+const fmtQ = (q) => (Math.round(q * 100) / 100).toString();
+function fillDefaults() {
+  const sb = SUB[$('x-cat').value]; if (!sb) return;
+  $('x-seats').value = sb.seats;
+  $('x-menu').innerHTML = `<p class="x-menu-h">대표 메뉴 <span>가격 × 1인 수량</span></p>${sb.menus.map((m, i) => `
+    <div class="m-row" data-i="${i}" title="${esc(m.src || '')}">
+      <div class="m-name"><b>${esc(m.n)}</b><span class="u">${esc(m.unit)}</span><span class="src ${m.ok ? 'ok' : 'guess'}">${m.ok ? '확인' : '가정'}</span></div>
+      <div class="m-calc"><input class="m-p" type="number" min="0" step="500" value="${m.price}" aria-label="${esc(m.n)} 가격(원)"><span class="op">원 ×</span>
+        <input class="m-q" type="number" min="0" step="0.05" value="${fmtQ(m.qty * m.share)}" aria-label="${esc(m.n)} 1인 수량"><span class="op">=</span><span class="m-s"></span></div>
+    </div>`).join('')}
+    <div class="m-tot"><span>1인 지출</span><b id="x-basket"></b></div>
+    <p class="x-menu-note">1인 수량 = 한 사람이 평균으로 시키는 양(2~3명이 한 접시를 나누면 0.4). 근거: ${esc(menuSrcShort(sb))}</p>`;
+  updateBasket();
+}
+function menuSrcShort(sb) { const ok = sb.menus.filter(m => m.ok).length; return ok ? `${ok}/${sb.menus.length}개 메뉴는 거제시 개인서비스 가격동향(2026-11-26, 옥포1·2동) 또는 카드 건당 금액, 나머지는 가정. 메뉴에 마우스를 올리면 출처` : '가격 자료를 찾지 못해 모두 가정'; }
+function readMenus() {
+  const sb = SUB[$('x-cat').value];
+  return [...document.querySelectorAll('#x-menu .m-row')].map(tr => { const m = sb.menus[+tr.dataset.i];
+    const p = Math.max(0, +tr.querySelector('.m-p').value || 0), q = Math.max(0, +tr.querySelector('.m-q').value || 0);
+    return { n: m.n, unit: m.unit, price: p, qty: q, share: 1, ok: m.ok && p === m.price }; });
+}
+function updateBasket() {
+  const ms = readMenus(); let tot = 0;
+  document.querySelectorAll('#x-menu .m-row').forEach((tr, i) => { const v = ms[i].price * ms[i].qty; tot += v; tr.querySelector('.m-s').textContent = v ? wonX(Math.round(v / 100) * 100) : '—'; });
+  $('x-basket').textContent = wonX(Math.round(tot / 100) * 100);
+}
 function runExp() {
   const bi = MP.selected; if (bi < 0) return;
-  const floor = +$('x-floor').value, cat = $('x-cat').value, price = Math.max(1000, +$('x-price').value || CFG.cats[cat].price), seats = Math.max(2, +$('x-seats').value || CFG.cats[cat].seats);
-  const c = CFG.cats[cat];
+  const sub = $('x-cat').value, sb = SUB[sub], menus = readMenus();
+  const floor = +$('x-floor').value, price = Math.max(500, basketOf(menus) || sb.basket), seats = Math.max(2, +$('x-seats').value || sb.seats);
   $('x-out').innerHTML = '<p class="exp-wait">계산 중…</p>';
   setTimeout(() => {
     const t0 = performance.now();
-    const r = experiment(bi, floor, cat, price, seats, c.open, c.close);
+    const r = experiment(bi, floor, sub, price, seats);
     const ms = performance.now() - t0;
-    HIST.unshift({ bi, floor, cat, price, seats, r });
+    HIST.unshift({ bi, floor, sub, price, seats, menus, r });
     while (HIST.length > 6) HIST.pop();
-    renderExp(r, cat, price, ms, bi, floor);
+    renderExp(r, sub, price, ms, bi, floor, menus);
   }, 30);
 }
-function renderExp(r, cat, price, ms, bi, floor) {
-  const k = EXP_CATS.find(x => x[0] === cat)[1];
+function renderExp(r, sub, price, ms, bi, floor, menus) {
+  const k = SUB[sub].ko;
   const row = (sc, lab) => { const x = r[sc]; return `<tr><th>${lab}</th><td><b>${Math.round(x.v).toLocaleString('ko-KR')}명</b><span class="rng">${Math.round(x.vMin)}~${Math.round(x.vMax)}</span></td><td>${won(x.won)}</td></tr>`; };
   const g = r.wd.grp, gw = r.we.grp, tot = (o) => Object.values(o).reduce((a, b) => a + b, 0) || 1;
   const mix = (o) => GROUPS.filter(x => o[x] > 0.5).map(x => `<span><i style="background:${CFG.groups[x].col}"></i>${CFG.groups[x].ko} ${Math.round(100 * o[x] / tot(o))}%</span>`).join('') || '<span>손님 없음</span>';
@@ -503,11 +552,13 @@ function renderExp(r, cat, price, ms, bi, floor) {
   const bars = (hr, colr) => hr.map((v, h) => `<i style="height:${Math.round(100 * v / hourMax)}%;background:${colr}" title="${h}시 ${Math.round(v)}명"></i>`).join('');
   // 주변 영향: 다섯 번 모두 같은 방향이고, 크기가 새 가게 손님의 30% 이상(최소 3명)일 때만 원인으로 말한다
   const nbBig = Math.abs(r.wd.nb) >= Math.max(3, 0.3 * r.wd.v);
-  const nbTxt = !r.nbCount ? '반경 250m 안에 같은 업종 가게가 없습니다.' :
-    (r.wd.nbSame && nbBig) ? `반경 250m 같은 업종 ${r.nbCount}곳: 평일 손님 ${r.wd.nb >= 0 ? '+' : ''}${Math.round(r.wd.nb)}명 (다섯 번 모두 같은 방향)`
-    : `반경 250m 같은 업종 ${r.nbCount}곳: 변화가 작거나 돌릴 때마다 달라 판단하기 어렵습니다(${r.wd.nb >= 0 ? '+' : ''}${Math.round(r.wd.nb)}명).`;
+  const ck = CFG.cats[SUB[sub].cat].ko, nbN = `반경 250m ${ck} 가게 ${r.nbCount}곳(그중 ${k} ${r.nbSub}곳)`;
+  const nbTxt = !r.nbCount ? `반경 250m 안에 ${ck} 가게가 없습니다.` :
+    (r.wd.nbSame && nbBig) ? `${nbN}: 평일 손님 ${r.wd.nb >= 0 ? '+' : ''}${Math.round(r.wd.nb)}명 (다섯 번 모두 같은 방향)`
+    : `${nbN}: 변화가 작거나 돌릴 때마다 달라 판단하기 어렵습니다(${r.wd.nb >= 0 ? '+' : ''}${Math.round(r.wd.nb)}명).`;
+  const bk = menus.filter(m => m.qty > 0 && m.price > 0).map(m => `${esc(m.n)} ${wonX(m.price)} × ${fmtQ(m.qty)}`).join(' + ');
   const same = HIST.filter(h => h.bi === bi && h.floor === floor);
-  const cmp = same.length > 1 ? `<table class="exp-cmp"><tr><th>업종</th><th>가격</th><th>평일</th><th>주말</th><th>평일 매출</th></tr>${same.map(h => `<tr><td>${EXP_CATS.find(x => x[0] === h.cat)[1]}</td><td>${won(h.price)}</td><td>${Math.round(h.r.wd.v)}명</td><td>${Math.round(h.r.we.v)}명</td><td>${won(h.r.wd.won)}</td></tr>`).join('')}</table>` : '<p class="exp-tip">업종을 바꿔 한 번 더 돌리면 이 자리에서 업종끼리 비교표가 생깁니다.</p>';
+  const cmp = same.length > 1 ? `<table class="exp-cmp"><tr><th>업종</th><th>1인</th><th>평일</th><th>주말</th><th>평일 매출</th></tr>${same.map(h => `<tr><td>${esc(SUB[h.sub].ko)}</td><td>${wonX(h.price)}</td><td>${Math.round(h.r.wd.v)}명</td><td>${Math.round(h.r.we.v)}명</td><td>${won(h.r.wd.won)}</td></tr>`).join('')}</table>` : '<p class="exp-tip">업종을 바꿔 한 번 더 돌리면 이 자리에서 업종끼리 비교표가 생깁니다.</p>';
   $('x-out').innerHTML = `
     <table class="exp-res"><tr><th></th><th>하루 손님(평균·범위)</th><th>하루 매출</th></tr>${row('wd', '평일')}${row('we', '주말')}</table>
     <p class="exp-sub">평일 손님 구성</p><div class="exp-mix">${mix(g)}</div>
@@ -515,7 +566,8 @@ function renderExp(r, cat, price, ms, bi, floor) {
     <div class="exp-hours"><div>${bars(r.wd.hour, '#2f6fed')}</div><div>${bars(r.we.hour, '#7048e8')}</div><div class="ax"><span>0시</span><span>12시</span><span>23시</span></div></div>
     <p class="exp-sub">주변 가게 영향</p><p class="exp-nb">${nbTxt}</p>
     ${cmp}
-    <p class="exp-foot">${k} · ${floor}층 · 1인 ${won(price)} · 계산 ${(ms / 1000).toFixed(1)}초. 가상 인물로 조건끼리 비교한 값이며 실제 매출 예측이 아닙니다.</p>`;
+    <p class="exp-sub">1인 지출 ${wonX(price)}</p><p class="exp-nb">${bk}</p>
+    <p class="exp-foot">${esc(k)} · ${floor}층 · 계산 ${(ms / 1000).toFixed(1)}초. 하루 매출 = 손님 × 1인 지출. 가상 인물로 조건끼리 비교한 값이며 실제 매출 예측이 아닙니다.</p>`;
   need();
 }
 
@@ -560,9 +612,8 @@ function nodeFlow(we) {
   NODEFLOW[key] = F; return F;
 }
 // 빈 자리에 가게를 열었을 때 손님·매출만(비교 없이, 자리 순위용)
-function trySlot(bi, floor, cat, price, seats, runs = 3) {
-  const c = CFG.cats[cat];
-  const s = addVirtual(bi, floor, cat, price, seats, c.open, c.close);
+function trySlot(bi, floor, sub, price, seats, runs = 3) {
+  const s = addVirtual(bi, floor, sub, price, seats);
   const r = { wd: 0, we: 0, wdWon: 0, weWon: 0 };
   for (const sc of ['wd', 'we']) for (let k = 0; k < runs; k++) {
     const st = runDay(sc === 'we', k);
@@ -571,6 +622,6 @@ function trySlot(bi, floor, cat, price, seats, runs = 3) {
   removeVirtual(s);
   return r;
 }
-window.__sim = { runDay, experiment, seek, nodesNear, flowDay, trySlot, nodeFlow, restore: () => seek(simT), won, GROUPS,
+window.__sim = { runDay, experiment, seek, nodesNear, flowDay, trySlot, nodeFlow, restore: () => seek(simT), won, wonX, GROUPS, SUB, SUBS_OF, subOptions, NAT,
   graph: { NX, NZ, ADJ, NN }, get scen() { return scen; }, get A() { return A; }, get W() { return W; }, SHOPS, CFG, nodes: NN, get t() { return simT; } };
 })();
