@@ -162,22 +162,14 @@ body.list-mode .st-head .icon-btn { display: grid; }
 .ls-f .ls-up input { width: 18px; height: 18px; margin: 0; }
 .ls-f .ls-up small { display: block; font-weight: 400; color: var(--g600); }
 #ls-n b { color: var(--g900); }
-.ls-list { list-style: none; margin: 6px 0 0; padding: 0; }
-.ls-list li + li { border-top: 1px solid var(--g100); }
-.ls-row { display: flex; gap: 12px; width: 100%; padding: 12px 4px; border: 0; background: none; text-align: left; font: inherit; color: inherit; cursor: pointer; border-radius: 10px; }
-.ls-row:hover, .ls-row:focus-visible { background: var(--primary-soft); outline: none; }
-.ls-k { flex: none; width: 24px; height: 24px; border-radius: 50%; background: #1b2a4a; color: #fff; font-size: 12.5px; font-weight: 700; display: grid; place-items: center; font-variant-numeric: tabular-nums; margin-top: 1px; }
-.ls-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
-.ls-name { font-size: 15.5px; color: var(--g900); word-break: keep-all; }
-.ls-name em { font-style: normal; font-size: 12px; font-weight: 600; color: #8a6100; background: #fff3bf; border-radius: 6px; padding: 1px 6px; margin-left: 6px; vertical-align: 1px; white-space: nowrap; }
-.ls-sub { font-size: 13.5px; color: var(--g700); }
-.ls-sub small { color: var(--g600); }
-.ls-meta { display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: 13px; color: var(--g600); }
+table.ls { margin-top: 6px; }
+.rk-why { margin: 2px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--g600); word-break: keep-all; }   /* 순위 버튼이 무엇을 하는지 한 줄 */
+table.ls td:first-child { width: 1.6em; }
+table.ls th { vertical-align: bottom; white-space: normal; word-break: keep-all; line-height: 1.35; }   /* 좁은 패널에서 긴 머리글(앞을 지나는 사람·근처 같은 업종)이 밖으로 나가지 않게 두 줄로 */
 /* 도움말이 있는 이름: 오른쪽 위 모서리에 아주 작은 원 안 '?'(마우스를 올리면 title 도움말) */
 .ls-tip { text-decoration: none; cursor: help; }
 .ls-tip::after { content: '?'; display: inline-grid; place-items: center; width: 10px; height: 10px; margin-left: 1px; vertical-align: super;
   border: 1px solid currentColor; border-radius: 50%; font-size: 7.5px; font-weight: 700; line-height: 1; opacity: .7; }
-.ls-meta b { color: var(--g900); font-size: 14px; font-variant-numeric: tabular-nums; margin-left: 2px; }
 #ls-more { width: 100%; margin-top: 8px; }
 
 /* ── 지도에 보이는 것: 스위치 목록 ───────────── */
