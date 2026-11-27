@@ -448,7 +448,8 @@ function busStops() {
   if (M.renderer) M.renderer.shadowMap.needsUpdate = true;
   M.need && M.need();
 }
-// ── 신호등: 공공데이터포털 전국신호등표준데이터의 실제 좌표에만 세운다(window.FACILITIES.signals, tools 로 seohogyun-31 이 만듦) ──
+// ── 신호등: 공공데이터포털 표준데이터의 실제 자리에만 세운다(window.FACILITIES, seohogyun-31 이 만듦) ──
+//   차량·보행 = 전국신호등표준데이터 좌표(signals), 보행 = 전국횡단보도표준데이터 '보행자신호등유무'가 있음인 횡단보도 양 끝(crosswalks)
 // 자료에 방향이 없어서 기둥은 가장 가까운 차도 쪽을 보게 돌린다. 1.5m 안에 몰린 신호등은 한 기둥으로 묶는다.
 // 차량 신호등: 6m 기둥 + 길 쪽 팔 + 가로형 3구. 보행 신호등: 3m 기둥 + 2구. 켜진 불(초록/빨강)은 그림이다
 function nearVehicleRoad(x, z, maxD) {
@@ -464,8 +465,22 @@ function nearVehicleRoad(x, z, maxD) {
   return { r, d: bd, px: a[0] + dx * t, pz: a[1] + dz * t, dx, dz };
 }
 function realSignals() {
-  const F = window.FACILITIES, S = F && F.signals;
-  if (!Array.isArray(S) || !S.length) return { car: 0, ped: 0, poles: 0 };
+  const F = window.FACILITIES;
+  const S = Array.isArray(F && F.signals) ? F.signals.slice() : [];
+  // 보행 신호등: 전국횡단보도표준데이터에서 '보행자신호등 있음'인 횡단보도의 양 끝(가장 가까운 차도의 법선 방향, 횡단보도 길이 절반 + 0.6m).
+  // 신호등 표준데이터에 4m 안 실제 보행 신호등이 있으면 그 끝은 건너뛴다
+  let fromCross = 0;
+  for (const c of (F && Array.isArray(F.crosswalks) ? F.crosswalks : [])) {
+    if (!c.ped || !inside(c.x, c.z, 2)) continue;
+    const nr = nearVehicleRoad(c.x, c.z, 15); if (!nr) continue;
+    const half = (c.len > 0 ? c.len : nr.r.w) / 2 + 0.6, nx = -nr.dz, nz = nr.dx;
+    for (const sg of [1, -1]) {
+      const x = nr.px + nx * half * sg, z = nr.pz + nz * half * sg;
+      if (S.some(s => s.kind === 'ped' && Math.hypot(s.x - x, s.z - z) < 4)) continue;
+      S.push({ x, z, kind: 'ped', from: 'crosswalk' }); fromCross++;
+    }
+  }
+  if (!S.length) return { car: 0, ped: 0, poles: 0, fromCross: 0 };
   const groups = [];
   for (const s of S) {
     if (!inside(s.x, s.z, 2)) continue;
@@ -510,7 +525,7 @@ function realSignals() {
     const m = new THREE.Mesh(THREE.BufferGeometryUtils.mergeBufferGeometries(glow, false), new THREE.MeshBasicMaterial({ vertexColors: true }));
     m.renderOrder = 10; m.name = 'decor-signal-light'; scene.add(m);
   }
-  return { car, ped, poles: groups.length };
+  return { car, ped, poles: groups.length, fromCross };
 }
 
 // ── 지도 밖 큰 곳 방향 이름표(한화오션 옥포조선소 등, OSM 지명): 가운데에서 그쪽으로 그은 선이 지도 가장자리(안쪽 45m)와 만나는 곳에 '…방향'.
