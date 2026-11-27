@@ -8,7 +8,7 @@
  * 순서: index.html 에서 data/okpo_map.js·data/okpo_terrain.js 다음, app.js(그리고 decor.js) 앞.
  */
 (function () {
-  const DEFAULT_ON = false;
+  const DEFAULT_ON = true;   // 11-27 세 세션(바닥 #103·건물 #102·#105·세운 것 #100)이 모두 붙인 뒤 켬
   const q = (location.search.match(/[?&]terrain=([01])/) || [])[1];
   const T = window.TERRAIN;
   let H = null;
