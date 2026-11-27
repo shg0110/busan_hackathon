@@ -130,6 +130,13 @@ function inside(x, z, p) { let c = false; for (let i = 0, j = p.length - 1; i < 
 const onBuilding = (x, z) => (grid.get(Math.floor(x / GR) + ',' + Math.floor(z / GR)) || []).some(i => inside(x, z, B[i].p));
 // 교차로 근처(끝점 공유) 12m 는 비움
 const ends = new Map(); for (const r of D.roads) for (const v of [r.p[0], r.p[r.p.length - 1]]) { const k = v[0].toFixed(0) + ',' + v[1].toFixed(0); ends.set(k, (ends.get(k) || 0) + 1); }
+// 주차 금지 자리: 교차로(끝점을 둘 이상의 길이 공유) 12m, 횡단보도 10m(decor.js 가 만든 자리, 있으면), 버스 정류장 12m — 도로교통법상 횡단보도·정류장 10m 안 주차 금지
+const junctions = []; for (const [k, n] of ends) if (n >= 2) { const [x, z] = k.split(',').map(Number); junctions.push([x, z]); }
+const SP = (window.__decor && window.__decor.spots) || { crosswalk: [] };
+const STOPS = (window.SIM_DATA && window.SIM_DATA.stops) || [];
+const noPark = (x, z) => junctions.some(([jx, jz]) => Math.abs(x - jx) < 12 && Math.abs(z - jz) < 12 && Math.hypot(x - jx, z - jz) < 12)
+  || (SP.crosswalk || []).some(([cx, cz, w]) => Math.hypot(x - cx, z - cz) < (w || 8) / 2 + 10)
+  || STOPS.some(st => Math.hypot(x - st.x, z - st.z) < 12);
 const CAR_COLS = [['#f1f3f5', 35], ['#ced4da', 20], ['#2b2f33', 15], ['#868e96', 10], ['#2c4a7a', 7], ['#d8cbb3', 5], ['#4f6f52', 4], ['#7a4b4b', 4]];
 const carCol = (u) => { let s = 0; for (const [c, w] of CAR_COLS) { s += w; if (u * 100 < s) return c; } return CAR_COLS[0][0]; };
 const cars = [];
@@ -146,7 +153,7 @@ for (const r of D.roads) {
         const u = hash(`${ax}|${az}|${s}|${side}`);
         if (u < 0.62) {   // 비어 있는 칸도 있게
           const off = r.w / 2 - 1.15, x = ax + ux * s + nx * off * side, z = az + uz * s + nz * off * side;
-          if (!onBuilding(x, z)) cars.push({ x, z, a: Math.atan2(ux, uz), c: carCol(hash(u + 'c')) });
+          if (!onBuilding(x, z) && !noPark(x, z)) cars.push({ x, z, a: Math.atan2(ux, uz), c: carCol(hash(u + 'c')) });
         }
         s += 6.2 + hash(`${s}${i}`) * 3;
       }
