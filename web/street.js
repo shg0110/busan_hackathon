@@ -324,7 +324,8 @@ function rank(s, slots, pick) {
 // 정렬 값 '앞을 지나는 사람'은 sim.js 가 처음에 한 번 계산해 둔 길 흐름(frontFlow, 평일)이라 즉시 나온다.
 // 하루 시뮬은 무거우므로(271곳이면 하루 1,600번 넘게) 목록 위 10곳만 '순위 내기'로 돌린다.
 const LIST = { id: '__list' };   // cur 에 넣어 다른 화면으로 바뀌면 순위 계산이 멈추게
-const LS = { sort: 'flow', st: '', area: 0, upper: false, n: 30 };
+const LS = { sort: 'flow', st: '', area: 0, upper: false, n: 30, sel: [] };   // sel: 열어 볼 자리로 고른 건물 번호(최대 SEL_MAX, 고른 순서)
+const SEL_MAX = 10;
 const ON_ST = new Map(); for (const s of ST) for (const x of s.slots) if (!ON_ST.has(x.b)) ON_ST.set(x.b, s);
 // 이름: 건물 이름이 '제1호'·'2동'처럼 번호뿐이면 찾기 어려우니 지번을 먼저
 const bNameOf = (b) => { const nm = [b.n, b.dn].find(v => v && !/^제?\s*\d+\s*(호|동)?$/.test(v)); return nm || (b.jibun ? b.jibun.replace('거제시 ', '') : b.n || (b.ko === '건물' ? '이름 없는 건물' : b.ko || '건물')); };
@@ -353,10 +354,22 @@ function listNow() {
   return L.sort(by);
 }
 // 지도 번호: 지금 목록 위 10곳(순위를 내면 rank 결과 번호로 바뀜)
+// 지도 번호: 고른 자리가 있으면 그 자리만(목록 번호), 없으면 목록 위 10곳
 function listLabels(L) {
   clearRank();
-  L.slice(0, 10).reverse().forEach((c, j) => { const k = Math.min(10, L.length) - j; rankLabel({ b: c.b, grp: k, floor: c.floor, r: null, tag: `${k}`, tip: `${c.floor}층 · ${c.name}` }); });
+  const no = new Map(L.map((c, k) => [c.b, k + 1])), pick = LS.sel.length ? L.filter(c => LS.sel.includes(c.b)) : L.slice(0, 10);
+  pick.slice().reverse().forEach(c => { const k = no.get(c.b); rankLabel({ b: c.b, grp: k, floor: c.floor, r: null, tag: `${k}`, tip: `${c.floor}층 · ${c.name}` }); });
   need();
+}
+// 고른 자리 수에 맞춰 체크 칸 잠금·버튼 문구·설명을 바꾼다(목록을 다시 그리지 않고)
+function selSync() {
+  const n = LS.sel.length, subKo = (SIM.SUB[document.getElementById('rk-cat').value] || {}).ko || '';
+  document.querySelectorAll('#ls-t input[data-sel]').forEach(i => { i.checked = LS.sel.includes(+i.dataset.sel); i.disabled = !i.checked && n >= SEL_MAX; });
+  document.getElementById('rk-why').innerHTML = n
+    ? `고른 <b>${n}곳</b>(최대 ${SEL_MAX}곳)에 ${esc(subKo)} 가게를 열어 평일·주말 하루씩 돌려 보고, 가상 손님이 많은 순으로 매깁니다. <button type="button" class="link" id="ls-clear">고른 것 지우기</button>`
+    : `목록 왼쪽 네모를 눌러 열어 볼 자리를 최대 ${SEL_MAX}곳까지 고르세요.`;
+  const c = document.getElementById('ls-clear'); if (c) c.onclick = () => { LS.sel = []; listTable(); };
+  const btn = document.getElementById('rk-run'); btn.disabled = !n; btn.textContent = n ? `고른 ${n}곳에 열어 손님 순위 보기` : '열어 볼 자리를 고르세요';
 }
 // 숫자 이름에 마우스를 올리면 뜨는 도움말(단위·범위)
 const TIP_FLOW = '평일 하루, 가상 시민이 이 건물 앞 길(40m 안 가장 붐비는 곳)을 지나간 횟수. 실제 유동인구가 아닙니다.';
@@ -367,15 +380,14 @@ function listTable() {
   document.getElementById('ls-n').innerHTML = `${LS.upper ? '빈 층이 있는 건물' : '가게 없는 1층'} <b>${L.length}곳</b>${L.length !== (LS.upper ? candidates().length : firstN) ? ` (조건에 맞는 곳)` : ''} · ${{ flow: '앞을 지나는 사람 많은 순', area: '넓은 순', near: '지금 보는 곳에서 가까운 순' }[LS.sort]}`;
   // 표 머리글은 짧게, 기준(평일 하루·250m 안)은 머리글 옆 작은 '?'에 마우스를 올리면 보이게
   const tipSame = esc(`고른 업종(${subKo})의 기존 가게가 이 건물에서 250m 안에 몇 곳 있는지. 경쟁 가게 수이며 빈 곳 수가 아닙니다.`);
-  const rows = L.slice(0, LS.n).map((c, k) => `<tr data-b="${c.b}"><td>${k + 1}</td><td>${c.floor}층 · ${esc(c.name)}${c.st ? `<br><small class="th-u">${esc(c.st.ko.split(' (')[0])}</small>` : ''}</td><td>${c.area ? `${Math.round(c.area)}㎡` : '-'}</td><td>${c.flow != null ? Math.round(c.flow).toLocaleString('ko-KR') + '명' : '-'}</td><td>${c.same != null ? c.same + '곳' : '-'}</td></tr>`).join('');
+  const rows = L.slice(0, LS.n).map((c, k) => `<tr data-b="${c.b}"><td><label class="ls-ck" title="열어 볼 자리로 고르기"><input type="checkbox" data-sel="${c.b}" aria-label="${k + 1}번 고르기"><span>${k + 1}</span></label></td><td>${c.floor}층 · ${esc(c.name)}${c.st ? `<br><small class="th-u">${esc(c.st.ko.split(' (')[0])}</small>` : ''}</td><td>${c.area ? `${Math.round(c.area)}㎡` : '-'}</td><td>${c.flow != null ? Math.round(c.flow).toLocaleString('ko-KR') + '명' : '-'}</td><td>${c.same != null ? c.same + '곳' : '-'}</td></tr>`).join('');
   document.getElementById('ls-t').innerHTML = `<tr><th></th><th>자리</th><th>면적</th><th><span class="ls-tip" tabindex="0" data-tip="${TIP_FLOW}">앞을 지나는 사람</span></th><th><span class="ls-tip" tabindex="0" data-tip="${tipSame}">근처 같은 업종</span></th></tr>${rows}`;
-  document.getElementById('ls-t').querySelectorAll('tr[data-b]').forEach(tr => tr.onclick = () => flyBuilding(+tr.dataset.b));
+  document.getElementById('ls-t').querySelectorAll('tr[data-b]').forEach(tr => tr.onclick = (e) => { if (!e.target.closest('.ls-ck')) flyBuilding(+tr.dataset.b); });   // 체크 칸은 고르기만(날아가지 않음)
+  document.getElementById('ls-t').querySelectorAll('input[data-sel]').forEach(i => i.onchange = () => { const b = +i.dataset.sel;
+    LS.sel = i.checked ? (LS.sel.length < SEL_MAX && !LS.sel.includes(b) ? [...LS.sel, b] : LS.sel) : LS.sel.filter(x => x !== b);
+    selSync(); listLabels(L); });
   const more = document.getElementById('ls-more'); more.hidden = L.length <= LS.n; more.textContent = `더 보기 (${L.length - LS.n}곳 더)`;
-  // 버튼이 무엇을 하는지: 지금 목록(정렬 기준)의 1~10번 자리에 고른 가게를 열어 하루씩 돌려 보고 손님 많은 순으로 다시 매김
-  const top = Math.min(10, L.length), sortKo = { flow: '앞을 지나는 사람 많은 순', area: '넓은 순', near: '가까운 순' }[LS.sort];
-  document.getElementById('rk-why').textContent = `지금 목록(${sortKo})의 1~${top}번 자리에 ${subKo} 가게를 열어 평일·주말 하루씩 돌려 보고, 가상 손님이 많은 순으로 다시 매깁니다.`;
-  document.getElementById('rk-run').textContent = `1~${top}번 자리에 열어 손님 순위 보기`;
-  document.getElementById('rk-run').disabled = !L.length;
+  selSync();
   document.getElementById('rk-out').innerHTML = '';
   listLabels(L);
   return L;
@@ -387,7 +399,7 @@ function openList() {
   document.body.classList.remove('street-mode'); document.body.classList.add('list-mode');
   panel.innerHTML = `
     <div class="st-head"><h2>빈 1층 자리 목록</h2><button class="icon-btn" id="st-close" aria-label="목록 닫기" title="목록 닫기"><svg viewBox="0 0 20 20"><path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
-    <p class="st-line">상권 안에서 가게가 없는 1층을 모았습니다. 줄을 누르면 그 건물로 가서 가게를 열어 볼 수 있습니다.</p>
+    <p class="st-line">상권 안에서 가게가 없는 1층을 모았습니다. 줄을 누르면 그 건물로 가고, 왼쪽 네모로 최대 10곳을 골라 한꺼번에 열어 볼 수 있습니다.</p>
     <div class="ls-f">
       <label>정렬<select id="ls-sort"><option value="flow">앞을 지나는 사람 많은 순</option><option value="area">넓은 순</option><option value="near">지금 보는 곳에서 가까운 순</option></select></label>
       <label>거리<select id="ls-st"><option value="">상권 전체</option>${ST.map(s => `<option value="${s.id}">${esc(s.ko.split(' (')[0])}</option>`).join('')}</select></label>
@@ -397,7 +409,7 @@ function openList() {
     <p class="st-tip" id="ls-n"></p>
     <table class="exp-cmp rk ls" id="ls-t"></table>
     <button type="button" class="btn-sub" id="ls-more" hidden></button>
-    <details class="st-how"><summary>어떻게 셌나요</summary><p>‘가게 없는 1층’은 건축물대장 층별개요의 상가 층 가운데 2026년 9월 상가정보에 그 층 가게가 없는 곳입니다. 사무실·창고로 쓰거나 등록이 늦은 가게도 들어 있을 수 있습니다. 면적은 그 층 면적입니다. ‘앞을 지나는 사람’은 가상 시민이 <b>평일 하루</b> 이 건물 앞 길(가장 가까운 길 지점에서 20m 더, 최대 40m 안의 가장 붐비는 곳)을 지나간 횟수로, 실제 유동인구가 아닙니다. ‘근처 같은 업종’은 아래에서 고른 업종의 기존 가게가 <b>250m 안</b>에 몇 곳 있는지(경쟁 가게 수)입니다. 지도 위 번호는 목록 위 10곳입니다.</p></details>
+    <details class="st-how"><summary>어떻게 셌나요</summary><p>‘가게 없는 1층’은 건축물대장 층별개요의 상가 층 가운데 2026년 9월 상가정보에 그 층 가게가 없는 곳입니다. 사무실·창고로 쓰거나 등록이 늦은 가게도 들어 있을 수 있습니다. 면적은 그 층 면적입니다. ‘앞을 지나는 사람’은 가상 시민이 <b>평일 하루</b> 이 건물 앞 길(가장 가까운 길 지점에서 20m 더, 최대 40m 안의 가장 붐비는 곳)을 지나간 횟수로, 실제 유동인구가 아닙니다. ‘근처 같은 업종’은 아래에서 고른 업종의 기존 가게가 <b>250m 안</b>에 몇 곳 있는지(경쟁 가게 수)입니다. 지도 위 번호는 목록 번호입니다(고른 자리가 있으면 고른 자리만, 없으면 목록 위 10곳).</p></details>
     <div class="st-rank">
       <select id="rk-cat" aria-label="업종">${SIM.subOptions ? SIM.subOptions('viet') : ''}</select>
       <div class="rk-hours"><label>여는 시각<select id="rk-open"></select></label><label>닫는 시각<select id="rk-close"></select></label></div>
@@ -417,8 +429,9 @@ function openList() {
   $('ls-more').onclick = () => { LS.n += 30; listTable(); };
   const rkH = () => { if (SIM.fillHours) SIM.fillHours($('rk-open'), $('rk-close'), sel.value); };
   sel.addEventListener('change', () => { rkH(); listTable(); }); rkH();
-  $('rk-run').onclick = () => { const L = listNow().slice(0, 10);
-    rank(LIST, L.map(c => ({ b: c.b, floor: c.floor, area: c.area, where: `${c.floor}층 · ${c.name}` })), `목록(${$('ls-sort').selectedOptions[0].textContent}) 위 ${L.length}곳`); };
+  // 고른 자리(거르기로 목록에서 안 보여도 고른 것은 그대로)만 돌린다
+  $('rk-run').onclick = () => { const C = new Map(candidates().map(c => [c.b, c])), L = LS.sel.map(b => C.get(b)).filter(Boolean);
+    if (L.length) rank(LIST, L.map(c => ({ b: c.b, floor: c.floor, area: c.area, where: `${c.floor}층 · ${c.name}` })), `목록에서 고른 ${L.length}곳`); };
   listTable();
   panel.scrollIntoView({ block: 'start', behavior: 'smooth' });
 }
@@ -510,5 +523,5 @@ else {
 document.addEventListener('map-light', (e) => { if (!sBands) return; const n = e.detail.night >= 0.5, basic = sBands.material.isMeshBasicMaterial;
   if (n !== basic) { sBands.material.dispose(); sBands.material = n ? new THREE.MeshBasicMaterial({ vertexColors: true }) : new THREE.MeshLambertMaterial({ vertexColors: true }); need(); } });
 document.addEventListener('sim-config', () => { if (cur && SIM) flow(cur); });
-window.__street = { choose, openList, get cur() { return cur; }, flowCache };
+window.__street = { choose, openList, get cur() { return cur === LIST ? null : cur; }, get listOpen() { return cur === LIST; }, flowCache };   // 밖(shell.js 주소·저장 이름)에는 목록을 '상권 전체'로
 })();

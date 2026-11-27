@@ -163,8 +163,12 @@ body.list-mode .st-head .icon-btn { display: grid; }
 .ls-f .ls-up small { display: block; font-weight: 400; color: var(--g600); }
 #ls-n b { color: var(--g900); }
 table.ls { margin-top: 6px; }
+.ls-ck { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; min-height: 32px; }
+.ls-ck input { width: 17px; height: 17px; margin: 0; accent-color: var(--primary); cursor: pointer; }
+.ls-ck input:disabled { cursor: not-allowed; }
+table.ls td:first-child { width: 3.4em; }
+.rk-why .link { border: 0; background: none; padding: 0; font: inherit; color: var(--primary-ink); text-decoration: underline; cursor: pointer; }
 .rk-why { margin: 2px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--g600); word-break: keep-all; }   /* 순위 버튼이 무엇을 하는지 한 줄 */
-table.ls td:first-child { width: 1.6em; }
 table.ls th { vertical-align: bottom; white-space: normal; word-break: keep-all; line-height: 1.35; }   /* 좁은 패널에서 긴 머리글(앞을 지나는 사람·근처 같은 업종)이 밖으로 나가지 않게 두 줄로 */
 /* 도움말이 있는 이름: 오른쪽 위 모서리에 아주 작은 원 안 '?'. 마우스를 올리거나 탭으로 고르면 바로 말풍선(data-tip)이 뜬다
    (브라우저 기본 title 말풍선은 1초쯤 기다려야 하고 안 뜰 때도 있어 쓰지 않음). 머리글이 표 오른쪽이라 오른쪽 끝에 맞춰 아래로 펼침 */
@@ -344,6 +348,10 @@ body:not(.street-mode) #tour-btn span { color: rgba(255, 255, 255, .85); }
 body:not(.street-mode) #rail { padding-bottom: 100px; }
 body:not(.street-mode) #rail::after { content: ''; position: fixed; left: 0; bottom: 0; width: var(--side); height: 96px; pointer-events: none; z-index: 7;
   background: linear-gradient(rgba(255,255,255,0), #fff 34%); }
+/* 빈 자리 목록: 둘러보기 버튼(#card 안)이 숨으니 그 자리 여백·흐림도 뺀다. 여백이 남으면 크롬이 sticky 기준을 여백 안쪽으로 잡아
+   '어떤 가게를 열어 볼까요' 칸이 바닥에서 100px 떠 그 밑으로 표 줄이 비쳐 보였다 */
+body.list-mode #rail { padding-bottom: 0; }
+body.list-mode #rail::after { display: none; }
 #sim-range { width: 100%; margin: 14px 0 0; accent-color: var(--primary); height: 24px; }
 .sim-ticks { display: flex; justify-content: space-between; font-size: 12px; color: var(--g600); margin-top: -2px; }
 .sim-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--g700); margin: 12px 0 10px; }
@@ -510,7 +518,7 @@ body.nomap #r-where, body.nomap #r-layers { display: none; }   /* 꺾은선·카
   .st-rank::before { font-size: 12.5px; margin-bottom: 6px; }
   .st-rank select { min-height: 44px; font-size: 15px; }
   .st-rank #rk-run { min-height: 50px; margin-top: 8px; font-size: 16px; }
-  body.street-mode #rail { padding-bottom: 156px; }
+  body.street-mode #rail, body.list-mode #rail { padding-bottom: 156px; }   /* 폰: 아래 고정 칸(.st-rank) 높이만큼 */
   body:has(#info:not([hidden])) #tour-btn, body:has(#info:not([hidden])) .st-rank, body:has(#info:not([hidden])) #rail::after { display: none; }
 }
 
