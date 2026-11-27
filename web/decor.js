@@ -291,7 +291,19 @@ function hideTreesNear(x, z, r) {
   const broadIdx = [], coneIdx = [];
   trees.forEach((t, i) => (t[5] === 'cone' ? coneIdx : broadIdx).push(i));
   const broad = broadIdx.map(i => trees[i]), cone = coneIdx.map(i => trees[i]);
-  const mk = (geo, color, n) => { const m = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({ color, vertexColors: !!geo.attributes.color }), Math.max(1, n)); m.count = n; return m; };
+  const mk = (geo, color, n, flat) => { const m = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({ color, vertexColors: !!geo.attributes.color, flatShading: !!flat }), Math.max(1, n)); m.count = n; return m; };
+  // 잎 덩이를 매끈한 공(플라스틱처럼 보임)이 아니게: 꼭짓점을 반지름 방향으로 ±amp 흔들고(같은 자리 꼭짓점은 같은 값이라 틈 없음), 면마다 밝기를 조금씩 다르게
+  const hash = (x, y, z) => { const v = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453; return v - Math.floor(v); };
+  const lumpy = (geo, amp) => {
+    const p = geo.attributes.position;
+    for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i), z = p.getZ(i), k = 1 + amp * (hash(+x.toFixed(3), +y.toFixed(3), +z.toFixed(3)) * 2 - 1); p.setXYZ(i, x * k, y * k, z * k); }
+    geo.computeVertexNormals(); return geo;
+  };
+  const mottle = (geo, amt) => {   // shade() 뒤에: 세 꼭짓점(한 면)마다 같은 무작위 배율
+    const c = geo.attributes.color;
+    for (let f = 0; f + 2 < c.count; f += 3) { const k = 1 + amt * (hash(f * 0.37, 1.3, 2.1) * 2 - 1); for (let j = 0; j < 3; j++) c.setXYZ(f + j, c.getX(f + j) * k, c.getY(f + j) * k, c.getZ(f + j) * k); }
+    return geo;
+  };
   // 높이에 따라 밝기를 바꾸는 꼭짓점 색: 아래 lo배 → 위 hi배(인스턴스 색과 곱해진다)
   const shade = (geo, lo, hi) => {
     const p = geo.attributes.position, n = p.count; geo.computeBoundingBox();
@@ -314,7 +326,7 @@ function hideTreesNear(x, z, r) {
   if (broad.length) {
     // 잎 세 덩이: 가운데 큰 덩이 + 양옆으로 비켜 난 덩이 둘(풍성하게, 공 하나로 보이지 않게)
     // 색은 4단계 초록 중 하나를 고르고, 옆 덩이는 조금 밝거나 어둡게
-    const leaf = mk(shade(new THREE.IcosahedronGeometry(1, 1), 0.66, 1.06), '#ffffff', broad.length * 3);
+    const leaf = mk(mottle(shade(lumpy(new THREE.IcosahedronGeometry(1, 1), 0.14), 0.62, 1.08), 0.09), '#ffffff', broad.length * 3, true);
     broad.forEach(([x, z, h, rr], i) => {
       const r = h * rr, k = Math.floor(rand() * LEAF.length), base = LEAF[k].clone().lerp(LEAF[Math.min(LEAF.length - 1, k + 1)], rand() * 0.5);
       const sy = 0.82 + rand() * 0.22;
@@ -333,8 +345,8 @@ function hideTreesNear(x, z, r) {
   }
   if (cone.length) {
     // 침엽: 원뿔 두 단(아래가 넓고 위가 좁게)
-    const coneGeo = new THREE.ConeGeometry(1, 1, 8, 1); coneGeo.translate(0, 0.5, 0); shade(coneGeo, 0.7, 1.04);
-    const needle = mk(coneGeo, '#ffffff', cone.length * 2);
+    const coneGeo = new THREE.ConeGeometry(1, 1, 8, 1).toNonIndexed(); coneGeo.translate(0, 0.5, 0); mottle(shade(coneGeo, 0.68, 1.05), 0.07);
+    const needle = mk(coneGeo, '#ffffff', cone.length * 2, true);
     cone.forEach(([x, z, h, rr], i) => {
       const r = h * rr, c = col.copy(CONE[0]).lerp(CONE[1], rand()).clone();
       q.setFromAxisAngle(up, rand() * Math.PI * 2);
@@ -345,7 +357,7 @@ function hideTreesNear(x, z, r) {
     meshes.push(needle);
   }
   if (shrubs.length) {
-    const bush = mk(shade(new THREE.IcosahedronGeometry(1, 1), 0.7, 1.05), '#ffffff', shrubs.length);
+    const bush = mk(mottle(shade(lumpy(new THREE.IcosahedronGeometry(1, 1), 0.16), 0.66, 1.06), 0.1), '#ffffff', shrubs.length, true);
     shrubs.forEach(([x, z, sz], i) => {
       q.setFromAxisAngle(up, rand() * Math.PI * 2);
       pos.set(x, sz * 0.38, z); scl.set(sz * 0.6, sz * 0.45, sz * 0.6); mtx.compose(pos, q, scl); bush.setMatrixAt(i, mtx);
