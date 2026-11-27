@@ -13,7 +13,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NAME = sys.argv[1]
 P = json.load(open(os.path.join(ROOT, 'data', 'processed', f'{NAME}_persona_params.json'), encoding='utf-8'))
 # 상권에 하루 나오는 비율: 근거가 없어 가정(params 에 값이 생기면 그 값을 쓴다)
-DEFAULT_SHARE = {'worker': (0.11, 0.066), 'foreign': (0.086, 0.127)}
+# 비율은 '전체 수'의 기준에 맞춰야 한다(11-27: foreign 기준이 거제시 전체 17,352 → 옥포1·2동 등록 2,101 로 바뀜, resident 30,356 추가)
+#  worker: 한화오션 종사자 27,118 중 하루 옥포 상권을 지나는 비율 / foreign: 옥포 거주 등록 외국인 중 / resident: 옥포1·2동 주민 중
+DEFAULT_SHARE = {'worker': (0.11, 0.066), 'foreign': (0.45, 0.75), 'resident': (0.12, 0.13)}
 cfg, notes = {'groups': {}}, []
 for g in ('worker', 'foreign', 'resident', 'tourist'):
     v = P.get(g) or {}
