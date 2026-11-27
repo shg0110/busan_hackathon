@@ -5,6 +5,8 @@
      - 가로수: OSM에 옥포 가로수 점 자료가 없어 큰길 양쪽에 12m 간격으로 놓았다.
      - 공원 나무: 녹지 다각형 안을 격자로 채웠다(종류마다 간격이 다름).
      - 횡단보도·정지선: 큰길끼리 만나는 곳에만 그렸다. 실제 횡단보도 위치는 확인하지 않았다.
+     - 중앙선·차선: OSM 일방(ow)·차로 수(ln)를 따른다. 일방통행은 중앙선 없음, 차로 수가 없는 길은 점선 없음.
+     - 주차장 바닥·테두리는 OSM 실제 위치, 그 안의 주차 칸 선은 장식이다.
      - 나무 모양(활엽·침엽·관목)과 비율도 가정이다. 버스 정류장 쉼터만 OSM 정류장 실제 위치(SIM_DATA.stops)다.
    난수는 씨앗을 고정해 화면이 열 때마다 같게 나온다. */
 (() => {
@@ -18,7 +20,7 @@ const HX = D.meta.half[0], HZ = D.meta.half[1];
 const C = {
   trunk: '#7a5c3e', leafA: '#5f9e4f', leafB: '#7bb661',
   center: '#f2c94c', lane: '#ffffff', walk: '#f3f4f6', zebra: '#ffffff', curb: '#b9bfc8', edge: '#c4c9d1',
-  coneA: '#3f7a4a', coneB: '#54905a', shrubA: '#6aa85a', shrubB: '#88c06c',
+  parking: '#d0d5dc', coneA: '#3f7a4a', coneB: '#54905a', shrubA: '#6aa85a', shrubB: '#88c06c',
 };
 const MAJOR = new Set(['trunk', 'primary', 'secondary', 'tertiary']);          // 가로수·인도·중앙선을 그리는 큰길
 const VEHICLE_SKIP = new Set(['service', 'footway', 'path', 'steps', 'cycleway', 'pedestrian', 'track']);
@@ -130,7 +132,9 @@ D.roads.forEach((r, ri) => {
   const w = walker(r.p);
   const js = [];
   r.p.forEach((p, i) => { if (isJunction(p)) js.push({ s: w.cum[i], p, major: majorAt(p) }); });
-  majors.push({ r, ri, w, js });
+  // 회전교차로: 처음과 끝이 같은 일방 고리. 원 안 차로에는 횡단보도·정지선을 그리지 않는다.
+  const ring = !!r.ow && Math.hypot(r.p[0][0] - r.p[r.p.length - 1][0], r.p[0][1] - r.p[r.p.length - 1][1]) < 1;
+  majors.push({ r, ri, w, js, ring });
 });
 
 // ── 납작한 띠 만들기 ───────────────────────────────────
@@ -196,16 +200,15 @@ const stats = { centerM: 0, laneM: 0, crosswalks: 0, stopLines: 0 };
   const center = [], lane = [];
   for (const m of majors) {
     const w = m.r.w;
+    // 차로는 OSM lanes(ln)가 있을 때만 그린다. 폭으로 짐작하지 않는다(옥포 큰길은 12m에 주차가 많아 짐작하면 틀린 그림).
+    const ow = !!m.r.ow, ln = m.r.ln || 0;
     for (const [a, b] of openSpans(m, JUNC_CLEAR)) {
-      stripe(m, 0, 0.3, a, b, 0.03, center); stats.centerM += b - a;
-      // 4차로 이상(폭 14m 이상)이면 방향마다 흰 점선: 3m 칠하고 5m 비움
-      if (w >= 14) {
-        const per = Math.max(2, Math.round(w / 2 / 3.3));       // 한 방향 차로 수
-        for (let k = 1; k < per; k++) for (const sgn of [1, -1]) {
-          const off = sgn * k * (w / 2) / per;
-          for (let s = a; s + 3 <= b; s += 8) { stripe(m, off, 0.15, s, s + 3, 0.03, lane); stats.laneM += 3; }
-        }
-      }
+      // 양방향이면 노란 중앙선. 일방통행이면 중앙선이 없다.
+      if (!ow) { stripe(m, 0, 0.3, a, b, 0.03, center); stats.centerM += b - a; }
+      // 흰 점선(3m 칠하고 5m 비움): 일방 2차로 이상은 차로 사이, 양방향 4차로 이상은 방향마다 차로 사이
+      const dash = (off) => { for (let s = a; s + 3 <= b; s += 8) { stripe(m, off, 0.15, s, s + 3, 0.03, lane); stats.laneM += 3; } };
+      if (ow && ln >= 2) for (let k = 1; k < ln; k++) dash(-w / 2 + k * w / ln);
+      if (!ow && ln >= 4) { const per = Math.floor(ln / 2); for (let k = 1; k < per; k++) for (const sgn of [1, -1]) dash(sgn * k * (w / 2) / per); }
     }
   }
   // 연석: 길 가장자리 양쪽 0.3m 진한 회색 선(길과 인도 경계가 또렷하게), 교차로 앞뒤 8m 는 비움
@@ -214,6 +217,41 @@ const stats = { centerM: 0, laneM: 0, crosswalks: 0, stopLines: 0 };
   flat(curb, C.curb, 8);
   flat(center, C.center, 8);
   if (lane.length) flat(lane, C.lane, 8);
+}
+
+// ── 주차장(OSM amenity=parking 면, 실제 위치): 바닥을 조금 진하게, 흰 테두리, 긴 변을 따라 주차 칸 선(칸은 장식) ──
+if (D.parking && D.parking.length) {
+  const fill = [], line = [];
+  const tri = (p, y, out) => {
+    const v2 = p.map(q => new THREE.Vector2(q[0], q[1]));
+    for (const t of THREE.ShapeUtils.triangulateShape(v2, [])) { const a = p[t[0]], b = p[t[1]], c = p[t[2]]; out.push(a[0], y, a[1], b[0], y, b[1], c[0], y, c[1]); }
+  };
+  const seg = (a, b, wd, y, out) => {   // 두 점을 잇는 폭 wd 의 납작한 띠
+    const dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz) || 1, nx = -dz / L * wd / 2, nz = dx / L * wd / 2;
+    out.push(a[0] + nx, y, a[1] + nz, b[0] + nx, y, b[1] + nz, a[0] - nx, y, a[1] - nz, a[0] - nx, y, a[1] - nz, b[0] + nx, y, b[1] + nz, b[0] - nx, y, b[1] - nz);
+  };
+  let stalls = 0;
+  for (const pk of D.parking) {
+    const p = pk.p; if (p.length < 3) continue;
+    tri(p, 0, fill);
+    for (let i = 0; i < p.length; i++) {
+      const a = p[i], b = p[(i + 1) % p.length]; seg(a, b, 0.15, 0.02, line);
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L < 8) continue;
+      const dx = (b[0] - a[0]) / L, dz = (b[1] - a[1]) / L;
+      let nx = -dz, nz = dx;
+      const mx = (a[0] + b[0]) / 2, mz = (a[1] + b[1]) / 2;
+      if (!inPoly(mx + nx * 2.5, mz + nz * 2.5, p)) { nx = -nx; nz = -nz; }        // 안쪽을 향하게
+      if (!inPoly(mx + nx * 2.5, mz + nz * 2.5, p)) continue;
+      for (let s = 1.5; s <= L - 1.5; s += 2.5) {                                   // 칸 폭 2.5m, 길이 5m
+        const x0 = a[0] + dx * s, z0 = a[1] + dz * s, x1 = x0 + nx * 5, z1 = z0 + nz * 5;
+        if (!inPoly(x1, z1, p) || nearBuilding(x1, z1, 0.5)) continue;
+        seg([x0, z0], [x1, z1], 0.12, 0.02, line); stalls++;
+      }
+    }
+  }
+  flat(fill, C.parking, 4.5);   // 물(4) 위, 길(5~7) 아래
+  flat(line, C.lane, 8);
+  stats.parking = D.parking.length; stats.stalls = stalls;
 }
 
 // ── 골목 가장자리선: 큰길이 아닌 차도(골목) 양쪽 0.2m 진한 회색, 교차로 앞뒤 3m 는 비움 ──
@@ -234,7 +272,7 @@ const stats = { centerM: 0, laneM: 0, crosswalks: 0, stopLines: 0 };
 {
   const pos = [], stop = [], done = new Set();
   for (const m of majors) for (const j of m.js) {
-    if (j.major < 3) continue;
+    if (j.major < 3 || m.ring) continue;
     for (const dir of [-1, 1]) {
       const s = j.s + dir * 10;
       if (s < 2 || s > m.w.L - 2) continue;
@@ -467,6 +505,6 @@ window.__decor = {
   broad: stats.broad || 0, cone: stats.cone || 0, shrubs: stats.shrubs || 0,
   centerM: Math.round(stats.centerM), laneM: Math.round(stats.laneM), edgeM: Math.round(stats.edgeM || 0),
   crosswalks: stats.crosswalks, stopLines: stats.stopLines, busStops: stats.busStops || 0,
-  majorRoads: majors.length,
+  majorRoads: majors.length, oneway: majors.filter(m => m.r.ow).length, parking: stats.parking || 0, stalls: stats.stalls || 0,
 };
 })();
