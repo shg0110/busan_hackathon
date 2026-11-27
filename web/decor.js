@@ -5,7 +5,7 @@
      지운 것: 가로수 1,381, 가로등 550, 신호등 63, 볼라드 326, 도로명판 79, 전봇대 450·전선 352, 어린이보호구역 울타리 기둥 278·표지판,
               놀이기구(그네 19·미끄럼틀 20), 벤치 22·화분 21, 바다 이름 '옥포만'(물 자료에 이름 없음).
      남긴 것:
-     - 버스 정류장 쉼터: OSM 정류장 실제 위치(SIM_DATA.stops). 쉼터 모양은 일반형이다.
+     - 버스 정류장: OSM 정류장 실제 위치와 속성(쉼터·벤치·쓰레기통 있음/없음, 이름). 쉼터·표지 모양은 일반형이다.
      - 녹지(OSM 공원·숲·놀이터·덤불 면) 안의 나무·관목: 녹지를 나타내는 그림이다. 한 그루씩의 자리·모양·색(11월 말)은 실제가 아니다.
      - '한화오션 옥포조선소 방향' 이름표: OSM 지명이 지도 밖에 있어 가장자리에 방향으로 보인다.
    난수는 씨앗을 고정해 화면이 열 때마다 같게 나온다. */
@@ -96,7 +96,7 @@ function nearRoad(x, z, extra, skip) {
 const inWater = (x, z) => D.water.some(w => inPoly(x, z, w.p));
 // 땅 높이(m): terrain.js(seohogyun-31)의 heightAt. 지형이 꺼져 있으면(TERRAIN_ON=false) 언제나 0이라 화면은 그대로다.
 // 이름표(M.labels)는 app.js placeLabels 가 땅 높이를 더하므로 여기서 더하지 않는다(땅 기준 y)
-const GH = (x, z) => (window.heightAt ? +window.heightAt(x, z) || 0 : 0);
+const GH = (x, z) => (window.heightAt ? Math.max(0, +window.heightAt(x, z) || 0) : 0);   // 0 아래(해안 바다 쪽 음수, 31 terrain_build)로는 내리지 않음: 물건이 물에 잠기지 않게
 const inside = (x, z, m) => Math.abs(x) < HX - m && Math.abs(z) < HZ - m;
 
 // ── 교차로 찾기: 한 점에서 뻗어 나가는 길 가닥(차가 다니는 길)이 3개 이상이면 교차로 ──────────
@@ -322,15 +322,18 @@ function hideTreesNear(x, z, r) {
     // 잎 덩이 모양은 세 가지(흔드는 씨앗이 다름)를 나무마다 돌려 쓴다 → 같은 공을 돌려 쓴 티가 덜 난다
     // 색은 11월 말(자료를 모은 때): 상록 위주에 일부만 물든다(장식).
     //   주황·빨강은 '가게 없는 층'·'문 닫은 가게' 색이라 단풍에도 쓰지 않는다
-    const NV = 3, cnt = [0, 0, 0];
-    broad.forEach((t, i) => cnt[i % NV]++);
-    const leafs = [0, 1, 2].map(v => mk(mottle(shade(lumpy(new THREE.IcosahedronGeometry(1, 1), 0.15, v + 1), 0.62, 1.08), 0.09, v), '#ffffff', cnt[v] * 3, true));
-    const at = [0, 0, 0];
+    // 숲(wood·forest) 나무는 대개 멀리서 보이니 면이 적은 잎 덩이(20면)를, 공원·놀이터 나무는 80면을 쓴다.
+    // 나무가 지도 전체 삼각형의 59%(129만)였다(2026-11-27, CPU 만으로 그리는 PC 에서 한 장 0.2~0.7초)
+    const NV = 3, WOODK = new Set(['wood', 'forest']), set = (t) => WOODK.has(t[4]) ? 1 : 0, cnt = [[0, 0, 0], [0, 0, 0]];
+    broad.forEach((t, i) => cnt[set(t)][i % NV]++);
+    const leafGeo = (detail, amp, v) => mottle(shade(lumpy(new THREE.IcosahedronGeometry(1, detail), amp, v + 1), 0.62, 1.08), detail ? 0.09 : 0.11, v);
+    const leafs = [0, 1].map(st => [0, 1, 2].map(v => mk(leafGeo(st ? 0 : 1, st ? 0.2 : 0.15, v), '#ffffff', cnt[st][v] * 3, true)));
+    const at = [[0, 0, 0], [0, 0, 0]];
     const GINKGO = ['#c4b452', '#cfbd5f', '#b9a84c'].map(h => new THREE.Color(h));
     const OLIVE = ['#8e9a4c', '#9c9a52'].map(h => new THREE.Color(h));
     const pick = (A) => A[Math.floor(rand() * A.length)].clone();
-    broad.forEach(([x, z, h, rr], i) => {
-      const v = i % NV, leaf = leafs[v], b = at[v]++ * 3;
+    broad.forEach((t, i) => {
+      const [x, z, h, rr] = t, st = set(t), v = i % NV, leaf = leafs[st][v], b = at[st][v]++ * 3;
       const g0 = GH(x, z), r = h * rr, k = Math.floor(rand() * LEAF.length), green = LEAF[k].clone().lerp(LEAF[Math.min(LEAF.length - 1, k + 1)], rand() * 0.5);
       const u = rand();
       // 공원·숲: 초록 72% · 올리브 18% · 노랑 10%. 노랑은 초록빛 쪽으로 낮췄다(햇빛과 곱해지면 주황으로 보이고, '고른 거리' 노란 선과 섞였다)
@@ -350,7 +353,7 @@ function hideTreesNear(x, z, r) {
       }
       treeRefs[broadIdx[i]].parts.push([leaf, b], [leaf, b + 1], [leaf, b + 2]);
     });
-    meshes.push(...leafs);
+    meshes.push(...leafs[0], ...leafs[1]);
   }
   if (cone.length) {
     // 침엽: 원뿔 두 단(아래가 넓고 위가 좁게)
@@ -367,7 +370,7 @@ function hideTreesNear(x, z, r) {
     meshes.push(needle);
   }
   if (shrubs.length) {
-    const bush = mk(mottle(shade(lumpy(new THREE.IcosahedronGeometry(1, 1), 0.16), 0.66, 1.06), 0.1), '#ffffff', shrubs.length, true);
+    const bush = mk(mottle(shade(lumpy(new THREE.IcosahedronGeometry(1, 0), 0.18), 0.66, 1.06), 0.11), '#ffffff', shrubs.length, true);   // 관목은 작아서 20면이면 충분
     shrubs.forEach(([x, z, sz], i) => {
       q.setFromAxisAngle(up, rand() * Math.PI * 2);
       pos.set(x, GH(x, z) + sz * 0.38, z); scl.set(sz * 0.6, sz * 0.45, sz * 0.6); mtx.compose(pos, q, scl); bush.setMatrixAt(i, mtx);
@@ -411,46 +414,69 @@ function addMerged(parts, name) {
 }
 // 점에서 가장 가까운 차도 선분: {r, px, pz, nx, nz, side, rot} (rot: 길 방향이 상자 x 축이 되게)
 
-// ── 버스 정류장 쉼터: SIM_DATA.stops(OSM 버스 정류장 실제 위치). sim 자료가 decor 뒤에 불러와지므로 load 뒤에 그린다 ──
+// ── 버스 정류장: OSM 정류장(STREET_OBJS.busstops, highway=bus_stop)의 실제 속성대로 — 쉼터는 shelter=yes 인 곳에만, 벤치·쓰레기통은 그 표시가 있을 때,
+//    표지 기둥은 모든 정류장(정류장 표지가 있다는 것이 정류장의 뜻). 이름은 가까이 볼 때 작은 이름표로. 자료가 없으면 SIM_DATA.stops 에 쉼터만(예전 방식).
+//    tactile_paving=yes 인 곳은 바닥(ground.js, seohogyun-31)이 점자블록을 깔 수 있게 spots.busTactile 로 내보낸다
 function busStops() {
-  const S = window.SIM_DATA && window.SIM_DATA.stops; if (!S || !S.length || !THREE.BufferGeometryUtils) return;
-  const parts = [];
+  const O = window.STREET_OBJS && window.STREET_OBJS.busstops;
+  const S = (O && O.length) ? O : ((window.SIM_DATA && window.SIM_DATA.stops) || []).map(s => ({ x: s.x, z: s.z, name: s.n, shelter: true }));
+  if (!S.length || !THREE.BufferGeometryUtils) return;
+  const parts = [], st = { stops: 0, shelters: 0, benches: 0, bins: 0, tactile: 0, named: 0 };
+  spots.busTactile = [];
   let gy = 0;
-  const box = (w, h, d, x, y, z, rot, cx, cz, col) => boxPart(parts, w, h, d, x, y + gy, z, rot, cx, cz, col);   // gy = 그 쉼터 자리 땅 높이
-  for (const st of S) {
+  const box = (w, h, d, x, y, z, rot, cx, cz, col) => boxPart(parts, w, h, d, x, y + gy, z, rot, cx, cz, col);   // gy = 그 정류장 자리 땅 높이
+  const lbox = document.getElementById('labels');
+  for (const s of S) {
+    if (!inside(s.x, s.z, 2)) continue;
     // 가장 가까운 차도 선분의 방향으로 돌리고, 정류장 점이 있는 쪽 길 가장자리 바깥 1.2m 에 둔다
     let best = null, bd = Infinity;
-    for (const [ri, i] of RG.at(st.x, st.z)) {
+    for (const [ri, i] of RG.at(s.x, s.z)) {
       if (!vehicle[ri]) continue;
-      const r = D.roads[ri], d = segDist(st.x, st.z, r.p[i], r.p[i + 1]);
-      if (d < bd) { bd = d; best = [r, i]; }
+      const r = D.roads[ri], d = segDist(s.x, s.z, r.p[i], r.p[i + 1]);
+      if (d < bd) { bd = d; best = [r, i, ri]; }
     }
-    let rot = 0, cx = st.x, cz = st.z;
+    let rot = 0, cx = s.x, cz = s.z;
     if (best && bd < 25) {
       const [r, i] = best, a = r.p[i], b = r.p[i + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
       const dx = (b[0] - a[0]) / L, dz = (b[1] - a[1]) / L;
-      const t = Math.max(0, Math.min(L, (st.x - a[0]) * dx + (st.z - a[1]) * dz));
+      const t = Math.max(0, Math.min(L, (s.x - a[0]) * dx + (s.z - a[1]) * dz));
       const px = a[0] + dx * t, pz = a[1] + dz * t, nx = -dz, nz = dx;
-      const side = ((st.x - px) * nx + (st.z - pz) * nz) >= 0 ? 1 : -1;
+      const side = ((s.x - px) * nx + (s.z - pz) * nz) >= 0 ? 1 : -1;
       const off = r.w / 2 + 1.2;
       cx = px + nx * off * side; cz = pz + nz * off * side;
       rot = -Math.atan2(dz, dx);
-      if (side < 0) rot += Math.PI;   // 쉼터 등판이 길 반대쪽(인도 안쪽)으로 가게
+      if (side < 0) rot += Math.PI;   // 쉼터 등판이 길 반대쪽(인도 안쪽)으로 가게(지역 +z = 인도 안쪽)
     }
     gy = GH(cx, cz);
-    stats.hiddenTrees = (stats.hiddenTrees || 0) + hideTreesNear(cx, cz, 4.5);
-    spots.bus.push([+cx.toFixed(1), +cz.toFixed(1)]);   // 쉼터·표지 기둥과 겹치는 가로수는 숨긴다
-    // 지붕·등판·기둥 2개·표지 기둥·표지판
-    box(3.4, 0.12, 1.5, 0, 2.5, 0.1, rot, cx, cz, '#5b6573');
-    box(3.2, 1.9, 0.06, 0, 1.25, 0.8, rot, cx, cz, '#cfe0ec');
-    box(0.1, 2.5, 0.1, -1.55, 1.25, 0.8, rot, cx, cz, '#5b6573');
-    box(0.1, 2.5, 0.1, 1.55, 1.25, 0.8, rot, cx, cz, '#5b6573');
+    stats.hiddenTrees = (stats.hiddenTrees || 0) + hideTreesNear(cx, cz, s.shelter ? 4.5 : 2.5);
+    spots.bus.push([+cx.toFixed(1), +cz.toFixed(1)]);
+    if (s.shelter === true) {   // 지붕·등판·기둥 2개
+      box(3.4, 0.12, 1.5, 0, 2.5, 0.1, rot, cx, cz, '#5b6573');
+      box(3.2, 1.9, 0.06, 0, 1.25, 0.8, rot, cx, cz, '#cfe0ec');
+      box(0.1, 2.5, 0.1, -1.55, 1.25, 0.8, rot, cx, cz, '#5b6573');
+      box(0.1, 2.5, 0.1, 1.55, 1.25, 0.8, rot, cx, cz, '#5b6573');
+      if (s.bench !== false) { box(2.4, 0.06, 0.38, 0, 0.45, 0.55, rot, cx, cz, '#a47b55'); box(0.06, 0.45, 0.34, -1.1, 0.22, 0.55, rot, cx, cz, '#4a5260'); box(0.06, 0.45, 0.34, 1.1, 0.22, 0.55, rot, cx, cz, '#4a5260'); st.benches++; }
+      st.shelters++;
+    } else if (s.bench === true) {   // 쉼터 없이 벤치만
+      box(1.6, 0.06, 0.42, 0, 0.45, 0.4, rot, cx, cz, '#a47b55'); box(1.6, 0.36, 0.05, 0, 0.72, 0.6, rot, cx, cz, '#a47b55');
+      for (const lx of [-0.68, 0.68]) box(0.07, 0.45, 0.4, lx, 0.22, 0.4, rot, cx, cz, '#4a5260');
+      st.benches++;
+    }
+    // 표지 기둥과 파란 정류장 표지판(모든 정류장)
     box(0.08, 2.9, 0.08, 2.3, 1.45, -0.4, rot, cx, cz, '#5b6573');
-    box(0.55, 0.55, 0.06, 2.3, 2.75, -0.4, rot, cx, cz, '#2f3b4a');
+    box(0.06, 0.55, 0.55, 2.3, 2.75, -0.4, rot, cx, cz, '#1d4e9a');
+    if (s.bin === true) { box(0.4, 0.75, 0.4, -2.2, 0.375, 0.2, rot, cx, cz, '#4e5968'); box(0.44, 0.06, 0.44, -2.2, 0.78, 0.2, rot, cx, cz, '#3d434b'); st.bins++; }
+    if (s.tactile === true) { spots.busTactile.push(best ? { x: +s.x.toFixed(1), z: +s.z.toFixed(1), ri: best[2] } : { x: +s.x.toFixed(1), z: +s.z.toFixed(1) }); st.tactile++; }
+    if (s.name && /[가-힣]/.test(s.name) && lbox && M.labels) {   // 이름표: 가까이 볼 때만(pri 2), 건물 뒤면 숨음(app.js 가림). 한글 이름이 없으면(로마자뿐) 옮겨 짓지 않고 달지 않는다
+      const el = document.createElement('div'); el.className = 'lbl place bus';
+      el.innerHTML = '<b>버스</b>' + (M.esc ? M.esc(s.name) : String(s.name).replace(/[<&>"]/g, ''));
+      lbox.appendChild(el); M.labels.push({ el, x: cx, y: 3.2, z: cz, pri: 2, kind: 'place', w: 0, h: 0 }); st.named++;
+    }
+    st.stops++;
   }
   addMerged(parts, 'decor-bus');
-  stats.busStops = S.length;
-  if (window.__decor) { window.__decor.busStops = S.length; window.__decor.hiddenTrees = stats.hiddenTrees || 0; }
+  stats.busStops = st.stops; stats.bus = st;
+  if (window.__decor) { window.__decor.busStops = st.stops; window.__decor.bus = st; window.__decor.hiddenTrees = stats.hiddenTrees || 0; }
   if (M.renderer) M.renderer.shadowMap.needsUpdate = true;
   M.need && M.need();
 }
@@ -486,7 +512,28 @@ function realSignals() {
       S.push({ x, z, kind: 'ped', cx: c.x, cz: c.z }); fromCross++;
     }
   }
-  if (!S.length) return { car: 0, ped: 0, poles: 0, fromCross: 0 };
+  // 차량 신호등: OSM 신호 교차로(STREET_OBJS.signals, highway=traffic_signals)의 길목마다 한 기둥.
+  // 교차로 점에서 각 차도 가닥을 따라 (가장 넓은 가닥 폭/2 + 2m) 나간 곳, 나가는 방향 오른쪽 길가 + 1.3m. 등은 길 가운데로 뻗은 팔 끝에서 앞뒤를 본다
+  let fromJunc = 0;
+  for (const sg of (window.STREET_OBJS && window.STREET_OBJS.signals) || []) {
+    if (!inside(sg.x, sg.z, 4)) continue;
+    const legs = [];
+    D.roads.forEach((r, ri) => {
+      if (!vehicle[ri]) return;
+      const p = r.p; const i = p.findIndex(q => Math.hypot(q[0] - sg.x, q[1] - sg.z) < 3); if (i < 0) return;
+      for (const dir of [-1, 1]) { const j = i + dir; if (j < 0 || j >= p.length) continue;
+        const dx = p[j][0] - p[i][0], dz = p[j][1] - p[i][1], L = Math.hypot(dx, dz) || 1; legs.push({ r, ux: dx / L, uz: dz / L, L, ox: p[i][0], oz: p[i][1] }); }
+    });
+    if (legs.length < 2) continue;
+    const wMax = Math.max(...legs.map(l => l.r.w));
+    for (const l of legs) {
+      const d = Math.min(l.L - 0.5, wMax / 2 + 2); if (d < 2) continue;
+      const cx = l.ox + l.ux * d, cz = l.oz + l.uz * d, off = l.r.w / 2 + 1.3, x = cx - l.uz * off, z = cz + l.ux * off;   // 오른쪽 = (-uz, ux)
+      if (!inside(x, z, 2) || nearBuilding(x, z, 0.3) || S.some(s => Math.hypot(s.x - x, s.z - z) < 3)) continue;
+      S.push({ x, z, kind: 'car', cx, cz }); fromJunc++;
+    }
+  }
+  if (!S.length) return { car: 0, ped: 0, poles: 0, fromCross: 0, fromJunc: 0 };
   const groups = [];
   for (const s of S) {
     if (!inside(s.x, s.z, 2)) continue;
@@ -534,11 +581,80 @@ function realSignals() {
     const m = new THREE.Mesh(THREE.BufferGeometryUtils.mergeBufferGeometries(glow, false), new THREE.MeshBasicMaterial({ vertexColors: true }));
     m.renderOrder = 10; m.name = 'decor-signal-light'; scene.add(m);
   }
-  return { car, ped, poles: groups.length, fromCross };
+  return { car, ped, poles: groups.length, fromCross, fromJunc };
 }
 
 // ── 지도 밖 큰 곳 방향 이름표(한화오션 옥포조선소 등, OSM 지명): 가운데에서 그쪽으로 그은 선이 지도 가장자리(안쪽 45m)와 만나는 곳에 '…방향'.
 // 가상 손님의 큰 몫이 조선소 통근자라 어디서 오는지 보이게 한다. 이름과 방향은 OSM 자료 그대로다
+// ── 거리 시설(OSM 점 자료, tools/okpo_street_objs.py → window.STREET_OBJS): 방범 CCTV·소화전·벤치·우체통을 그 자리에만 ──
+// OSM 점이 차도 안으로 찍힌 것(좌표 오차·길 폭 차이)은 가장 가까운 차도의 길가 + 0.6m 로 옮긴다(범례에 밝힘). 방향은 가장 가까운 차도를 본다
+function toCurb(x, z) {
+  let best = null, depth = Infinity;
+  for (const [ri, i] of RG.at(x, z)) { if (!vehicle[ri]) continue; const r = D.roads[ri], d = segDist(x, z, r.p[i], r.p[i + 1]) - r.w / 2; if (d < depth) { depth = d; best = [r, i]; } }
+  if (!best) return { x, z, rot: 0, moved: false };
+  const [r, i] = best, a = r.p[i], b = r.p[i + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, dx = (b[0] - a[0]) / L, dz = (b[1] - a[1]) / L;
+  const t = Math.max(0, Math.min(L, (x - a[0]) * dx + (z - a[1]) * dz)), px = a[0] + dx * t, pz = a[1] + dz * t, nx = -dz, nz = dx;
+  let side = (x - px) * nx + (z - pz) * nz >= 0 ? 1 : -1, qx = x, qz = z, moved = false;
+  if (depth < 0.3) {
+    const off = r.w / 2 + 0.6; qx = px + nx * off * side; qz = pz + nz * off * side;
+    if (nearBuilding(qx, qz, 0.2)) { side = -side; qx = px + nx * off * side; qz = pz + nz * off * side; }
+    moved = true;
+  }
+  const tx = px - qx, tz = pz - qz;   // 길 쪽
+  return { x: qx, z: qz, rot: -Math.atan2(tz, tx), moved };
+}
+function cylPart(parts, r0, r1, h, x, y, z, cx, cz, color, seg = 10) {
+  const g = new THREE.CylinderGeometry(r1, r0, h, seg, 1); g.translate(x, y + h / 2, z); g.translate(cx, 0, cz);
+  const c = new THREE.Color(color), n = g.attributes.position.count, cols = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) cols.set([c.r, c.g, c.b], i * 3);
+  g.setAttribute('color', new THREE.BufferAttribute(cols, 3)); parts.push(g.toNonIndexed());
+}
+function streetObjs() {
+  const O = window.STREET_OBJS; if (!O) return null;
+  const parts = [], glow = [], st = { cctv: 0, cams: 0, hydrants: 0, benches: 0, postboxes: 0, moved: 0 };
+  spots.cctv = [];
+  // 방범 CCTV: 5.6m 회색 기둥, 아래 진회색 띠, 3m 높이 노란 안내판, 위에 길 쪽 팔과 카메라(OSM count 대수)
+  for (const c of O.cctv || []) {
+    if (!inside(c.x, c.z, 2)) continue;
+    const p = toCurb(c.x, c.z); if (nearBuilding(p.x, p.z, 0.15)) continue;
+    const y = GH(p.x, p.z), B = (w, h, d, lx, ly, lz, col) => boxPart(parts, w, h, d, lx, ly + y, lz, p.rot, p.x, p.z, col);
+    B(0.16, 5.6, 0.16, 0, 2.8, 0, '#b8bec6'); B(0.22, 0.6, 0.22, 0, 0.3, 0, '#5b636d');
+    B(0.05, 0.46, 0.62, 0.11, 3.1, 0, '#f2c200'); B(0.055, 0.1, 0.62, 0.11, 2.92, 0, '#2b2f36');
+    B(0.75, 0.08, 0.08, 0.38, 5.45, 0, '#8d939b');
+    const n = Math.max(1, Math.min(4, c.n || 1));
+    for (let k = 0; k < n; k++) { const zz = (k - (n - 1) / 2) * 0.26; B(0.34, 0.17, 0.17, 0.7, 5.3, zz, '#2b2f36'); B(0.04, 0.09, 0.09, 0.88, 5.3, zz, '#9fc3ff'); }
+    hideTreesNear(p.x, p.z, 1.2); spots.cctv.push([Math.round(p.x * 10) / 10, Math.round(p.z * 10) / 10]);
+    st.cctv++; st.cams += n; if (p.moved) st.moved++;
+  }
+  // 소화전(지상식): 빨간 몸통·뚜껑·옆 주둥이 둘
+  for (const h of O.hydrants || []) {
+    if (!inside(h.x, h.z, 2)) continue;
+    const p = toCurb(h.x, h.z); if (nearBuilding(p.x, p.z, 0.1)) continue; const y = GH(p.x, p.z);
+    cylPart(parts, 0.15, 0.13, 0.62, 0, y, 0, p.x, p.z, '#b8292a'); cylPart(parts, 0.17, 0.08, 0.12, 0, y + 0.62, 0, p.x, p.z, '#b8292a');
+    boxPart(parts, 0.42, 0.09, 0.09, 0, y + 0.42, 0, p.rot, p.x, p.z, '#9a2222');
+    hideTreesNear(p.x, p.z, 0.8); st.hydrants++; if (p.moved) st.moved++;
+  }
+  // 벤치: 나무 앉는 판·등판, 진회색 다리. 길을 보게
+  for (const b of O.benches || []) {
+    if (!inside(b.x, b.z, 2)) continue;
+    const p = toCurb(b.x, b.z); if (nearBuilding(p.x, p.z, 0.4)) continue;
+    const y = GH(p.x, p.z), B = (w, h, d, lx, ly, lz, col) => boxPart(parts, w, h, d, lx, ly + y, lz, p.rot + Math.PI / 2, p.x, p.z, col);
+    B(1.6, 0.06, 0.42, 0, 0.45, 0, '#a47b55'); B(1.6, 0.36, 0.05, 0, 0.72, 0.2, '#a47b55');
+    for (const lx of [-0.68, 0.68]) B(0.07, 0.45, 0.4, lx, 0.22, 0, '#4a5260');
+    hideTreesNear(p.x, p.z, 1.2); st.benches++; if (p.moved) st.moved++;
+  }
+  // 우체통: 빨간 상자 + 둥근 뚜껑 띠, 투입구는 길 쪽
+  for (const m of O.postboxes || []) {
+    if (!inside(m.x, m.z, 2)) continue;
+    const p = toCurb(m.x, m.z); if (nearBuilding(p.x, p.z, 0.2)) continue;
+    const y = GH(p.x, p.z), B = (w, h, d, lx, ly, lz, col) => boxPart(parts, w, h, d, lx, ly + y, lz, p.rot, p.x, p.z, col);
+    B(0.46, 1.0, 0.46, 0, 0.5, 0, '#c62828'); B(0.5, 0.08, 0.5, 0, 1.04, 0, '#a51f1f'); B(0.02, 0.05, 0.3, 0.24, 0.82, 0, '#2b2f36');
+    hideTreesNear(p.x, p.z, 0.8); st.postboxes++; if (p.moved) st.moved++;
+  }
+  addMerged(parts, 'decor-street-objs');
+  return st;
+}
+
 // 어린이보호구역 시설 이름표: 전국어린이보호구역표준데이터의 시설 위치(FACILITIES.schoolZones). 지정 범위 자료가 없어 바닥·울타리·표지판은 그리지 않는다
 function schoolLabels() {
   const Z = window.FACILITIES && window.FACILITIES.schoolZones, box = document.getElementById('labels');
@@ -568,9 +684,10 @@ function edgeLabels() {
 
 function afterLoad() {
   busStops();
+  try { stats.streetObjs = streetObjs(); } catch (e) { console.warn('decor 거리 시설', e); }
   try { stats.signals = realSignals(); } catch (e) { console.warn('decor 신호등', e); }
   try { stats.areaLabels = edgeLabels(); stats.schoolLabels = schoolLabels(); } catch (e) { console.warn('decor 이름표', e); }
-  if (window.__decor) { window.__decor.areaLabels = stats.areaLabels || 0; window.__decor.signals = stats.signals || null; window.__decor.schoolLabels = stats.schoolLabels || 0; }
+  if (window.__decor) { window.__decor.areaLabels = stats.areaLabels || 0; window.__decor.signals = stats.signals || null; window.__decor.streetObjs = stats.streetObjs || null; window.__decor.schoolLabels = stats.schoolLabels || 0; }
   if (M.renderer) M.renderer.shadowMap.needsUpdate = true;
   M.need && M.need();
 }

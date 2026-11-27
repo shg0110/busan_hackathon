@@ -64,24 +64,45 @@ const rngFrom = (a) => { const f = rng(0); f.s.a = a; return f; };
 function hash01(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0) / 4294967296; }
 
 // ── 길 그래프(도로 전부, 0.5m 로 이음, 20m 마다 쪼갬) ──────────────
-const NX = [], NZ = [], ADJ = [], KEY = new Map(), NWD = [];   // NWD: 노드에 닿은 길 중 가장 넓은 폭(m) — 사람이 길 가장자리·인도로 걷게
-function node(x, z) { const k = Math.round(x * 2) + ',' + Math.round(z * 2); let i = KEY.get(k);
-  if (i === undefined) { i = NX.length; KEY.set(k, i); NX.push(x); NZ.push(z); ADJ.push([]); NWD.push(0); } return i; }
+// 노드마다 그 노드를 지나는 길의 값을 만들 때 바로 붙인다(20m 마다 쪼갠 노드 포함 — 전엔 도로 꼭짓점에만 붙여 쪼갠 노드 위 사람이
+// 인도·분리대 판정을 못 받았음): NWD 가장 넓은 폭(m), NSWa 인도 있는 길이 지나나(r.sw), NRD 처음 지난 길 번호, NDX·NDZ 그 길 방향
+const NX = [], NZ = [], ADJ = [], KEY = new Map(), NWD = [], NSWa = [], NRD = [], NDX = [], NDZ = [];
+function node(x, z, r, ri, dx, dz) { const k = Math.round(x * 2) + ',' + Math.round(z * 2); let i = KEY.get(k);
+  if (i === undefined) { i = NX.length; KEY.set(k, i); NX.push(x); NZ.push(z); ADJ.push([]); NWD.push(0); NSWa.push(0); NRD.push(-1); NDX.push(0); NDZ.push(0); }
+  if (r) { NWD[i] = Math.max(NWD[i], r.w || 6); if (r.sw) NSWa[i] = 1; if (NRD[i] < 0) { NRD[i] = ri; NDX[i] = dx; NDZ[i] = dz; } }
+  return i; }
 function link(a, b) { if (a === b) return; const d = Math.hypot(NX[a] - NX[b], NZ[a] - NZ[b]); ADJ[a].push(b, d); ADJ[b].push(a, d); }
-for (const r of D.roads) {
+D.roads.forEach((r, ri) => {
   let prev = -1;
   for (let k = 0; k < r.p.length; k++) {
-    const [x, z] = r.p[k];
+    const [x, z] = r.p[k], q = r.p[k > 0 ? k - 1 : Math.min(1, r.p.length - 1)];
+    let dx = k > 0 ? x - q[0] : q[0] - x, dz = k > 0 ? z - q[1] : q[1] - z; const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
     if (k > 0) { const [px, pz] = r.p[k - 1], L = Math.hypot(x - px, z - pz), n = Math.ceil(L / 20);
-      for (let s = 1; s < n; s++) { const m = node(px + (x - px) * s / n, pz + (z - pz) * s / n); link(prev, m); prev = m; } }
-    const cur = node(x, z); if (prev >= 0) link(prev, cur); prev = cur;
+      for (let s = 1; s < n; s++) { const m = node(px + (x - px) * s / n, pz + (z - pz) * s / n, r, ri, dx, dz); link(prev, m); prev = m; } }
+    const cur = node(x, z, r, ri, dx, dz); if (prev >= 0) link(prev, cur); prev = cur;
   }
-}
-for (const r of D.roads) for (const [x, z] of r.p) { const i = KEY.get(Math.round(x * 2) + ',' + Math.round(z * 2)); if (i !== undefined) NWD[i] = Math.max(NWD[i], r.w || 6); }
+});
+const NSW = Uint8Array.from(NSWa);   // 노드를 지나는 길 중 인도 있는 길이 있나(r.sw)
 for (let i = 0; i < NWD.length; i++) if (!NWD[i]) { const A = ADJ[i]; let w = 0; for (let j = 0; j < A.length; j += 2) w = Math.max(w, NWD[A[j]]); NWD[i] = w || 6; }
+// 중앙분리 도로(같은 이름의 반대 방향 일방 도로 두 가닥이 나란히 — 예: 거제대로): 노드마다 '가운데 섬 쪽' 방향(MDX·MDZ)을 적어 두고
+// 그쪽으로는 걷지 않게 한다(바깥 인도 쪽으로만). 전엔 사람마다 아무 쪽이나 골라 절반이 두 가닥 사이 차도·분리대 위를 걸었음. 자료: OSM 도로(oneway·이름)
+const MDX = new Float32Array(NX.length), MDZ = new Float32Array(NX.length);
+{ const OW = D.roads.filter(r => r.ow && r.n && r.p.length > 1);
+  for (let i = 0; i < NX.length; i++) {
+    const r = NRD[i] >= 0 ? D.roads[NRD[i]] : null; if (!r || !r.ow || !r.n || r.p.length < 2) continue;
+    const x = NX[i], z = NZ[i], dx = NDX[i], dz = NDZ[i];
+    let best = 30, bx = 0, bz = 0;
+    for (const r2 of OW) { if (r2 === r || r2.n !== r.n) continue;
+      for (let k = 0; k < r2.p.length - 1; k++) { const p = r2.p[k], q = r2.p[k + 1], ex = q[0] - p[0], ez = q[1] - p[1], L2 = ex * ex + ez * ez; if (L2 < 0.01) continue;
+        if ((ex * dx + ez * dz) / Math.sqrt(L2) > -0.8) continue;   // 반대 방향 가닥만
+        const t = Math.max(0, Math.min(1, ((x - p[0]) * ex + (z - p[1]) * ez) / L2)), cx = p[0] + ex * t - x, cz = p[1] + ez * t - z, d = Math.hypot(cx, cz);
+        if (d > 2 && d < best && Math.abs(cx * dx + cz * dz) < d * 0.5) { best = d; bx = cx / d; bz = cz / d; } } }
+    if (best < 30) { MDX[i] = bx; MDZ[i] = bz; } } }
 // 길 가장자리 오프셋: 8m 이상 길은 인도의 빈 띠(가장자리 + 2.25m — 0.7 가로등·1.2 기둥·1.5 가로수 줄을 피해 건물 쪽, 바닥층 ground.js 기준),
 // 인도 없는 골목은 가장자리 안쪽 0.6m
-const sideOff = (w) => w >= 8 ? w / 2 + 2.25 : Math.max(0.6, w / 2 - 0.6);
+// 인도 있는 길(r.sw, seohogyun-31 roadcal.js — 바닥층이 인도·연석을 그리는 길과 같은 기준)이면 가장자리 + 2.25m 인도 위,
+// 없으면 가장자리 안쪽 0.6m. 전엔 폭 8m 이상을 인도로 봤는데 #117 로 옥포로가 7.5m(실측)가 되어 인도가 있는데도 차도 가장자리를 걸을 뻔했음
+const sideOff = (w, sw) => sw ? w / 2 + 2.25 : Math.max(0.6, w / 2 - 0.6);
 const NN = NX.length;
 // 가장 큰 연결 덩어리만 쓴다(떨어진 길 조각에 사람이 갇히지 않게)
 const comp = new Int32Array(NN).fill(-1); let bestC = 0, bestN = 0;
@@ -178,8 +199,22 @@ const AGENTS_MAX = PD ? Math.max(36000, Math.ceil(PD.n * 1.25)) : 2400;
 
 // 업종별 문 여는 시간(그 업종 가게 중 가장 이른 개점 ~ 가장 늦은 마감). 문 닫은 업종은 고르지 않는다
 // (예전엔 업종을 시각과 상관없이 뽑아 낮에 술집, 이른 아침에 식당으로 가서 평일 약 590건이 헛걸음이 됐다)
+// ── 시간 정하기(사용자가 바꿈): 재생 범위, 세부 업종·가게별 영업시간, 사람 부류별 외출 시각 ─────────
+// 기본 영업시간은 세부 업종마다 하나(가정 — 상가정보에 영업시간 항목이 없음). 바꾸면 저장점·흐름 캐시를 버리고 다시 계산한다.
+// TS.sub[세부업종] / TS.shop[가게 번호] = [여는 분, 닫는 분(다음 날이면 1440 넘음)], TS.seg[부류 번호] = 외출 시각 옮김(분), TS.ship = 조선소 출퇴근 옮김(평일)
+const SUB_DEF = {}; for (const x of MENU.subs) SUB_DEF[x.id] = [x.open, x.close];
+const TS = { p0: T0, p1: T1, sub: {}, shop: {}, seg: {}, ship: 0, ver: 0 };
+function hoursOf(sub, cat) { return (sub && (TS.sub[sub] || SUB_DEF[sub])) || [CFG.cats[cat].open, CFG.cats[cat].close]; }
+// 업종 수요가 있는 시간(CAT_WIN): 그 업종에 있는 세부 업종들의 '보통 영업시간'(시간 정하기의 업종 값 포함)을 합친 것.
+// 가게 하나의 영업시간(가게마다 바꾼 값·실험 가게의 내 시간)으로는 넓히지 않는다 — 호프 하나가 11시에 연다고 낮 술손님이 생기지 않음.
+// (예전엔 실험 가게 시간으로 넓혀, 11시에 여는 호프에 점심 손님이 몰려 하루 3명 → 161명이 됐음.) 기본 상태에서는 전과 같은 값
+function catWindows() { for (const k in CAT_WIN) delete CAT_WIN[k];
+  const seen = new Set();
+  for (const s of SHOPS) { const key = s.sub || '#' + s.c; if (seen.has(key)) continue; seen.add(key);
+    const h = hoursOf(s.sub, s.c), w = CAT_WIN[s.c] || (CAT_WIN[s.c] = [Infinity, -Infinity]); w[0] = Math.min(w[0], h[0]); w[1] = Math.max(w[1], h[1]); } }
+function applyHours() { for (const s of SHOPS) { const h = TS.shop[s.i] || hoursOf(s.sub, s.c); s.open = h[0]; s.close = h[1]; } catWindows(); }
 const CAT_WIN = {};
-for (const s of SHOPS) { const w = CAT_WIN[s.c] || (CAT_WIN[s.c] = [Infinity, -Infinity]); w[0] = Math.min(w[0], s.open); w[1] = Math.max(w[1], s.close); }
+catWindows();
 const catOpen = (c, t) => { const w = CAT_WIN[c]; return !!w && t + 5 >= w[0] && t + 5 < w[1] - 10; };
 function pickCatFromWeights(cw, cats, r, forbid, t) {
   let s = 0;
@@ -238,10 +273,11 @@ function makeDayFromPersona(rec, we, r) {
   const visitProb = we ? rec[9] : rec[8];
   const out = [];
   const drawStops = (t, allowMulti) => avgMode ? payStops(cw, cats, r, t, payVal / PU) : (r() * PU < payVal ? payStops(cw, cats, r, t, allowMulti && multi, multiP) : []);
+  const sh = (TS.seg[rec[1]] || 0) + (!we && shipGate ? TS.ship : 0);   // 시간 정하기: 부류 외출 시각 + 조선소 출퇴근 옮김(분)
 
   if (!we && shipGate) {
     const gate = GATES[Math.floor(r() * GATES.length)];
-    const tin = Math.round(405 + r() * 75);
+    const tin = Math.round(405 + r() * 75) + sh;
     const wdArr = rec[2];
     const visitToday = (r() * 100 < visitProb);
     const rTout = r();
@@ -250,23 +286,23 @@ function makeDayFromPersona(rec, we, r) {
       const t = Math.max(T0, tin - 25);
       const stops = drawStops(t, false);
       out.push({ t, from: baseNode, stops, to: gate.node, budget: stops.length ? rec[6] : 0 });
-      out.push({ t: Math.round(1025 + rTout * 95), from: gate.node, stops: [], to: baseNode, budget: 0 });
+      out.push({ t: Math.round(1025 + rTout * 95) + sh, from: gate.node, stops: [], to: baseNode, budget: 0 });
     } else if (visitToday && wdArr >= 660 && wdArr < 840) {
       // 극소수(2%) 점심 외출자(대부분은 한화오션 사내식당에서 식사)
-      const t = normSimMin(wdArr, r);
+      const t = normSimMin(wdArr + sh, r);
       const stops = drawStops(t, false);
       out.push({ t: Math.max(T0, tin - 20), from: baseNode, stops: [], to: gate.node, budget: 0 });
       out.push({ t, from: gate.node, stops, to: gate.node, budget: stops.length ? rec[6] : 0 });
-      out.push({ t: Math.round(1030 + rTout * 90), from: gate.node, stops: [], to: baseNode, budget: 0 });
+      out.push({ t: Math.round(1030 + rTout * 90) + sh, from: gate.node, stops: [], to: baseNode, budget: 0 });
     } else {
       // 아침 출근 → 사내 근무·점심 사내식당 → 저녁 퇴근 후 상권 경유(유료 방문 또는 무소비 거리 이동)
       out.push({ t: Math.max(T0, tin - 20), from: baseNode, stops: [], to: gate.node, budget: 0 });
       if (visitToday) {
-        const t = normSimMin(wdArr, r);
+        const t = normSimMin(wdArr + sh, r);
         const stops = drawStops(t, true);
         out.push({ t, from: gate.node, stops, to: baseNode, budget: stops.length ? rec[6] : 0 });
       } else {
-        out.push({ t: Math.round(1025 + rTout * 95), from: gate.node, stops: [], to: baseNode, budget: 0 });
+        out.push({ t: Math.round(1025 + rTout * 95) + sh, from: gate.node, stops: [], to: baseNode, budget: 0 });
       }
     }
     return out;
@@ -274,7 +310,7 @@ function makeDayFromPersona(rec, we, r) {
 
   if (r() * 100 >= visitProb) return null;
   const rSpot = r();
-  const arr = normSimMin(we ? rec[3] : rec[2], r);
+  const arr = normSimMin((we ? rec[3] : rec[2]) + sh, r);
   const stops = drawStops(arr, true);
   if (stops.length) {
     // 다중 방문(2곳 이상)은 첫 가게 출발을 약간 앞당겨 전체 결제의 중심 시각이 목표 시각(arr)에 맞도록 조정
@@ -551,40 +587,57 @@ const points = new THREE.Points(geo, ptsMat); points.renderOrder = 20; points.fr
 let drawDirty = true;   // 멈춰 있을 때도 시각을 옮기면 점을 다시 그려야 한다
 const DRAWN = []; let drawnN = 0;   // 화면에 그린 사람(점 번호 → 사람). 사람 누르기에 쓴다
 const drawHooks = [], uiHooks = [];   // 아래 '가상 시민 고르기' 구역이 붙는다(seek 이 먼저 불리므로 여기서 만들어 둠)
+let simT = T0, playing = false, speed = 15, lastNow = 0;   // syncDot(멀리 옅게)이 처음 불리기 전에 있어야 함
 const FIG_MAX = 4000, FIG_NEAR = 200, FIG_R = 420;
 function figMode() { return MP.camera.position.distanceTo(MP.controls.target) < FIG_NEAR; }
 // 2만 명 1:1이라 멀리서 8px 점이 길을 덮음 → 카메라 거리에 따라 크기(가까이 8 · 중간 5.5 · 멀리 3.5px)
 const dotPx = () => { const d = MP.camera.position.distanceTo(MP.controls.target); return d < 260 ? 6.5 : d < 620 ? 4.5 : 3.2; };
-let dotNow = 0, figNow = null; function syncDot() { const v = dotPx(); if (v !== dotNow) { dotNow = v; ptsMat.size = v * MP.renderer.getPixelRatio(); need(); }
+// 멀리(700m 넘게) 보고 재생 중이 아니면 사람 점을 옅게(크기 60%·불투명도 0.5) — 상권 전체에서 빈 층 주황이 점에 묻히지 않게, 재생하면 진하게(seohogyun-20 제안 C)
+const DIM_D = 700; let dimNow = null;
+function dimDots() { return MP.camera.position.distanceTo(MP.controls.target) > DIM_D && !playing; }
+let dotNow = 0, figNow = null; function syncDot() { const dim = dimDots(), v = dotPx() * (dim ? 0.6 : 1);
+  if (dim !== dimNow) { dimNow = dim; ptsMat.transparent = dim; ptsMat.opacity = dim ? 0.5 : 1; ptsMat.depthWrite = !dim; ptsMat.needsUpdate = true; need(); }
+  if (v !== dotNow) { dotNow = v; ptsMat.size = v * MP.renderer.getPixelRatio(); need(); }
   const f = figMode(); if (f !== figNow || f) { figNow = f; drawDirty = true; } }
 MP.controls.addEventListener('change', syncDot); syncDot();
 // 점은 화면에 서 있는 네모라 아래쪽 반이 앞의 연석(15cm)·낮은 물체에 가려 반달처럼 보임 → 깊이를 카메라 쪽으로 조금 당김(건물은 여전히 가림)
 ptsMat.onBeforeCompile = (sh) => { sh.vertexShader = sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n  gl_Position.z -= 0.0015 * gl_Position.w;'); };
 const GCOL = {}; for (const g of GROUPS) GCOL[g] = new THREE.Color(CFG.groups[g].col);
+// 사람마다 고정된 값: jit(±1.5, 부호 = 길 어느 쪽, 크기 = 인도 안 가로 자리), stg(±2m, 같은 길 같은 시각에 떠난 사람이 앞뒤로 어긋나게).
+// 그리기만 쓰는 값이라 시뮬레이션 결과는 그대로. 전엔 세계 좌표로 흔들어서 길 방향에 따라 앞뒤로만 흔들려 같이 떠난 사람이 한 자리에 겹쳤음(19시 0.45m 안 91쌍)
+// jit 은 사람을 만들 때 난수로 정해짐. stg 는 jit 에서 뽑는다(난수를 더 쓰면 뒤 순서가 바뀌어 시뮬레이션 결과가 달라짐)
+function pj(a) { if (a.jit == null) a.jit = (hash01(String(A.indexOf(a))) - 0.5) * 3; if (a.stg === undefined) a.stg = ((Math.abs(a.jit) * 7919.37) % 1 - 0.5) * 4; }
 function placeOnPath(a, t) {
-  const p = a.path; if (!p || p.length < 2) { a.x = NX[a.cur]; a.z = NZ[a.cur]; return; }
+  pj(a); const side = a.jit >= 0 ? 1 : -1, lat = (Math.abs(a.jit) / 1.5 - 0.5) * 1.0;
+  const p = a.path; if (!p || p.length < 2) {   // 출발지 = 도착지(길 없음): 도로 가운데가 아니라 그 쪽 인도에
+    const n = a.cur, o = side * (sideOff(NWD[n], NSW[n]) + lat); a.x = NX[n] + o * 0.7071; a.z = NZ[n] + o * 0.7071; return; }
   if (!a.pd) { a.pd = new Float32Array(p.length); for (let i = 1; i < p.length; i++) a.pd[i] = a.pd[i - 1] + Math.hypot(NX[p[i]] - NX[p[i - 1]], NZ[p[i]] - NZ[p[i - 1]]); }
-  const L = a.pd[p.length - 1], f = Math.min(1, Math.max(0, (t - a.t0) / (a.t1 - a.t0))), d = f * L;
+  const L = a.pd[p.length - 1], f = Math.min(1, Math.max(0, (t - a.t0) / (a.t1 - a.t0))), d = Math.min(L, Math.max(0, f * L + a.stg));
   let i = 1; while (i < p.length - 1 && a.pd[i] < d) i++;
   const seg = a.pd[i] - a.pd[i - 1] || 1, u = (d - a.pd[i - 1]) / seg, p0 = p[i - 1], p1 = p[i];
   const dx = NX[p1] - NX[p0], dz = NZ[p1] - NZ[p0], l = Math.hypot(dx, dz) || 1;
   // 길 방향에 수직인 쪽(방향과 무관하게 늘 같은 쪽을 가리키게)으로 사람마다 정한 쪽 인도·가장자리를 걷는다
   let nx = -dz / l, nz = dx / l; if (nx + nz * 0.001 < 0) { nx = -nx; nz = -nz; }
-  const off = (a.jit >= 0 ? 1 : -1) * sideOff(Math.min(NWD[p0], NWD[p1]));
+  let sd = side; const mi = MDX[p0] || MDZ[p0] ? p0 : p1;   // 중앙분리 도로면 가운데 섬 반대쪽(바깥 인도)으로
+  if ((MDX[mi] || MDZ[mi]) && (nx * MDX[mi] + nz * MDZ[mi]) * sd > 0.3) sd = -sd;
+  const off = sd * Math.max(0.3, sideOff(Math.min(NWD[p0], NWD[p1]), NSW[p0] && NSW[p1]) + lat);   // 두 끝이 다 인도 있는 길에 닿아야 인도
   a.x = NX[p0] + dx * u + nx * off; a.z = NZ[p0] + dz * u + nz * off;
 }
+let waitK = new Uint16Array(SHOPS.length);   // 그릴 때 가게마다 기다리는 사람 순번(줄 세우기). 실험으로 가게가 늘면 다시 만듦
 function draw(t) {
-  let n = 0;
+  let n = 0; if (waitK.length !== SHOPS.length) waitK = new Uint16Array(SHOPS.length); else waitK.fill(0);
   for (let i = 0; i < ACTIVE.length && n < AGENTS_MAX; i++) {
     const a = ACTIVE[i];
     if (a.st !== 1 && a.st !== 3) continue;
     // 같은 길 위 사람이 한 줄로 겹치지 않게 사람마다 조금 옆으로(사람마다 고정된 값)
-    const j = (a.jit ?? (a.jit = (hash01(String(A.indexOf(a))) - 0.5) * 3));
+    pj(a);
     // 자리 기다리는 사람은 가게 앞 고정 자리(예전엔 그릴 때마다 난수를 써서 점이 떨리고, 그 난수 때문에 재생 결과가 화면 속도에 따라 달라졌음)
     // 자리 기다리는 사람: 가게 쪽 인도(길 노드에서 가게 방향으로 길 가장자리 + 1.2m)
-    if (a.st === 1) placeOnPath(a, t); else { const s = SHOPS[a.shop], n = s.node, vx = s.x - NX[n], vz = s.z - NZ[n], vl = Math.hypot(vx, vz) || 1, o = sideOff(NWD[n]);
-      a.x = NX[n] + vx / vl * o + j * 0.4; a.z = NZ[n] + vz / vl * o + (hash01('w' + j) - 0.5) * 1.2; }
-    pos[n * 3] = a.x + j * 0.25; pos[n * 3 + 1] = 1.2 + MP.hAt(a.x, a.z); pos[n * 3 + 2] = a.z - j * 0.15;   // 같은 쪽 인도 안에서 사람끼리 조금씩 어긋나게
+    // 기다리는 사람: 가게 쪽 인도에 길 방향으로 0.8m 간격 줄(가운데부터 양옆으로), 12명마다 한 줄 뒤로. 전엔 한 점 0.6m 안에 몰려 사람 모양이 겹쳤음
+    if (a.st === 1) placeOnPath(a, t); else { const s = SHOPS[a.shop], n = s.node, vx = s.x - NX[n], vz = s.z - NZ[n], vl = Math.hypot(vx, vz) || 1, o = sideOff(NWD[n], NSW[n]);
+      const ux = vx / vl, uz = vz / vl, k = waitK[a.shop]++, kk = k % 12, along = ((kk + 1) >> 1) * (kk & 1 ? 0.8 : -0.8), back = o + Math.floor(k / 12) * 0.7;
+      a.x = NX[n] + ux * back - uz * along; a.z = NZ[n] + uz * back + ux * along; }
+    pos[n * 3] = a.x; pos[n * 3 + 1] = 1.2 + MP.hAt(a.x, a.z); pos[n * 3 + 2] = a.z;   // 어긋나게 하기는 placeOnPath(가로·앞뒤)와 기다리는 줄에서
     const c = GCOL[a.g]; col[n * 3] = c.r; col[n * 3 + 1] = c.g; col[n * 3 + 2] = c.b; DRAWN[n] = a; n++;
   }
   drawnN = n; for (const f of drawHooks) f(t);
@@ -593,19 +646,24 @@ function draw(t) {
   return n;
 }
 // 가까이(카메라 200m 안) 보면 점 대신 작은 사람 모양(몸통 원기둥 + 머리 공, 부류 색). 화면 가운데 420m 안의 사람만, 최대 4,000명
-const figGeo = (() => { const body = new THREE.CylinderGeometry(0.22, 0.3, 1.15, 8); body.translate(0, 0.63, 0);
-  const head = new THREE.SphereGeometry(0.2, 10, 8); head.translate(0, 1.45, 0);
-  const g = THREE.BufferGeometryUtils.mergeBufferGeometries([body, head]); g.scale(2.1, 2.1, 2.1); return g; })();   // 실제보다 크게(약 3.5m) — 지도 높이에서 사람으로 읽히게
+// 실제 사람 비율(키 1.7m, 어깨 폭 약 0.45m, 머리 지름 0.24m — seohogyun-20 지적: 전엔 몸통 0.7m 로 볼링 핀 같았음).
+// 크기는 그릴 때 카메라 거리로: 60m 안은 실제 크기, 멀수록 키워 200m 에서 약 2.3배(지도 높이에서도 사람으로 읽히게)
+const figGeo = (() => { const body = new THREE.CylinderGeometry(0.2, 0.13, 0.95, 10); body.translate(0, 0.9, 0);   // 어깨 → 허리
+  const legs = new THREE.CylinderGeometry(0.13, 0.09, 0.45, 8); legs.translate(0, 0.225, 0);
+  const head = new THREE.SphereGeometry(0.12, 12, 10); head.translate(0, 1.55, 0);
+  return THREE.BufferGeometryUtils.mergeBufferGeometries([body, legs, head]); })();
 const figMesh = new THREE.InstancedMesh(figGeo, new THREE.MeshLambertMaterial({ color: '#ffffff' }), FIG_MAX);
 figMesh.count = 0; figMesh.frustumCulled = false; figMesh.renderOrder = 20; figMesh.visible = false; scene.add(figMesh);
 const _fm = new THREE.Matrix4(), _fc = new THREE.Color();
 function drawFigures(n) {
   const on = figMode(); figMesh.visible = on; points.material.visible = !on;
   if (!on) return;
-  const tx = MP.controls.target.x, tz = MP.controls.target.z; let k = 0;
+  const tx = MP.controls.target.x, tz = MP.controls.target.z, d = MP.camera.position.distanceTo(MP.controls.target);
+  const sc = Math.max(1, Math.min(2.3, d / 60)); let k = 0;
   for (let i = 0; i < n && k < FIG_MAX; i++) {
     const x = pos[i * 3], z = pos[i * 3 + 2]; if (Math.abs(x - tx) > FIG_R || Math.abs(z - tz) > FIG_R) continue;
-    _fm.makeTranslation(x, pos[i * 3 + 1] - 1.2, z); figMesh.setMatrixAt(k, _fm); figMesh.setColorAt(k, _fc.setRGB(col[i * 3], col[i * 3 + 1], col[i * 3 + 2])); k++;
+    _fm.makeScale(sc, sc, sc).setPosition(x, pos[i * 3 + 1] - 1.2 + MP.GL * 0.8, z);   // 발이 바닥층(땅 위 0.2m) 위에
+    figMesh.setMatrixAt(k, _fm); figMesh.setColorAt(k, _fc.setRGB(col[i * 3], col[i * 3 + 1], col[i * 3 + 2])); k++;
   }
   figMesh.count = k; figMesh.instanceMatrix.needsUpdate = true; if (figMesh.instanceColor) figMesh.instanceColor.needsUpdate = true;
 }
@@ -634,12 +692,14 @@ panel.innerHTML = `
   </div>
   <div class="sim-body">
     <input id="sim-range" type="range" min="${T0}" max="${T1}" step="1" value="${T0}" aria-label="시각">
-    <div class="sim-ticks"><span>05시</span><span>12시</span><span>18시</span><span>24시</span><span>02시</span></div>
+    <div class="sim-ticks" id="sim-ticks"></div>
     <div class="sim-legend" id="sim-legend"></div>
     <div class="sim-stats" id="sim-stats"></div>
     <div class="sim-top" id="sim-top" aria-live="off"></div>
     <p class="sim-note" id="sim-note"></p>
-    <details class="sim-src"><summary>자료와 가정 보기</summary><div id="sim-src"></div></details>
+    <p class="ts-chip" id="ts-chip" hidden></p>
+    <button type="button" class="btn-sub" id="ts-open">시간 정하기 <span>재생 범위 · 영업시간 · 외출 시각</span></button>
+    <details class="sim-src" id="sim-src-d"><summary>자료와 가정 보기</summary><div id="sim-src"></div></details>
     <button class="tour sim-tour btn-main" id="sim-tour">빈 층에 가게 열어 보기</button>
   </div>`;
 document.body.appendChild(panel);
@@ -657,7 +717,7 @@ const assumed = GROUPS.filter(g => CFG.groups[g].src === '가정' || /가정/.te
   $('sim-src').innerHTML = `<ul>
     ${PD ? li(`가상 시민 ${PD.n.toLocaleString('ko-KR')}명(1:1, v${PD.version})`, GROUPS.map(g => `${CFG.groups[g].ko} ${(pdG[g] || 0).toLocaleString('ko-KR')}명`).join(' · ') + ' — data/processed/personas (tools/build_personas.py). 주말 인원은 구분별 주말 배율로 늘고 줄어듦')
       : GROUPS.map(g => li(CFG.groups[g].ko + ` (평일 ${CFG.groups[g].wd.toLocaleString('ko-KR')}명·주말 ${CFG.groups[g].we.toLocaleString('ko-KR')}명)`, CFG.groups[g].src)).join('')}
-    ${CFG.scale ? li('규모 맞춤(모든 부류 × ' + CFG.scale.v + ')', CFG.scale.src) : li('규모 비교', '상권 안 하루 가게 방문(가상) 약 5,500건 ↔ 옥포1동 상권 카드 거래 환산 약 3,900건(경남빅데이터허브 2026년 9월, 카드 전체 추정 × 시뮬레이션 업종 비율). 같은 규모라 따로 맞추지 않음(행정동과 상권 경계가 달라서)')}
+    ${CFG.scale ? li('규모 맞춤(모든 부류 × ' + CFG.scale.v + ')', CFG.scale.src) : '<li><b>규모 비교(가상 ↔ 실제 카드)</b> <span id="scale-cmp">이 칸을 열 때 계산합니다.</span></li>'}
     ${li('교대 시간', `출근 ${sh(CFG.shift.in[0])}~${sh(CFG.shift.in[1])}, 퇴근 ${sh(CFG.shift.out[0])}~${sh(CFG.shift.out[1])} — ${CFG.shift_src || CFG.shift.src || '가정'}`)}
     ${CFG.foreignDaily ? li('외국인 하루 쓸 돈', CFG.foreignDaily.src) : ''}
     ${li('세부 업종별 1인 지출(대표 메뉴 × 1인 수량)', MENU.subs.map(x => `${x.ko} ${x.basket.toLocaleString('ko-KR')}원(근거 ${x.confirmed[0]}/${x.confirmed[1]})`).join(' · '))}
@@ -669,10 +729,10 @@ const assumed = GROUPS.filter(g => CFG.groups[g].src === '가정' || /가정/.te
     ${li('조선소 쪽 입구', 'OSM 조선소 서쪽 경계 차단기(34.88789, 128.69100), 문별 출퇴근 인원 미확인')}
     ${li('가게', `소상공인시장진흥공단 상가정보 2026-09 영업 중 가게 ${SHOPS.length.toLocaleString('ko-KR')}곳, 소분류로 세부 업종 ${MENU.subs.length}개에 나눔`)}
     ${li('업종 고르는 비율·머무는 시간·자리 수·걷는 속도', '가정(근거 자료 없음)')}
+    ${li('영업시간', '세부 업종마다 하나씩 정한 가정 값(상가정보에 영업시간 항목이 없음). 시간 정하기에서 업종·가게마다 바꿀 수 있음')}
   </ul><p>근거: docs/okpo-persona-sources.md</p>`;
 }
 $('sim-note').textContent = `가상 인물 ${' '}점 1개 = 사람 약 ${'{W}'}명. ` + (assumed ? '사람 수·교대 시간은 아직 근거 확인 전 가정 값입니다.' : '');
-let simT = T0, playing = false, speed = 15, lastNow = 0;
 // 재생 막대 옮기기: 예전엔 매번 05시부터 다시 계산(18시 0.3초·새벽 1시 0.5초). 이제
 //  - 앞으로 옮기면 지금 상태에서 이어서 계산
 //  - 뒤로 옮기면 1시간마다 저장해 둔 상태 중 가장 가까운 것에서 이어서 계산
@@ -702,13 +762,13 @@ function copyKeys(o) { const c = {}; for (const k in o) c[k] = o[k].slice(); ret
 // 2시간마다 저장(사람 2만 명이라 저장점 1개가 약 6MB — 1시간마다면 60MB)
 function keep(s) { if (s % 120 === 0 && CK.key === liveKey && !CK.m.has(s) && SHOP_ST.length === SHOPS.length) CK.m.set(s, snap(s)); }
 function seek(t) {
-  const key = scen;
+  const key = scen + ':' + TS.ver;   // 시간 설정이 바뀌면 저장점을 새로
   if (CK.key !== key) { CK.key = key; CK.m.clear(); }
   let from;
   if (liveKey === key && A.length && t >= simT) from = Math.floor(simT);
   else {
     let best = -1; for (const m of CK.m.keys()) if (m <= t && m > best) best = m;
-    if (best >= 0) { restoreSnap(CK.m.get(best)); from = best; } else { reset(key === 'we', 0); from = T0 - 1; }
+    if (best >= 0) { restoreSnap(CK.m.get(best)); from = best; } else { reset(scen === 'we', 0); from = T0 - 1; }
     liveKey = key;
   }
   for (let s = from + 1; s <= t; s++) { step(s, true); keep(s); }
@@ -735,8 +795,8 @@ function ui() {
   for (const f of uiHooks) f();
   need();
 }
-function playBtn() { $('sim-play').innerHTML = playing ? '<span class="ico">❚❚</span> 멈추기' : '<span class="ico">▶</span> 하루 돌려 보기'; $('sim-play').classList.toggle('on', playing); }
-$('sim-play').onclick = () => { playing = !playing; playBtn(); if (playing && simT >= T1) seek(T0); };
+function playBtn() { syncDot(); document.dispatchEvent(new CustomEvent('sim-play', { detail: { playing } })); $('sim-play').innerHTML = playing ? '<span class="ico">❚❚</span> 멈추기' : '<span class="ico">▶</span> 하루 돌려 보기'; $('sim-play').classList.toggle('on', playing); }
+$('sim-play').onclick = () => { playing = !playing; playBtn(); if (playing && (simT >= TS.p1 || simT < TS.p0)) seek(TS.p0); };
 $('sim-range').oninput = (e) => seek(+e.target.value);
 $('sim-day').querySelectorAll('button').forEach(b => b.onclick = () => {
   $('sim-day').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); scen = b.dataset.s; seek(simT);
@@ -765,20 +825,142 @@ $('sim-fold').onclick = () => { const f = panel.classList.toggle('folded'); $('s
 panel.classList.add('folded'); $('sim-fold').setAttribute('aria-label', '펴기');   // 처음엔 접어 둠(지도 가운데 아래를 가리지 않게). 주 버튼은 기록지에
 $('sim-tour').onclick = () => { if (window.__floors) window.__floors.nextTour(); setTimeout(() => { const e = document.getElementById('exp'); if (e) e.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, 750); };
 
+// ── 시간 정하기 창 ─────────────────────────────────────────
+// 재생 범위(계산은 늘 05:00부터 — 범위 앞에 나온 사람도 그대로 있음), 세부 업종 영업시간, 가게마다 영업시간, 부류별 외출 시각·조선소 출퇴근 옮기기
+const SEG_KO = { resident: '옥포1동 주민', foreign_resident: '옥포 거주 외국인', okpo1_worker: '옥포1동 상권·사업체 근무자', stayer: '시외 체류·숙소형 유입',
+  commuter: '시외 주간 유입(통근·출장)', geoje_visitor: '거제 다른 동 방문객', tourist: '관광객' };
+const tLabel = (m) => { const d = m >= 1440, h = Math.floor((m % 1440) / 60), mm = m % 60; return `${d ? '다음 날 ' : ''}${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`; };
+const tOpts = (from, to, sel) => { let o = ''; for (let m = from; m <= to; m += 30) o += `<option value="${m}"${m === sel ? ' selected' : ''}>${tLabel(m)}</option>`; return o; };
+const shOpts = (sel) => { let o = ''; for (let m = -180; m <= 180; m += 30) o += `<option value="${m}"${m === sel ? ' selected' : ''}>${m === 0 ? '그대로' : (m > 0 ? '+' : '−') + (Math.abs(m) >= 60 ? Math.floor(Math.abs(m) / 60) + '시간' : '') + (Math.abs(m) % 60 ? ' ' + Math.abs(m) % 60 + '분' : '')}${m > 0 ? ' 늦게' : m < 0 ? ' 일찍' : ''}</option>`; return o; };
+const tsDefault = () => ({ p0: T0, p1: T1, sub: {}, shop: {}, seg: {}, ship: 0 });
+const tsClone = (o) => ({ p0: o.p0, p1: o.p1, sub: { ...o.sub }, shop: { ...o.shop }, seg: { ...o.seg }, ship: o.ship });
+function tsChanged(o) { return o.p0 !== T0 || o.p1 !== T1 || o.ship || Object.keys(o.sub).length || Object.keys(o.shop).length || Object.values(o.seg).some(v => v); }
+function ticks() {   // 눈금을 실제 시각 자리에(같은 간격으로 늘어놓으면 05·12·18·24·02시가 제자리에 오지 않음)
+  const el = $('sim-ticks'), span = TS.p1 - TS.p0, step = span > 720 ? 240 : span > 360 ? 120 : 60;
+  const lab = (m) => { const hh = String(Math.floor((m % 1440) / 60)).padStart(2, '0'), mm = m % 60; return mm ? `${hh}:${String(mm).padStart(2, '0')}` : `${hh}시`; };
+  // 양 끝(범위 처음·끝)은 늘 보이게, 가운데는 정각 눈금(끝과 너무 가까우면 뺌) — seohogyun-20 제안
+  let h = `<span style="position:absolute;left:0">${lab(TS.p0)}</span><span style="position:absolute;right:0">${lab(TS.p1)}</span>`;
+  for (let m = Math.ceil(TS.p0 / step) * step; m <= TS.p1; m += step) { const f = (m - TS.p0) / span; if (f < 0.08 || f > 0.92) continue;
+    h += `<span style="position:absolute;left:${(f * 100).toFixed(2)}%;transform:translateX(-50%)">${lab(m)}</span>`; }
+  el.style.position = 'relative'; el.style.height = '16px'; el.innerHTML = h;
+}
+ticks();
+let tsDraft = null;
+const dlg = document.createElement('dialog'); dlg.id = 'ts-dlg'; dlg.className = 'ts-dlg'; document.body.appendChild(dlg);
+function tsRender() {
+  const D = tsDraft, segCount = {}; let nShip = 0; if (PD) for (const r of PD.p) { segCount[r[1]] = (segCount[r[1]] || 0) + 1; if (r[11] & 1) nShip++; }
+  const nSub = {}; for (const x of SHOPS) if (!x.virtual && x.sub) nSub[x.sub] = (nSub[x.sub] || 0) + 1;
+  const segs = PD ? (PD.segments || []) : [];
+  dlg.innerHTML = `<form method="dialog" class="ts">
+    <header class="ts-hd"><h2>시간 정하기</h2><button type="button" class="ts-x" id="ts-close" aria-label="닫기">×</button></header>
+    <div class="ts-body">
+    <section><h3>하루 재생 범위</h3>
+      <p class="ts-note">재생 막대가 이 사이만 움직입니다. 계산은 늘 05:00부터라 범위 앞에 나온 사람도 그대로 있습니다. 하루 합계는 05:00~다음 날 02:00 전체입니다.</p>
+      <div class="ts-row"><label>시작 <select id="ts-p0">${tOpts(T0, 1200, D.p0)}</select></label><span class="ts-dash">~</span><label>끝 <select id="ts-p1">${tOpts(720, T1, D.p1)}</select></label></div></section>
+    <section><h3>업종별 영업시간</h3>
+      <p class="ts-note">기본값은 업종마다 흔한 영업시간을 가정한 값입니다(상가정보에 영업시간 자료가 없음). 바꾸면 그 업종 가게 전부에 적용됩니다.</p>
+      <table class="ts-tb"><thead><tr><th>업종</th><th>가게</th><th>여는 시각</th><th>닫는 시각</th><th></th></tr></thead><tbody>
+      ${MENU.subs.map(x => { const h = D.sub[x.id] || SUB_DEF[x.id], ch = !!D.sub[x.id];
+        return `<tr data-sub="${x.id}" class="${ch ? 'ch' : ''}"><td>${esc(x.ko)}</td><td class="n">${(nSub[x.id] || 0).toLocaleString('ko-KR')}</td>
+          <td><select data-k="o">${tOpts(0, 1380, h[0])}</select></td><td><select data-k="c">${tOpts(360, T1, h[1])}</select></td>
+          <td>${ch ? '<button type="button" class="ts-undo" data-undo-sub="' + x.id + '">기본값</button>' : ''}</td></tr>`; }).join('')}
+      </tbody></table></section>
+    <section><h3>가게마다</h3>
+      <p class="ts-note">가게 이름으로 찾아 그 가게만 바꿉니다. 업종 값보다 먼저 적용됩니다.</p>
+      <input type="search" id="ts-q" class="ts-q" placeholder="가게 이름 (예: 피자헛)" autocomplete="off">
+      <ul class="ts-shops" id="ts-shops"></ul></section>
+    <section><h3>사람 부류별 외출 시각</h3>
+      <p class="ts-note">사람 ${PD ? PD.p.length.toLocaleString('ko-KR') : ''}명 각자의 외출 시각은 페르소나 자료(근무 시간, 조선소 08~17시 등)에서 정해져 사람마다 다릅니다. 여기서는 부류 전체를 앞뒤로 옮깁니다.</p>
+      <table class="ts-tb"><tbody>
+      ${segs.map((k, i) => `<tr data-seg="${i}"><td>${esc(SEG_KO[k] || k)}</td><td class="n">${(segCount[i] || 0).toLocaleString('ko-KR')}명</td><td colspan="3"><select data-k="seg">${shOpts(D.seg[i] || 0)}</select></td></tr>`).join('')}
+      <tr data-ship="1"><td>조선소 출퇴근(평일, 조선소 문을 지나는 사람)</td><td class="n">${nShip.toLocaleString('ko-KR')}명</td><td colspan="3"><select data-k="ship">${shOpts(D.ship)}</select></td></tr>
+      </tbody></table></section>
+    </div>
+    <footer class="ts-ft"><button type="button" class="btn-sub ts-reset" id="ts-reset">모두 기본값으로</button><button type="button" class="btn-primary" id="ts-apply">적용하고 다시 계산</button></footer>
+  </form>`;
+  tsShops();
+}
+function tsShops() {
+  const q = ($('ts-q') && $('ts-q').value || '').trim(), ul = $('ts-shops'), D = tsDraft; if (!ul) return;
+  const edited = Object.keys(D.shop).map(Number), list = [];
+  for (const i of edited) list.push(SHOPS[i]);
+  if (q) for (const x of SHOPS) { if (list.length >= 30) break; if (!x.virtual && x.n.includes(q) && !D.shop[x.i]) list.push(x); }
+  ul.innerHTML = list.length ? list.map(x => { const h = D.shop[x.i] || D.sub[x.sub] || hoursOf(x.sub, x.c), ch = !!D.shop[x.i];
+    return `<li data-shop="${x.i}" class="${ch ? 'ch' : ''}"><div><b>${esc(x.n)}</b><span>${esc(SUB[x.sub] ? SUB[x.sub].ko : CFG.cats[x.c].ko)}${x.f ? ' · ' + x.f + '층' : ''}</span></div>
+      <select data-k="o" aria-label="여는 시각">${tOpts(0, 1380, h[0])}</select><select data-k="c" aria-label="닫는 시각">${tOpts(360, T1, h[1])}</select>
+      ${ch ? '<button type="button" class="ts-undo" data-undo-shop="' + x.i + '">기본값</button>' : '<span class="ts-undo-sp"></span>'}</li>`; }).join('')
+    : `<li class="ts-empty">${q ? '찾는 가게가 없습니다.' : '바꾼 가게가 없습니다. 위 칸에 이름을 넣으세요.'}</li>`;
+}
+function tsOpen() { tsDraft = tsClone(TS); tsRender(); dlg.showModal(); }
+$('ts-open').onclick = tsOpen;
+dlg.addEventListener('input', (e) => { if (e.target.id === 'ts-q') tsShops(); });
+dlg.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); dlg.close(); } });   // 찾기 칸에 글자가 있어도 Esc 한 번에 닫기
+dlg.addEventListener('change', (e) => {
+  const t = e.target, D = tsDraft; if (t.tagName !== 'SELECT') return;
+  if (t.id === 'ts-p0') D.p0 = +t.value; else if (t.id === 'ts-p1') D.p1 = +t.value;
+  else if (t.dataset.k === 'seg') D.seg[t.closest('tr').dataset.seg] = +t.value;
+  else if (t.dataset.k === 'ship') D.ship = +t.value;
+  else { const tr = t.closest('[data-sub],[data-shop]'), row = [...tr.querySelectorAll('select')].map(x => +x.value);
+    if (tr.dataset.sub) { const d = SUB_DEF[tr.dataset.sub]; if (row[0] === d[0] && row[1] === d[1]) delete D.sub[tr.dataset.sub]; else D.sub[tr.dataset.sub] = row; tsRender(); }
+    else { D.shop[tr.dataset.shop] = row; tsShops(); } }
+});
+dlg.addEventListener('click', (e) => {
+  const t = e.target, D = tsDraft;
+  if (t.id === 'ts-close') dlg.close();
+  else if (t.dataset.undoSub) { delete D.sub[t.dataset.undoSub]; tsRender(); }
+  else if (t.dataset.undoShop) { delete D.shop[t.dataset.undoShop]; tsShops(); }
+  else if (t.id === 'ts-reset') { tsDraft = tsDefault(); tsRender(); }
+  else if (t.id === 'ts-apply') {
+    if (tsDraft.p1 - tsDraft.p0 < 120) { alert('재생 범위는 2시간 이상이어야 합니다.'); return; }
+    for (const k in tsDraft.shop) { const h = tsDraft.shop[k]; if (h[1] <= h[0]) h[1] += 1440; }   // 닫는 시각이 여는 시각보다 이르면 다음 날
+    for (const k in tsDraft.sub) { const h = tsDraft.sub[k]; if (h[1] <= h[0]) h[1] += 1440; }
+    dlg.close(); applyTS(tsDraft);
+  }
+  else if (t === dlg) dlg.close();   // 바깥(어두운 바탕)을 누르면 닫기
+});
+function applyTS(D) {
+  Object.assign(TS, tsClone(D)); TS.ver++;
+  applyHours();
+  CK.m.clear(); CK.key = null; liveKey = null; for (const k in NODEFLOW) delete NODEFLOW[k];
+  const R = $('sim-range'); R.min = TS.p0; R.max = TS.p1; ticks();
+  playing = false; playBtn();
+  seek(Math.max(TS.p0, Math.min(TS.p1, simT)));
+  const n = Object.keys(TS.sub).length, m = Object.keys(TS.shop).length, g = Object.values(TS.seg).filter(v => v).length + (TS.ship ? 1 : 0);
+  const chip = $('ts-chip'), on = tsChanged(TS);
+  chip.hidden = !on;
+  if (on) chip.innerHTML = `바꾼 시간: ${[TS.p0 !== T0 || TS.p1 !== T1 ? `재생 ${tLabel(TS.p0)}~${tLabel(TS.p1)}` : '', n ? `업종 ${n}개` : '', m ? `가게 ${m}곳` : '', g ? `외출 시각 ${g}개 부류` : ''].filter(Boolean).join(' · ')} <button type="button" id="ts-chip-reset">기본값으로</button>`;
+  document.dispatchEvent(new CustomEvent('sim-config', { detail: { ver: TS.ver } }));
+}
+document.addEventListener('click', (e) => { if (e.target.id === 'ts-chip-reset') applyTS(tsDefault()); });
+
+// 규모 비교: 가상 하루(평일·주말, 지금 시간 설정 기준)와 옥포1동 카드 매출(경남빅데이터허브 주요상권, NH카드 점유율 보정 추정, 2026-09)
+$('sim-src-d').addEventListener('toggle', () => {
+  const el = $('scale-cmp'); if (!$('sim-src-d').open || !el) return;
+  const day = (we) => { const st = runDay(we, 0); let v = 0, w = 0; for (let i = 0; i < st.visits.length; i++) { v += st.visits[i]; w += st.spend[i]; } return [v, w]; };
+  const [wv, ww] = day(false), [ev, ew] = day(true); drawDirty = true; need();
+  const man = (x) => Math.round(x / 1e4).toLocaleString('ko-KR') + '만 원';
+  const per = wv / SHOPS.filter(x => !x.virtual).length;
+  el.innerHTML = `가상: 하루 가게 방문 평일 ${Math.round(wv).toLocaleString('ko-KR')}명·${man(ww)}, 주말 ${Math.round(ev).toLocaleString('ko-KR')}명·${man(ew)}. 지도 안 가게 ${SHOPS.filter(x => !x.virtual).length.toLocaleString('ko-KR')}곳이라 가게당 평일 약 ${per.toFixed(1)}명. ` +
+    `실제(경남빅데이터허브 소비동향, 카드 점유율 보정 추정, 2026-09): 옥포1동 52.66억·옥포2동 67.24억 원, 옥포1동은 약 17.7만 건(건당 약 3만 원). 하루로 나누면 두 동 약 4억 원, 건당 3만 원이면 약 1.3만 건. ` +
+    `가상 매출은 그 약 ${Math.round(100 * ww / 4e8)}%입니다. 두 동 상가정보 1,714곳 중 가상으로 돌리는 가게가 ${SHOPS.filter(x => !x.virtual).length.toLocaleString('ko-KR')}곳(${Math.round(100 * SHOPS.filter(x => !x.virtual).length / 1714)}%)이라 실제를 그만큼 줄여 견줘도 약 ${Math.round(100 * ww / (4e8 * SHOPS.filter(x => !x.virtual).length / 1714))}%입니다. ` +
+    `카드 1건은 여럿이 낸 값일 수 있고 현금은 빠졌지만, 가상 손님 수나 1인 지출이 실제보다 작게 잡혀 있을 가능성이 큽니다. ` +
+    `그래서 '가게 열어 보기'는 손님 수 자체보다 같은 업종 기존 가게들 가운데 순위로 보세요.`;
+});
+
 function tick(now) {
   requestAnimationFrame(tick);
   if (!lastNow) lastNow = now; const dt = Math.min(0.1, (now - lastNow) / 1000); lastNow = now;
   if (playing) {
-    const to = Math.min(T1, simT + speed * dt);
+    const to = Math.min(TS.p1, simT + speed * dt);
     for (let s = Math.floor(simT) + 1; s <= Math.floor(to); s++) { step(s, true); keep(s); }
-    simT = to; if (simT >= T1) { playing = false; playBtn(); }
+    simT = to; if (simT >= TS.p1) { playing = false; playBtn(); }
     ui();
   }
   if (playing || drawDirty) { const n = draw(simT); points.visible = n > 0; drawDirty = false; need(); }
 }
 seek(Q('simt') ? parseT(Q('simt')) : 14 * 60);   // 첫 화면은 낮 14시(빈 층 주황이 또렷하게). 밤은 '하루 돌려 보기'로 넘어가며 보임
 function Q(k) { return new URLSearchParams(location.search).get(k); }
-function parseT(s) { const [h, m] = s.split(':').map(Number); return Math.max(T0, Math.min(T1, h * 60 + (m || 0) + (h < 5 ? 1440 : 0))); }
+function parseT(s) { const [h, m] = s.split(':').map(Number); return Math.max(TS.p0, Math.min(TS.p1, h * 60 + (m || 0) + (h < 5 ? 1440 : 0))); }
 requestAnimationFrame(tick);
 
 // ── 빈 층에 가게 열어 보기 ───────────────────────────────────
@@ -787,27 +969,29 @@ const RUNS = 5;
 // 실험 업종 목록: 큰 업종(기획 비교 순서: 다국적 → 주점 → 식사 → 카페 → 장보기 → 생활) 아래 세부 업종
 const EXP_ORDER = ['intl', 'pub', 'meal', 'cafe', 'mart', 'life'].filter(c => SUBS_OF[c] && SUBS_OF[c].length);
 const subOptions = (sel) => EXP_ORDER.map(c => `<optgroup label="${esc(CFG.cats[c].ko)}">${SUBS_OF[c].map(x => `<option value="${x.id}"${x.id === sel ? ' selected' : ''}>${esc(x.ko)}${SD.counts && SD.counts.by_sub && !SD.counts.by_sub[x.id] ? ' (옥포에 없음)' : ''}</option>`).join('')}</optgroup>`).join('');
-function addVirtual(bi, floor, sub, price, seats) {
-  const sb = SUB[sub], cat = sb.cat;
+// hrs = [여는 분, 닫는 분(다음 날이면 1440 넘음)] — 사용자가 정한 '내 가게' 영업시간. 없으면 업종 값
+function addVirtual(bi, floor, sub, price, seats, hrs) {
+  const sb = SUB[sub], cat = sb.cat, H = hrs || hoursOf(sub, cat);
   const b = MP.buildings[bi]; let cx = 0, cz = 0; for (const p of b.p) { cx += p[0]; cz += p[1]; } cx /= b.p.length; cz /= b.p.length;
   const s = { i: SHOPS.length, n: '새 가게(실험)', c: cat, sub, cs: '', x: cx, z: cz, b: bi, f: floor, node: nearest(cx, cz), ref: sb.basket,
-    price, seats, open: sb.open, close: sb.close, stay: sb.stay, attract: 1.0 * (floor >= 2 ? CFG.upperFloor : 1), virtual: true };
+    price, seats, open: H[0], close: H[1], stay: sb.stay, attract: 1.0 * (floor >= 2 ? CFG.upperFloor : 1), virtual: true };
   staticWeights(s); SHOPS.push(s); BYCAT[cat].push(s); SHOPNODE = null;
-  s._win = CAT_WIN[cat] ? CAT_WIN[cat].slice() : null;   // 새 가게 영업시간만큼 업종 문 여는 시간을 넓혔다가 지울 때 되돌림
-  CAT_WIN[cat] = [Math.min(s._win ? s._win[0] : Infinity, s.open), Math.max(s._win ? s._win[1] : -Infinity, s.close)];
+  catWindows();   // 새 세부 업종이면 그 업종 보통 영업시간만큼 수요 시간이 생김(내 가게 시간으로는 넓히지 않음)
   return s;
 }
-function removeVirtual(s) { SHOPS.pop(); BYCAT[s.c].splice(BYCAT[s.c].indexOf(s), 1); SHOPNODE = null; if (s._win) CAT_WIN[s.c] = s._win; else delete CAT_WIN[s.c]; }
+function removeVirtual(s) { SHOPS.pop(); BYCAT[s.c].splice(BYCAT[s.c].indexOf(s), 1); SHOPNODE = null; catWindows(); }
 function neighbors(s, R) { return SHOPS.filter(o => !o.virtual && o.c === s.c && Math.hypot(o.x - s.x, o.z - s.z) <= R).map(o => o.i); }
-function experiment(bi, floor, sub, price, seats) {
-  const s = addVirtual(bi, floor, sub, price, seats);
+function experiment(bi, floor, sub, price, seats, hrs) {
+  const s = addVirtual(bi, floor, sub, price, seats, hrs);
   const nb = neighbors(s, 250);
+  const same = SHOPS.filter(o => !o.virtual && o.sub === sub).map(o => o.i);   // 같은 세부 업종 기존 가게(견줄 기준)
   const res = {};
   for (const sc of ['wd', 'we']) {
-    const runs = [];
+    const runs = [], sameV = new Float64Array(same.length);
     for (let k = 0; k < RUNS; k++) {
       s.off = true; const base = runDay(sc === 'we', k); const nbBase = nb.reduce((a, i) => a + base.visits[i], 0);
       s.off = false; const st = runDay(sc === 'we', k); const nbNew = nb.reduce((a, i) => a + st.visits[i], 0);
+      same.forEach((i, j) => { sameV[j] += st.visits[i] / RUNS; });
       runs.push({ v: st.visits[s.i], won: st.spend[s.i], lost: st.lost[s.i], hour: st.byHour[s.i] ? Array.from(st.byHour[s.i]) : new Array(24).fill(0),
         grp: { ...(st.byGroup[s.i] || {}) }, nb: nbNew - nbBase });
     }
@@ -815,6 +999,9 @@ function experiment(bi, floor, sub, price, seats) {
     res[sc] = { v: avg(r => r.v), vMin: Math.min(...runs.map(r => r.v)), vMax: Math.max(...runs.map(r => r.v)), won: avg(r => r.won), lost: avg(r => r.lost),
       nb: avg(r => r.nb), nbSame: runs.every(r => r.nb < 0) || runs.every(r => r.nb > 0), hour: Array.from({ length: 24 }, (_, h) => avg(r => r.hour[h])),
       grp: Object.fromEntries(GROUPS.map(g => [g, avg(r => r.grp[g] || 0)])) };
+    // 같은 업종 기존 가게들 하루 손님(가상)의 중앙값·위 25% 와, 이 자리가 그중 몇 번째쯤인지 — 손님 수 절대값보다 '이 자리가 나은가'를 보게
+    const sv = Array.from(sameV).sort((a, b) => a - b), q = (f) => sv.length ? sv[Math.min(sv.length - 1, Math.floor(f * sv.length))] : 0;
+    res[sc].bench = { n: sv.length, med: q(0.5), p75: q(0.75), above: sv.filter(v => v > res[sc].v).length };
   }
   removeVirtual(s);
   res.nbCount = nb.length; res.nbSub = nb.filter(i => SHOPS[i].sub === sub).length;
@@ -835,7 +1022,10 @@ MP.infoExtra = (b, bi) => {
       <label>층<select id="x-floor">${opts}</select></label>
       <label>업종<select id="x-cat">${subOptions(lastSub)}</select></label>
       <label>자리<input id="x-seats" type="number" min="2" max="200" step="1"></label>
+      <label>여는 시각<select id="x-open"></select></label>
+      <label>닫는 시각<select id="x-close"></select></label>
     </div>
+    <p class="x-hours-note" id="x-hours-note"></p>
     <div class="x-menu" id="x-menu"></div>
     <button id="x-run" class="btn-primary">이 가게 손님 세어 보기 <span>평일·주말 각 ${RUNS}번</span></button>
     <div id="x-out" aria-live="polite"></div>
@@ -848,13 +1038,21 @@ document.addEventListener('click', (e) => {
 });
 document.addEventListener('change', (e) => { if (e.target.id === 'x-cat') { lastSub = e.target.value; fillDefaults(); } });
 document.addEventListener('input', (e) => { if (e.target.closest && e.target.closest('#x-menu')) updateBasket(); });
+document.addEventListener('change', (e) => { if (e.target.id === 'x-open' || e.target.id === 'x-close') hoursNote(); });
 const obs = new MutationObserver(() => { if ($('x-cat') && !$('x-menu').childElementCount) fillDefaults(); });
 obs.observe($('i-body'), { childList: true });
 // 대표 메뉴 표: 메뉴마다 가격·1인 수량(= 1인 주문량 × 주문 비율)을 고칠 수 있다. 근거가 있는 가격은 '확인', 없는 것은 '가정'
 const fmtQ = (q) => (Math.round(q * 100) / 100).toString();
+// 내 가게 영업시간 칸: 업종을 바꾸면 그 업종 값(시간 정하기에서 바꾼 값 포함)으로 채움
+function fillHours(oSel, cSel, sub) { const h = hoursOf(sub, SUB[sub].cat); oSel.innerHTML = tOpts(0, 1380, h[0]); cSel.innerHTML = tOpts(360, T1, h[1]); }
+function readHours(oSel, cSel) { const o = +oSel.value; let c = +cSel.value; if (c <= o) c += 1440; return [o, Math.min(c, T1)]; }
+const hoursTxt = (h) => `${tLabel(h[0])}~${tLabel(h[1])}`;
+function hoursNote() { const el = $('x-hours-note'); if (!el) return; const sub = $('x-cat').value, d = hoursOf(sub, SUB[sub].cat), h = readHours($('x-open'), $('x-close'));
+  el.textContent = (h[0] === d[0] && h[1] === d[1] ? `${SUB[sub].ko} 보통 영업시간(가정)입니다. 내 가게 시간으로 바꿔 보세요.` : `${SUB[sub].ko} 보통(${hoursTxt(d)})과 다르게 ${hoursTxt(h)}로 셉니다.`) + ' 하루는 05:00~다음 날 02:00만 셉니다.'; }
 function fillDefaults() {
   const sb = SUB[$('x-cat').value]; if (!sb) return;
   $('x-seats').value = sb.seats;
+  fillHours($('x-open'), $('x-close'), $('x-cat').value); hoursNote();
   $('x-menu').innerHTML = `<p class="x-menu-h">대표 메뉴 <span>가격 × 1인 수량</span></p>${sb.menus.map((m, i) => `
     <div class="m-row" data-i="${i}" title="${esc(m.src || '')}">
       <div class="m-name"><b>${esc(m.n)}</b><span class="u">${esc(m.unit)}</span><span class="src ${m.lvl || (m.ok ? 'okpo' : 'guess')}">${esc(m.badge || (m.ok ? '확인' : '가정'))}</span></div>
@@ -886,19 +1084,27 @@ function runExp() {
   const bi = MP.selected; if (bi < 0) return;
   const sub = $('x-cat').value, sb = SUB[sub], menus = readMenus();
   const floor = +$('x-floor').value, price = Math.max(500, basketOf(menus) || sb.basket), seats = Math.max(2, +$('x-seats').value || sb.seats);
+  const hrs = readHours($('x-open'), $('x-close'));
   $('x-out').innerHTML = '<p class="exp-wait">계산 중…</p>';
   setTimeout(() => {
     const t0 = performance.now();
-    const r = experiment(bi, floor, sub, price, seats);
+    const r = experiment(bi, floor, sub, price, seats, hrs);
     const ms = performance.now() - t0;
-    HIST.unshift({ bi, floor, sub, price, seats, menus, r });
+    HIST.unshift({ bi, floor, sub, price, seats, menus, r, hrs });
     while (HIST.length > 6) HIST.pop();
-    renderExp(r, sub, price, ms, bi, floor, menus);
+    renderExp(r, sub, price, ms, bi, floor, menus, hrs);
   }, 30);
 }
 // 가장 붐비는 시각(손님이 가장 많은 시간대)
 function peakTxt(hr, lab) { let m = -1, h = 0; hr.forEach((v, i) => { if (v > m) { m = v; h = i; } }); return m >= 0.5 ? `${lab}엔 ${h}시대가 가장 붐빔(${Math.round(m)}명)` : `${lab} 손님 거의 없음`; }
-function renderExp(r, sub, price, ms, bi, floor, menus) {
+// 같은 세부 업종 기존 가게(가상)와 견주기: 이 자리 손님이 그중 몇 번째쯤인지
+function benchTxt(r, k) {
+  const b = r.wd.bench; if (!b || !b.n) return `옥포에 ${esc(k)} 가게가 없어 견줄 곳이 없습니다.`;
+  const rank = b.above + 1, top = Math.max(1, Math.round(100 * rank / (b.n + 1)));
+  return `기존 ${esc(k)} ${b.n}곳(가상, 평일): 하루 손님 중앙값 ${Math.round(b.med)}명, 위 25%는 ${Math.round(b.p75)}명 이상. ` +
+    `이 자리(${Math.round(r.wd.v)}명)는 ${b.n + 1}곳 중 위에서 ${rank}번째쯤(상위 ${top}%)입니다. 주말: ${b.n + 1}곳 중 ${r.we.bench.above + 1}번째쯤.`;
+}
+function renderExp(r, sub, price, ms, bi, floor, menus, hrs) {
   const k = SUB[sub].ko;
   const row = (sc, lab) => { const x = r[sc]; return `<tr><th>${lab}</th><td><b>${Math.round(x.v).toLocaleString('ko-KR')}명</b><span class="rng">${Math.round(x.vMin)}~${Math.round(x.vMax)}</span></td><td>${won(x.won)}</td></tr>`; };
   const g = r.wd.grp, gw = r.we.grp, tot = (o) => Object.values(o).reduce((a, b) => a + b, 0) || 1;
@@ -913,17 +1119,18 @@ function renderExp(r, sub, price, ms, bi, floor, menus) {
     : `${nbN}: 변화가 작거나 돌릴 때마다 달라 판단하기 어렵습니다(${r.wd.nb >= 0 ? '+' : ''}${Math.round(r.wd.nb)}명).`;
   const bk = menus.filter(m => m.qty > 0 && m.price > 0).map(m => `${esc(m.n)} ${wonX(m.price)} × ${fmtQ(m.qty)}`).join(' + ');
   const same = HIST.filter(h => h.bi === bi && h.floor === floor);
-  const cmp = same.length > 1 ? `<table class="exp-cmp"><tr><th>업종</th><th>1인</th><th>평일</th><th>주말</th><th>평일 매출</th></tr>${same.map(h => `<tr><td>${esc(SUB[h.sub].ko)}</td><td>${wonX(h.price)}</td><td>${Math.round(h.r.wd.v)}명</td><td>${Math.round(h.r.we.v)}명</td><td>${won(h.r.wd.won)}</td></tr>`).join('')}</table>` : '<p class="exp-tip">업종을 바꿔 한 번 더 돌리면 이 자리에서 업종끼리 비교표가 생깁니다.</p>';
+  const cmp = same.length > 1 ? `<table class="exp-cmp"><tr><th>업종</th><th>1인</th><th>평일</th><th>주말</th><th>평일 매출</th></tr>${same.map(h => `<tr><td>${esc(SUB[h.sub].ko)}${h.hrs ? `<span class="cmp-h">${hoursTxt(h.hrs)}</span>` : ''}</td><td>${wonX(h.price)}</td><td>${Math.round(h.r.wd.v)}명</td><td>${Math.round(h.r.we.v)}명</td><td>${won(h.r.wd.won)}</td></tr>`).join('')}</table>` : '<p class="exp-tip">업종이나 영업시간을 바꿔 한 번 더 돌리면 이 자리에서 비교표가 생깁니다.</p>';
   $('x-out').innerHTML = `
     <table class="exp-res"><tr><th></th><th>하루 손님(평균·범위)</th><th>하루 매출</th></tr>${row('wd', '평일')}${row('we', '주말')}</table>
     <p class="exp-sub">평일 손님 구성</p><div class="exp-mix">${mix(g)}</div>
     <p class="exp-sub">시간대별 손님 <span class="lg"><i style="background:#2f6fed"></i>평일 <i style="background:#7048e8"></i>주말</span></p>
     <p class="exp-nb">${peakTxt(r.wd.hour, '평일')} · ${peakTxt(r.we.hour, '주말')}</p>
     <div class="exp-hours"><div>${bars(r.wd.hour, '#2f6fed')}</div><div>${bars(r.we.hour, '#7048e8')}</div><div class="ax"><span>0시</span><span>6시</span><span>12시</span><span>18시</span><span>23시</span></div></div>
+    <p class="exp-sub">같은 업종 기존 가게와 비교</p><p class="exp-nb">${benchTxt(r, k)}</p>
     <p class="exp-sub">주변 가게 영향</p><p class="exp-nb">${nbTxt}</p>
     ${cmp}
     <p class="exp-sub">1인 지출 ${wonX(price)}</p><p class="exp-nb">${bk}</p>
-    <p class="exp-foot">${esc(k)} · ${floor}층 · 계산 ${(ms / 1000).toFixed(1)}초. 하루 매출 = 손님 × 1인 지출. 가상 인물로 조건끼리 비교한 값이며 실제 매출 예측이 아닙니다.</p>`;
+    <p class="exp-foot">${esc(k)} · ${floor}층 · 영업 ${hoursTxt(hrs)} · 계산 ${(ms / 1000).toFixed(1)}초. 하루 매출 = 손님 × 1인 지출. 가상 인물로 조건끼리 비교한 값이며 실제 매출 예측이 아닙니다.</p>`;
   need();
 }
 
@@ -971,7 +1178,7 @@ function flowSteps(F, t0, t1) {
   }
 }
 function nodeFlow(we) {
-  const key = we ? 'we' : 'wd'; if (NODEFLOW[key]) return NODEFLOW[key];
+  const key = (we ? 'we' : 'wd') + ':' + TS.ver; if (NODEFLOW[key]) return NODEFLOW[key];
   const live = swapState(blank(false)); reset(we, 0);
   const F = new Float32Array(24 * NN); flowSteps(F, T0, T1);
   swapState(live); NODEFLOW[key] = F; return F;
@@ -979,7 +1186,7 @@ function nodeFlow(we) {
 // 화면이 멈추지 않게 1시간씩 나눠 계산(조각 사이에 화면이 그려짐). 조각마다 재생 상태를 비켜 두고 돌려놓는다
 const NF_WAIT = {};
 function nodeFlowAsync(we) {
-  const key = we ? 'we' : 'wd';
+  const key = (we ? 'we' : 'wd') + ':' + TS.ver;
   if (NODEFLOW[key]) return Promise.resolve(NODEFLOW[key]);
   if (NF_WAIT[key]) return NF_WAIT[key];
   return (NF_WAIT[key] = new Promise((res) => {
@@ -992,8 +1199,8 @@ function nodeFlowAsync(we) {
   }));
 }
 // 빈 자리에 가게를 열었을 때 손님·매출만(비교 없이, 자리 순위용)
-function trySlot(bi, floor, sub, price, seats, runs = 3) {
-  const s = addVirtual(bi, floor, sub, price, seats);
+function trySlot(bi, floor, sub, price, seats, runs = 3, hrs) {
+  const s = addVirtual(bi, floor, sub, price, seats, hrs);
   const r = { wd: 0, we: 0, wdWon: 0, weWon: 0 };
   for (const sc of ['wd', 'we']) for (let k = 0; k < runs; k++) {
     const st = runDay(sc === 'we', k);
@@ -1133,7 +1340,7 @@ function renderPersona() {
     row('상권 오는 시각', `평일 ${hm(rec[2])}(외출 ${rec[8]}%) · 주말 ${hm(rec[3])}(외출 ${rec[9]}%)`);
     row('머무는 시간', `평일 ${rec[4]}분 · 주말 ${rec[5]}분`);
     row('한 번 예산', wonX(rec[6]) + ` <span class="pa-dim">1인 지출 ×${(rec[15] / 100).toFixed(2)}</span>`);
-    row('나오면 결제', `${Math.round(rec[14] / 10)}%` + ((rec[11] & 8) ? ' <span class="pa-dim">두 곳 들르기도 함</span>' : ''));
+    row('나오면 결제', PD && PD.pay_mode === 'avg_stops' ? `평균 ${(rec[14] / (PD.pay_unit || 1000)).toFixed(2)}곳 방문` : `${Math.round(rec[14] / 10)}%` + ((rec[11] & 8) ? ' <span class="pa-dim">두 곳 들르기도 함</span>' : ''));
     row('자리 기다림', `최대 ${rec[7]}분`);
   }
   const head = `<p class="pa-who"><i style="background:${CFG.groups[g].col}"></i><b>${esc(short(p, { g }))}</b></p>
@@ -1257,6 +1464,6 @@ uiHooks.push(() => { updOcc(false); renderLive(false); });
 $('sim-play').addEventListener('click', () => { if (!playing) { updOcc(true); renderLive(true); } });   // 멈춘 순간 값으로 맞춤(재생 중엔 0.25~0.3초마다)
 updOcc(true);
 
-window.__sim = { get _fig() { return figMesh; }, peakTxt, _ck: CK, runDay, experiment, seek, nodesNear, flowDay, trySlot, nodeFlow, nodeFlowAsync, restore: () => { drawDirty = true; need(); }, won, wonX, GROUPS, SUB, SUBS_OF, subOptions, NAT,
+window.__sim = { get playing() { return playing; }, get _fig() { return figMesh; }, get cfgVer() { return TS.ver; }, TS, applyTS, _catwin: CAT_WIN, hoursOf, fillHours, readHours, hoursTxt, _shops: () => SHOPS, _active: () => ACTIVE, _md: { MDX, MDZ, NX, NZ, NSW, NWD }, peakTxt, _ck: CK, runDay, experiment, seek, nodesNear, flowDay, trySlot, nodeFlow, nodeFlowAsync, restore: () => { drawDirty = true; need(); }, won, wonX, GROUPS, SUB, SUBS_OF, subOptions, NAT,
   graph: { NX, NZ, ADJ, NN }, selectAgent, pickAt, occNow, get selAgent() { return curSel(); }, get scen() { return scen; }, get A() { return A; }, get W() { return W; }, SHOPS, CFG, nodes: NN, get t() { return simT; } };
 })();

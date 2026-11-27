@@ -15,7 +15,10 @@ const RAMP = ['#b8eef5', '#86dfea', '#4fcadb', '#1fb0c6', '#0e93a8', '#0b7285'].
 let mesh = null, on = true, last = '', lastF = null, lastT = 0, wk = 1;
 // 카메라 거리에 따라 띠 폭 배율: 가까이(250m 안) 0.4, 중간(550m 안) 0.7, 멀리 1
 const widthK = () => { const d = M.camera.position.distanceTo(M.controls.target); return d < 250 ? 0.4 : d < 550 ? 0.7 : 1; };
-M.controls.addEventListener('change', () => { const k = widthK(); if (k !== wk && lastF) { wk = k; build(lastF, lastT); } });
+M.controls.addEventListener('change', () => { const k = widthK(); if (k !== wk && lastF) { wk = k; build(lastF, lastT); } dimFlow(); });
+// 멀리(700m 넘게) 보고 재생 중이 아니면 흐름 띠를 옅게(0.35) — 상권 전체에서 청록 선이 지도를 덮어 빈 층 주황이 묻혔음. 재생하면 진하게(seohogyun-20 제안 C)
+function dimFlow() { if (!mesh) return; const o = M.camera.position.distanceTo(M.controls.target) > 700 && !(SIM && SIM.playing) ? 0.35 : 0.8; if (mesh.material.opacity !== o) { mesh.material.opacity = o; need(); } }
+document.addEventListener('sim-play', dimFlow);
 function build(F, t) {
   lastF = F; lastT = t; wk = widthK();
   const h = Math.floor(t / 60) % 24, hs = [-2, -1, 0, 1, 2].map(d => (h + d + 24) % 24);   // 앞뒤 2시간
@@ -33,7 +36,7 @@ function build(F, t) {
     const ns = M.TON ? Math.max(1, Math.ceil(l / 8)) : 1;
     for (let k = 0; k < ns; k++) {
       const x0 = NX[a] + dx * k / ns, z0 = NZ[a] + dz * k / ns, x1 = NX[a] + dx * (k + 1) / ns, z1 = NZ[a] + dz * (k + 1) / ns;
-      const ya = 0.35 + M.hAt(x0, z0), yb = 0.35 + M.hAt(x1, z1);
+      const ya = 0.35 + M.GL + M.hAt(x0, z0), yb = 0.35 + M.GL + M.hAt(x1, z1);
       pos.push(x0 + nx, ya, z0 + nz, x1 + nx, yb, z1 + nz, x0 - nx, ya, z0 - nz, x0 - nx, ya, z0 - nz, x1 + nx, yb, z1 + nz, x1 - nx, yb, z1 - nz);
       for (let v = 0; v < 6; v++) col.push(c.r, c.g, c.b);
     }
@@ -42,6 +45,7 @@ function build(F, t) {
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide }));
   mesh.renderOrder = 9.5; mesh.visible = on; scene.add(mesh);
+  dimFlow();
   const total = Math.round(sorted.reduce((a, b) => a + b, 0) / 1000) * 1000;
   legend.querySelector('.fl-cap').textContent = `${String(h).padStart(2, '0')}시 앞뒤 2시간 동안 가장 붐비는 길로 약 ${Math.round(cap).toLocaleString('ko-KR')}명이 지나갑니다`;
   need();
@@ -57,7 +61,7 @@ lab.after(legend);
 document.getElementById('L-flow').onchange = (e) => { on = e.target.checked; if (mesh) mesh.visible = on; legend.hidden = !on; need(); };
 let pend = null;
 document.addEventListener('sim-time', (e) => {
-  const { t, scen } = e.detail, key = scen + Math.floor(t / 60);
+  const { t, scen } = e.detail, key = scen + Math.floor(t / 60) + ':' + SIM.cfgVer;   // 시간 정하기를 바꾸면 다시
   if (key === last) return; last = key;
   clearTimeout(pend); pend = setTimeout(() => SIM.nodeFlowAsync(scen === 'we').then(F => { if (last === key) build(F, t); }), 30);
 });

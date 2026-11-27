@@ -188,6 +188,9 @@ body.street-mode .tog:has(#L-floors)::after, body.street-mode .tog:has(#L-open):
   background: center / 18px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5 8l5 5 5-5' fill='none' stroke='%234e5968' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
 .key[open] summary::after { transform: rotate(180deg); }
 .key ul { margin: 0; padding: 0 0 6px; list-style: none; line-height: 1.55; }
+.key h3 { margin: 10px 0 2px; font-size: 12.5px; font-weight: 700; color: var(--g600); letter-spacing: -.01em; }
+.key h3:first-of-type { margin-top: 0; }
+.key ul + h3 { padding-top: 10px; border-top: 1px solid var(--g200); }
 .key li { display: flex; gap: 10px; align-items: baseline; padding: 4px 0; }
 .key li i { flex: none; width: 12px; height: 12px; border-radius: 3px; transform: translateY(1px); }
 .key li i.pin { border-radius: 50%; background: #f03e3e; box-shadow: 0 0 0 2px #fff, 0 0 0 3px #868e96; }
@@ -196,7 +199,14 @@ body.street-mode .tog:has(#L-floors)::after, body.street-mode .tog:has(#L-open):
 .key li i.dash { width: 14px; height: 0; border-radius: 0; border-top: 2px dashed #6b7280; align-self: center; transform: none; }
 .key li i.sig { width: 8px; height: 14px; border-radius: 2px; background: #24282e; box-shadow: inset 0 3px 0 -1px #ff4d4f, inset 0 -3px 0 -1px #38d27a; align-self: center; transform: none; }
 .key li i.kbd { width: 14px; height: 14px; font-size: 12px; font-style: normal; line-height: 14px; color: var(--g600); background: none; transform: none; }
+.key li i.cctv { width: 8px; height: 14px; border-radius: 2px; background: #b8bec6; box-shadow: inset 0 -6px 0 0 #f2c200; }
+.key li i.furn { width: 10px; height: 12px; border-radius: 3px 3px 2px 2px; background: #b8292a; }
+.key li i.cctv, .key li i.furn { align-self: flex-start; margin-top: 4px; transform: none; }
 .key li i.kid { width: 14px; height: 10px; border-radius: 3px; background: #ffe066; align-self: center; transform: none; }
+/* 여러 줄 항목에서도 아이콘이 첫 줄 옆에 붙게(가운데에 뜨지 않게) */
+.key li i.num, .key li i.sig, .key li i.kid { align-self: flex-start; margin-top: 4px; }
+.key li i.dash { align-self: flex-start; margin-top: 10px; }
+.key li i.kbd { align-self: flex-start; margin-top: 3px; font-size: 13px; color: var(--g700); }
 .key li i.dot { border-radius: 50%; width: 8px; height: 8px; background: #1c64f2; box-shadow: 10px 0 0 #7048e8; margin-right: 10px; }
 .key p { margin: 6px 0 12px; font-size: 13px; color: var(--g600); line-height: 1.6; }
 
@@ -378,6 +388,9 @@ body.street-mode #hint { display: none; }
 .lbl.vac { display: inline-flex; align-items: center; gap: 6px; background: #fff; color: var(--g900); font-size: 12px; font-weight: 700; border-radius: 8px;
   padding: 4px 9px; text-shadow: none; box-shadow: 0 1px 4px rgba(0, 20, 60, .18); }
 .lbl.vac::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #e03131; }
+/* 버스 정류장 이름(OSM 정류장 이름): 흰 알약 + 앞에 작은 파랑 칸 '버스' */
+.lbl.place.bus { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--g800); background: #fff; border-radius: 8px; padding: 3px 8px 3px 4px; text-shadow: none; box-shadow: 0 1px 3px rgba(0, 20, 60, .16); }
+.lbl.place.bus b { font-size: 10.5px; font-weight: 700; color: #fff; background: #1d4e9a; border-radius: 5px; padding: 1px 5px; }
 /* 어린이보호구역 시설(표준데이터 시설 위치): 흰 알약 + 앞에 작은 노랑 칸 '어린이보호구역' */
 .lbl.place.kid { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--g800); background: #fff; border-radius: 8px; padding: 3px 8px 3px 4px; text-shadow: none; box-shadow: 0 1px 3px rgba(0, 20, 60, .16); }
 .lbl.place.kid b { font-size: 10.5px; font-weight: 700; color: #4a3b00; background: #ffe066; border-radius: 5px; padding: 1px 5px; }
@@ -390,15 +403,34 @@ body .map-tip span { color: var(--g700); }
 body .map-tip b { font-weight: 700; color: var(--g900); }
 body .map-tip b.emp { color: var(--vac); }
 body .map-tip em { font-style: normal; font-size: 12.5px; font-weight: 600; color: var(--primary-ink); margin-top: 2px; }
+/* 기록지·정보창의 모든 선택 칸을 같은 화살표로(브라우저 기본 화살표·화살표 없음이 섞여 있었음: 업종·층·영업시간) */
+#rail select, #info select { -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5 8l5 5 5-5' fill='none' stroke='%234e5968' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat;
+  background-position: right 12px center; background-size: 16px; padding-right: 36px; cursor: pointer; }
+/* 시간 정하기 창(ea #112 .ts-dlg): 선택 칸·검색 칸을 기록지의 '어떤 가게를 열어 볼까요' 칸과 같은 회색 채움으로, 여는/닫는 시각 칸 폭을 같게 */
+body .ts-dlg select { height: 40px; min-width: 96px; padding: 0 34px 0 12px; border: 0; border-radius: 10px; background-color: var(--g100); color: var(--g900);
+  font: inherit; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; cursor: pointer; appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5 8l5 5 5-5' fill='none' stroke='%234e5968' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; background-size: 16px; }
+body .ts-dlg select:hover { background-color: var(--g200); }
+body .ts-dlg .ts-tb select { width: 148px; }
+body .ts-dlg .ts-q { height: 44px; border: 0; border-radius: 10px; background: var(--g100); padding: 0 14px; font-size: 15px; }
+body .ts-dlg .ts-q::placeholder { color: var(--g600); }
+body .ts-dlg select:focus-visible, body .ts-dlg .ts-q:focus-visible { outline: 3px solid rgba(47, 111, 237, .45); outline-offset: 1px; }
 /* 지도 밖 큰 곳 방향(조선소): 작은 회색 알약, 바깥쪽 화살 대신 '방향'이라는 말로 */
 .lbl.place.edge { font-size: 12.5px; color: var(--g700); background: rgba(255,255,255,.92); border-radius: 8px; padding: 3px 9px; text-shadow: none; box-shadow: 0 1px 3px rgba(0, 20, 60, .14); }
 /* 밤(app.js 가 body.night 를 붙임): 흰 테두리 글자가 어두운 지도에서 얼룩처럼 보이지 않게, 밝은 글자 + 어두운 테두리 */
 /* 흰 알약 이름표(폐업·몰린 곳·구역·거리 이름)는 .place 도 달고 있어 빼야 한다: 밤 테두리가 흰 바탕 글자를 번지게 함 */
-body.night .lbl.place:not(.vac):not(.hot):not(.zone):not(.street-name):not(.street-end):not(.edge):not(.kid):not(.flr) { color: #f1f3f5; text-shadow: 0 0 3px rgba(12,16,26,.95), 0 0 3px rgba(12,16,26,.95), 0 0 7px rgba(12,16,26,.8); }
+body.night .lbl.place:not(.vac):not(.hot):not(.zone):not(.street-name):not(.street-end):not(.edge):not(.kid):not(.flr):not(.bus) { color: #f1f3f5; text-shadow: 0 0 3px rgba(12,16,26,.95), 0 0 3px rgba(12,16,26,.95), 0 0 7px rgba(12,16,26,.8); }
 body.night .lbl.road { color: #c3cad3; text-shadow: 0 0 3px rgba(12,16,26,.95), 0 0 3px rgba(12,16,26,.9); }
 .lbl.zone { color: var(--g700); font-size: 12.5px; font-weight: 700; background: rgba(255,255,255,.95); border-radius: 8px; padding: 3px 9px; text-shadow: none; box-shadow: 0 1px 3px rgba(0, 20, 60, .12); }
 #loading { position: fixed; inset: 0; display: grid; place-items: center; background: var(--bg); font-size: 15px; color: var(--g700); z-index: 20; transition: opacity .3s; }
 #loading.done { opacity: 0; pointer-events: none; }
+/* 3D 를 못 그릴 때(shell.js): 지도 자리만 덮고 기록지는 보이게, 까닭과 할 일 */
+#loading.fail { left: var(--side); padding: 24px; text-align: center; }
+/* 지도가 없으면 지도에 딸린 칸(구간 고르기·지도 표시)은 숨긴다 */
+body.nomap #r-where, body.nomap #r-layers { display: none; }   /* 꺾은선·카드 접기는 app.js 가 렌더러보다 먼저 채우므로(ea #123) 남긴다 */
+#loading.fail div { display: grid; gap: 10px; max-width: 440px; }
+#loading.fail b { font-size: 18px; font-weight: 700; color: var(--g900); }
+#loading.fail span { font-size: 14.5px; line-height: 1.6; color: var(--g700); }
 
 /* ── 좁은 노트북 ────────────────────────── */
 @media (max-width: 1180px) and (min-width: 721px) {

@@ -25,7 +25,22 @@ const C = {
 // ── 렌더러·장면 ─────────────────────────────────────────
 const canvas = document.getElementById('c');
 const SMALL = Math.min(innerWidth, innerHeight) < 720;
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+// 요약 카드(기록지)는 3D 와 상관없으니 렌더러보다 먼저 채운다 — 3D 를 못 그려도 숫자·접기 단추는 된다(seohogyun-20 제안)
+fillCard();
+const card = document.getElementById('card');
+function syncCardHeight() { document.documentElement.style.setProperty('--card-h', card.offsetHeight + 'px'); }
+window.__syncCard = syncCardHeight;
+document.getElementById('card-toggle').onclick = (e) => {
+  const c = card.classList.toggle('collapsed');
+  e.currentTarget.setAttribute('aria-expanded', String(!c)); e.currentTarget.title = c ? '펴기' : '접기';
+  syncCardHeight();
+};
+if (SMALL) { card.classList.add('collapsed'); document.getElementById('card-toggle').setAttribute('aria-expanded', 'false'); }
+// 렌더러: WebGL 이 꺼져 있거나 막혀 있으면 여기서 예외가 난다. 그때는 3D 를 만들지 않고 멈추되, 까닭을 남겨
+// shell.js 가 20초를 기다리지 않고 바로 안내를 띄우게 한다(window.__glFail, document 'map-fail' 이벤트)
+let renderer;
+try { renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' }); }
+catch (e) { window.__glFail = String((e && e.message) || e); document.dispatchEvent(new CustomEvent('map-fail', { detail: { reason: window.__glFail } })); return; }
 renderer.setPixelRatio(Math.min(devicePixelRatio, SMALL ? 1.75 : 2));
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.shadowMap.enabled = true;
@@ -212,12 +227,13 @@ function drawBoundary(k) {
       if (carry >= (on ? DASH : GAP) - 1e-6) { carry = 0; on = !on; }
     }
   }
-  if (TON) for (let i = 0; i < pos.length; i += 3) pos[i + 1] += hAt(pos[i], pos[i + 2]);
+  if (TON) for (let i = 0; i < pos.length; i += 3) pos[i + 1] += Math.max(0, hAt(pos[i], pos[i + 2])) + GL;   // 바다 위(해안 옆 음수 높이)는 물 높이 0
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  bndMesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: '#3d434a', depthWrite: false, side: THREE.DoubleSide, transparent: true, opacity: 0.75 }));
+  bndMesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: '#3d434a', depthWrite: false, side: THREE.DoubleSide, transparent: true, opacity: k < 0.3 ? 0.5 : 0.75 }));
   bndMesh.renderOrder = 8.8; bndMesh.frustumCulled = false; scene.add(bndMesh); need && need();
 }
-function boundaryK() { const d = camera.position.distanceTo(controls.target); return d < 250 ? 0.35 : d < 550 ? 0.7 : 1.5; }
+// 아주 가까이(150m 안)서는 더 가늘게(0.4m) — 0.84m 폭 9m 조각이 길 위에 누운 통나무처럼 보였음
+function boundaryK() { const d = camera.position.distanceTo(controls.target); return d < 150 ? 0.17 : d < 250 ? 0.35 : d < 550 ? 0.7 : 1.5; }
 
 // ── 건물 ───────────────────────────────────────────────
 // 모든 건물을 한 덩어리로 합친다. triOwner[삼각형 번호] = 건물 번호 → 누른 건물 찾기.
@@ -225,6 +241,8 @@ const B = D.buildings;
 // 지형(seohogyun-31 terrain.js, 기본 꺼짐·?terrain=1): 건물 바닥을 발자국 아래 가장 낮은 땅 높이로 올린다(b.b0 = 원래 값).
 // b.b 를 쓰는 층 띠·층 단면·거리 층 띠·간판은 따로 고치지 않아도 따라온다. 땅에 붙는 선·이름표·사람은 hAt 을 더한다
 const TON = !!window.TERRAIN_ON, hAt = TON && window.heightAt ? window.heightAt : () => 0;
+// 지형을 켜면 바닥층(ground.js)이 땅 위 0.2m 에 깔리므로(LIFT, #111) 땅에 얹는 띠·그늘·고리는 그보다 위로(GL 만큼 더 띄움)
+const GL = TON ? 0.25 : 0;
 for (const b of B) { b.b0 = b.b || 0; if (TON && window.heightRange) b.b = b.b0 + window.heightRange(b.p).min; }
 const bPos = [], bNrm = [], bCol = [], bUv = [], triOwner = [];
 const ROOF_UV = [0.95, 0.15];   // 무늬의 흰 칸(지붕은 무늬 없이)
@@ -238,16 +256,6 @@ function cellTexture(draw) {
   t.wrapS = t.wrapT = THREE.RepeatWrapping; t.encoding = THREE.sRGBEncoding; t.repeat.set(1 / WN, 1 / WN);
   t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
   return t;
-}
-function floorTexture() {
-  return cellTexture((g, S) => {
-    g.fillStyle = '#ffffff'; g.fillRect(0, 0, S, S);
-    // 창: 유리처럼 위는 조금 진하고 아래로 밝게(하늘 반사), 위 틀은 진하게
-    const gr = g.createLinearGradient(0, S * 0.22, 0, S * 0.68); gr.addColorStop(0, '#c6d1dd'); gr.addColorStop(1, '#dfe6ee');
-    g.fillStyle = gr; g.fillRect(6, S * 0.22, S * 0.68, S * 0.46);   // 창(윗부분이 v 큰 쪽 → 캔버스 위쪽)
-    g.fillStyle = '#b4bfcb'; g.fillRect(6, S * 0.22, S * 0.68, 2);
-    g.fillStyle = '#f2f3f5'; g.fillRect(0, S - 4, S, 4);                     // 층 사이 슬래브(v=0 쪽)
-  });
 }
 // 건물 종류별 창 무늬(같은 칸 배치): 1 = 상가·사무·숙박·공공(큰 유리창), 2 = 아파트(넓은 창 + 발코니 난간), 3 = 상가 1층 가게 앞면(통유리)
 function glass(g, x, y, w, h, c0, c1) { const gr = g.createLinearGradient(0, y, 0, y + h); gr.addColorStop(0, c0); gr.addColorStop(1, c1); g.fillStyle = gr; g.fillRect(x, y, w, h); }
@@ -301,7 +309,8 @@ function wallOf(b) { const L = WALL_BY[b.k]; return L ? L[b.c % L.length] : wall
 function roofOf(b) { if (b.k === 'house') return ROOF_HOUSE[(b.c * 7 + b.lv) % ROOF_HOUSE.length]; return b.k === 'apartments' ? roofApt : roofCols[b.c % roofCols.length]; }
 const bRange = [];   // 건물별 [시작 꼭짓점, 끝 꼭짓점]
 const bWst = [], bOffV = [];   // 건물별 창 종류(0 주택 기본, 1 큰 유리창, 2 아파트) + 1층 가게면 4 더함, 무늬 시작 층(offV)
-const STYLE_OF = { apartments: 2, retail: 1, hotel: 1, office: 1, public: 1, school: 1, hospital: 1 };
+const STYLE_OF = { apartments: 2, retail: 1, hotel: 1, office: 1, public: 1, school: 1, hospital: 1, warehouse: 3, garage: 3, industrial: 3, shed: 3 };
+const IND_USE = new Set(['창고시설', '자동차관련시설', '공장', '위험물저장및처리시설', '분뇨.쓰레기처리시설']);   // OSM 종류가 'yes' 여도 대장 용도가 이러면 3
 const FL = window.FLOORS && window.FLOORS.b;
 const roofRange = [];   // 건물별 지붕 꼭짓점 [시작, 끝] — 지붕만 다른 색으로 칠할 때(빈 층 많은 건물 등)
 function pushTri(a, b, c, n, col, owner) {
@@ -322,7 +331,7 @@ B.forEach((b, bi) => {
   let run = 0;
   const offU = (b.c * 3 + bi * 7) % WN, offV = (bi * 5 + b.c) % WN;
   { const fl = FL && FL[String(bi)], f1 = fl && fl.find(f => f.n === 1), com = fl && fl.some(f => f.com);
-    let st = STYLE_OF[b.k] ?? (com ? 1 : 0); if (f1 && f1.com) st += 4; bWst.push(st); bOffV.push(offV); }
+    let st = STYLE_OF[b.k] ?? (IND_USE.has(b.use) ? 3 : com ? 1 : 0); if (f1 && f1.com) st += 4; bWst.push(st); bOffV.push(offV); }
   for (let i = 0; i < p.length; i++) {
     const a = p[i], c2 = p[(i + 1) % p.length];
     const dx = c2[0] - a[0], dz = c2[1] - a[1], l = Math.hypot(dx, dz);
@@ -406,8 +415,27 @@ const emptyTex = (() => { const W = 4096, d = new Float32Array(W);
   const t = new THREE.DataTexture(d, W, 1, THREE.RedFormat, THREE.FloatType); t.minFilter = t.magFilter = THREE.NearestFilter; t.needsUpdate = true; return t; })();
 bGeo.computeBoundingSphere();
 // 창 무늬는 가까이 볼 때만(멀리서는 작은 건물이 빽빽해 무늬가 잡음처럼 보인다 → 깨끗한 덩어리로)
-const winTex = floorTexture();
-const litTex = litTexture();
+// 주택(다가구·빌라) 창: 세로 줄(칸 i)마다 네 가지 모양 — 넓은 창 · 작은 창 둘 · 좁고 긴 창 · 넓은 창 + 발코니 난간.
+// 같은 줄은 위아래로 같은 모양이라 층마다 창이 맞고, 집마다 시작 칸(offU)이 달라 건물끼리 다르게 보임(표현, 자료 아님)
+const HOUSE_WIN = [[[6 / 96, 0.22, 0.68, 0.46]], [[8 / 96, 0.26, 0.3, 0.36], [0.52, 0.26, 0.3, 0.36]], [[0.32, 0.17, 0.3, 0.56]], [[6 / 96, 0.2, 0.8, 0.38]]];
+function houseTexture() { return cellTexture((g, S, i) => {
+  const v = i % 4; g.fillStyle = '#ffffff'; g.fillRect(0, 0, S, S);
+  for (const r of HOUSE_WIN[v]) { const x = r[0] * S, y = r[1] * S, w = r[2] * S, h = r[3] * S;
+    const gr = g.createLinearGradient(0, y, 0, y + h); gr.addColorStop(0, '#c6d1dd'); gr.addColorStop(1, '#dfe6ee'); g.fillStyle = gr; g.fillRect(x, y, w, h);
+    g.fillStyle = '#b4bfcb'; g.fillRect(x, y, w, 2); }
+  if (v === 3) { g.fillStyle = '#d3d8de'; g.fillRect(3, S * 0.58, S - 6, S * 0.13); g.fillStyle = '#b9c0c8'; g.fillRect(3, S * 0.58, S - 6, 2); }   // 발코니 난간
+  g.fillStyle = '#f2f3f5'; g.fillRect(0, S - 4, S, 4); }); }
+const litTex = cellTexture((g, S, i, j) => {   // 주택 밤 불빛: 위 창 모양 자리에만
+  g.fillStyle = '#000'; g.fillRect(0, 0, S, S);
+  const cols = ['#ffd38a', '#ffe2b0', '#fff2d8', '#ffc66e', '#e9f0ff'], h = ((i * 73856093) ^ (j * 19349663)) >>> 0;
+  if ((h % 1000) / 1000 < 0.46) { g.fillStyle = cols[h % cols.length]; for (const r of HOUSE_WIN[i % 4]) g.fillRect(r[0] * S + 1, r[1] * S + 2, r[2] * S - 2, r[3] * S - 3); } });
+// 창고·차고·공장(건축물대장 창고시설·자동차관련시설·공장·위험물): 주택 창 대신 벽판 줄눈 + 위쪽 가는 띠창, 밤엔 불 없음
+const indTex = cellTexture((g, S) => {
+  g.fillStyle = '#ffffff'; g.fillRect(0, 0, S, S);
+  g.fillStyle = '#e1e4e8'; g.fillRect(S / 2 - 1, 0, 2, S); g.fillRect(0, 0, 2, S);   // 벽판 세로 줄눈
+  const gr = g.createLinearGradient(0, S * 0.12, 0, S * 0.24); gr.addColorStop(0, '#b3c0cd'); gr.addColorStop(1, '#d2dbe4'); g.fillStyle = gr; g.fillRect(4, S * 0.12, S - 8, S * 0.12);
+  g.fillStyle = '#eef0f3'; g.fillRect(0, S - 3, S, 3); });
+const winTex = houseTexture();   // HOUSE_WIN 정의 뒤에
 const litB = litTexture(0.32, [4 / 64, 0.18, 0.88, 0.58], ['#eef4ff', '#fff6e6', '#e3ecff']);   // 사무·상가: 하얀 형광등, 덜 켜짐
 const litC = litTexture(0.58, [6 / 64, 0.24, 0.8, 0.32]);                                  // 아파트: 따뜻한 전등, 많이 켜짐
 const litShop = litTexture(0.85, [3 / 64, 0.22, 0.9, 0.62], ['#fff4d6', '#ffe9b8', '#ffffff']);   // 1층 가게: 대부분 켜짐
@@ -416,21 +444,21 @@ const uRoofGlow = { value: 0 }, uOfficeK = { value: 1 }, uShopK = { value: 1 }; 
 const GL2 = renderer.capabilities.isWebGL2;
 // 건물 셰이더에 더하는 것: 밤 주황 지붕 빛남(glow), 건물 종류별 창 무늬·1층 가게 앞면(wst), 밤에 빈 층 불 끄기(bid·woff → emptyTex)
 bMat.onBeforeCompile = (sh) => {
-  Object.assign(sh.uniforms, { uRoofGlow, uOfficeK, uShopK, uWinB: { value: winTexB }, uWinC: { value: winTexC }, uShop: { value: shopTex },
+  Object.assign(sh.uniforms, { uRoofGlow, uOfficeK, uShopK, uWinB: { value: winTexB }, uWinC: { value: winTexC }, uShop: { value: shopTex }, uInd: { value: indTex },
     uLitB: { value: litB }, uLitC: { value: litC }, uLitShop: { value: litShop }, uEmpty: { value: emptyTex } });
   sh.vertexShader = 'attribute float glow, wst, bid, woff;\nvarying float vGlow, vWst, vBid, vWoff;\nvarying vec2 vRaw;\n' +
     sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vGlow = glow; vWst = wst; vBid = bid; vWoff = woff; vRaw = uv;');
-  const pick = (a, b, c, d) => `(isShop ? ${d} : (st < 0.5 ? ${a} : (st < 1.5 ? ${b} : ${c})))`;
-  const head = 'uniform float uRoofGlow, uOfficeK, uShopK;\nuniform sampler2D uWinB, uWinC, uShop, uLitB, uLitC, uLitShop, uEmpty;\nvarying float vGlow, vWst, vBid, vWoff;\nvarying vec2 vRaw;\n';
+  const pick = (a, b, c, d, e) => `(isShop ? ${d} : (st < 0.5 ? ${a} : (st < 1.5 ? ${b} : (st < 2.5 ? ${c} : ${e}))))`;
+  const head = 'uniform float uRoofGlow, uOfficeK, uShopK;\nuniform sampler2D uWinB, uWinC, uShop, uInd, uLitB, uLitC, uLitShop, uEmpty;\nvarying float vGlow, vWst, vBid, vWoff;\nvarying vec2 vRaw;\n';
   const pre = `float st = mod(vWst, 4.0); float flf = floor(vRaw.y - vWoff); bool isShop = vWst > 3.5 && flf < 0.5 && flf > -0.5;`;
   sh.fragmentShader = head + sh.fragmentShader
     .replace('#include <map_fragment>', `${pre}
 #ifdef USE_MAP
-  vec4 sampledDiffuseColor = ${pick('texture2D(map, vUv)', 'texture2D(uWinB, vUv)', 'texture2D(uWinC, vUv)', 'texture2D(uShop, vUv)')};
+  vec4 sampledDiffuseColor = ${pick('texture2D(map, vUv)', 'texture2D(uWinB, vUv)', 'texture2D(uWinC, vUv)', 'texture2D(uShop, vUv)', 'texture2D(uInd, vUv)')};
   diffuseColor *= sampledDiffuseColor;
 #endif`)
     .replace('#include <emissivemap_fragment>', `#ifdef USE_EMISSIVEMAP
-  vec4 emissiveColor = ${pick('texture2D(emissiveMap, vUv)', 'texture2D(uLitB, vUv)', 'texture2D(uLitC, vUv)', 'texture2D(uLitShop, vUv)')};
+  vec4 emissiveColor = ${pick('texture2D(emissiveMap, vUv)', 'texture2D(uLitB, vUv)', 'texture2D(uLitC, vUv)', 'texture2D(uLitShop, vUv)', 'vec4(0.0)')};
   ${GL2 ? `int fi = int(flf); int msk = int(texelFetch(uEmpty, ivec2(int(vBid + 0.5), 0), 0).r + 0.5);
   if (fi >= 0 && fi < 24 && ((msk >> fi) & 1) == 1) emissiveColor.rgb *= 0.0;` : ''}
   emissiveColor.rgb *= isShop ? uShopK : (st > 0.5 && st < 1.5 ? uOfficeK : 1.0);
@@ -454,7 +482,7 @@ scene.add(bMesh);
     let p = b.p.slice(); if (signedArea(p) > 0) p.reverse();
     for (let i = 0; i < p.length; i++) {
       const a = p[i], c = p[(i + 1) % p.length], dx = c[0] - a[0], dz = c[1] - a[1], l = Math.hypot(dx, dz); if (l < 0.3) continue;
-      const nx = -dz / l * OUT, nz = dx / l * OUT, y = TON ? 0.12 : 0.04;   // 지형 켜면 조금 더 띄움(지형 메시 삼각형과 계산 높이가 몇 cm 달라 얼룩지지 않게)
+      const nx = -dz / l * OUT, nz = dx / l * OUT, y = 0.04 + GL;   // 지형 켜면 조금 더 띄움(지형 메시 삼각형과 계산 높이가 몇 cm 달라 얼룩지지 않게)
       // 안쪽(벽 밑) 알파 W0 → 바깥 0. 지형이 켜져 있으면 8m 이하 조각마다 땅 높이
       const ns = TON ? Math.max(1, Math.ceil(l / 8)) : 1;
       for (let k = 0; k < ns; k++) {
@@ -664,7 +692,7 @@ if (D.boundary) {
 labels.sort((a, b) => b.pri - a.pri);
 const show = { place: true, road: true };
 const _v = new THREE.Vector3(), _w = new THREE.Vector3();
-const COVER = ['#info', '#sim', '#nav', '#tabs', '#street', '#card', '#layers', '#rail', '#hint'];
+const COVER = ['#info', '#sim', '#nav', '#tabs', '#street', '#card', '#layers', '#rail', '#hint', '#scale', '#credit'];   // 축척 막대·출처 줄 밑 이름표도 숨김(seohogyun-20 지적)
 // 패널 자리는 그리기 루프 밖(0.4초마다, 화면이 다 그려진 뒤)에서 재 둔다 — 루프 안에서 재면 브라우저가 배치를 한 번 더 계산해 끊길 수 있다
 let coverCache = [];
 function measureCover() {
@@ -682,6 +710,47 @@ function measureCover() {
   if (changed) need();
 }
 setInterval(measureCover, 400);
+
+// ── 건물 뒤 이름표 숨기기 ─────────────────────────────────
+// 이름표는 화면 위 글자라 3D 건물에 가려지지 않아, 눈높이로 보면 뒤쪽 길·가게 이름이 앞 건물 벽 위에 떠 보였음.
+// 0.3초마다(카메라가 움직였을 때만) 카메라 → 이름표 선을 3m 간격으로 따라가며, 그 점이 어떤 건물 발자국 안·높이 사이면 가림(L.occ).
+// 20m 격자로 건물을 찾는다. 이름표 자리의 건물(가게·장소 이름표가 서 있는 건물)과 층 단면으로 치운 건물은 빼고,
+// 꼭 보여야 하는 이름표(①②③ 몰린 곳 .hot, 층 단면 abs·nudge)는 가리지 않음
+const OG = 20, ogrid = new Map();
+B.forEach((b, bi) => { if (b.k === 'roof') return; let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+  for (const q of b.p) { if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0]; if (q[1] < z0) z0 = q[1]; if (q[1] > z1) z1 = q[1]; }
+  b._bb = [x0, z0, x1, z1];
+  for (let gx = Math.floor(x0 / OG); gx <= Math.floor(x1 / OG); gx++) for (let gz = Math.floor(z0 / OG); gz <= Math.floor(z1 / OG); gz++) {
+    const k = gx * 100003 + gz; let c = ogrid.get(k); if (!c) ogrid.set(k, c = []); c.push(bi); } });
+function inPoly(p, x, z) { let ins = false; for (let i = 0, j = p.length - 1; i < p.length; j = i++) { const a = p[i], c = p[j];
+  if ((a[1] > z) !== (c[1] > z) && x < (c[0] - a[0]) * (z - a[1]) / (c[1] - a[1]) + a[0]) ins = !ins; } return ins; }
+function bldAt(x, z) { const c = ogrid.get(Math.floor(x / OG) * 100003 + Math.floor(z / OG)); if (c) for (const bi of c) { const bb = B[bi]._bb;
+  if (x >= bb[0] && x <= bb[2] && z >= bb[1] && z <= bb[3] && inPoly(B[bi].p, x, z)) return bi; } return -1; }
+function occluded(cx, cy, cz, px, py, pz, own) {
+  const dx = px - cx, dy = py - cy, dz = pz - cz, n = Math.min(500, Math.ceil(Math.hypot(dx, dz) / 3));
+  for (let k = 1; k < n; k++) { const t = k / n, x = cx + dx * t, y = cy + dy * t, z = cz + dz * t;
+    const c = ogrid.get(Math.floor(x / OG) * 100003 + Math.floor(z / OG)); if (!c) continue;
+    for (const bi of c) { if (bi === own || bi === hiddenB) continue; const b = B[bi];
+      if (y > b.b + b.h || y < b.b) continue; const bb = b._bb; if (x < bb[0] || x > bb[2] || z < bb[1] || z > bb[3]) continue;
+      if (inPoly(b.p, x, z)) return true; } }
+  return false;
+}
+let occKey = '';
+function measureOcc() {
+  const c = camera.position, key = c.x.toFixed(1) + ',' + c.y.toFixed(1) + ',' + c.z.toFixed(1) + ',' + hiddenB + ',' + labels.length;
+  if (key === occKey) return; occKey = key; let ch = false;
+  for (const L of labels) {
+    const exempt = L.abs || L.nudge || L.el.classList.contains('hot');   // 층 단면 이름표, ①②③ 몰린 곳 표시만 늘 보임
+    if (exempt) { if (L.occ) { L.occ = false; ch = true; } continue; }
+    if (L.own === undefined) L.own = bldAt(L.x, L.z);
+    // 검사할 점: 건물에 선 이름표는 그 건물 옥상(+1m), 길·땅 이름표는 6m 위 — 비스듬히 보면 좁은 골목 한가운데 점은 모서리에 가려도 골목은 보이므로
+    const ty = L.own >= 0 ? B[L.own].b + B[L.own].h + 1 : L.y + Math.max(0, hAt(L.x, L.z)) + 6;
+    const o = occluded(c.x, c.y, c.z, L.x, ty, L.z, L.own);
+    if (o !== !!L.occ) { L.occ = o; ch = true; }
+  }
+  if (ch) need();
+}
+setInterval(measureOcc, 300);
 function coverBoxes() { return coverCache.map(b => b.slice()); }
 let labN = -1;
 function placeLabels() {
@@ -690,9 +759,10 @@ function placeLabels() {
   const W = canvas.clientWidth, H = canvas.clientHeight, taken = coverBoxes();
   const dist = camera.position.distanceTo(controls.target);
   for (const L of labels) {
-    const far = L.kind === 'road' ? (L.pri < 4 ? R * 0.9 : R * 3) : (L.pri <= 2 ? R * 0.5 : L.pri < 5 ? R * 0.9 : R * 3);
-    if (!show[L.kind] || dist > far) { L.el.classList.add('off'); continue; }
-    _v.set(L.x, L.y + (L.abs ? 0 : hAt(L.x, L.z)), L.z).project(camera);   // 땅 기준 이름표는 지형 높이를 더함(abs 는 이미 절대 높이)
+    // 멀리(카메라 700m 넘게, 상권 전체 보기)서는 큰길(pri ≥ 4)·큰 지명(pri ≥ 8)과 ①②③·폐업·거리 이름표만 — 빈 층 주황이 이름표에 묻히지 않게(seohogyun-20 제안 C)
+    const far = L.kind === 'road' ? (L.pri < 4 ? 700 : R * 3) : (L.pri <= 2 ? R * 0.5 : L.pri < 8 ? 700 : R * 3);
+    if (!show[L.kind] || dist > far || L.occ) { L.el.classList.add('off'); continue; }   // L.occ: 건물 뒤(measureOcc)
+    _v.set(L.x, L.y + (L.abs ? 0 : Math.max(0, hAt(L.x, L.z))), L.z).project(camera);   // 바다 위 이름표는 물 높이 0 아래로 내리지 않음   // 땅 기준 이름표는 지형 높이를 더함(abs 는 이미 절대 높이)
     if (_v.z > 1 || _v.x < -1.1 || _v.x > 1.1 || _v.y < -1.1 || _v.y > 1.1) { L.el.classList.add('off'); continue; }
     if (!L.w) { L.el.classList.remove('off'); L.w = L.el.offsetWidth; L.h = L.el.offsetHeight; }
     const x = (_v.x + 1) / 2 * W - L.w / 2, y = (1 - _v.y) / 2 * H - L.h / 2;
@@ -750,16 +820,6 @@ function fillCard() {
   $('s-legend').innerHTML = `<span><i style="background:#d9480f"></i>${ST.label}</span>` +
     ST.compare.map((c, k) => `<span><i style="background:${cols[k]}"></i>${c.label}</span>`).join('');
 }
-fillCard();
-const card = document.getElementById('card');
-function syncCardHeight() { document.documentElement.style.setProperty('--card-h', card.offsetHeight + 'px'); }
-window.__syncCard = syncCardHeight;
-document.getElementById('card-toggle').onclick = (e) => {
-  const c = card.classList.toggle('collapsed');
-  e.currentTarget.setAttribute('aria-expanded', String(!c)); e.currentTarget.title = c ? '펴기' : '접기';
-  syncCardHeight();
-};
-if (SMALL) { card.classList.add('collapsed'); document.getElementById('card-toggle').setAttribute('aria-expanded', 'false'); }
 
 // ── 보기 설정 ─────────────────────────────────────────
 document.getElementById('L-est').onchange = (e) => paintEstimated(e.target.checked);
@@ -869,8 +929,8 @@ requestAnimationFrame(() => requestAnimationFrame(() => {
 }));
 
 // 점검용(자동 시험이 읽음)
-window.__map = { select, hideBuilding, get selMesh() { return selMesh; }, buildings: B, signedArea, camera, controls, HOME, labels, need, orbit, scene, renderer, R, esc, tint, setRoofs,
-  roads: roadMeshes, ground, greens: greenMeshes, water: waterMesh, xz, meta: D.meta, dayLight, edgeFade, hAt, TON, get night() { return Math.max(0, nightNow); },
+window.__map = { _occ: () => { occKey = ""; measureOcc(); }, select, hideBuilding, get selMesh() { return selMesh; }, buildings: B, signedArea, camera, controls, HOME, labels, need, orbit, scene, renderer, R, esc, tint, setRoofs,
+  roads: roadMeshes, ground, greens: greenMeshes, water: waterMesh, xz, meta: D.meta, dayLight, edgeFade, hAt, TON, GL, get night() { return Math.max(0, nightNow); },
   get selected() { return selIdx; }, infoExtra: null };
 function syncFog() { if (!scene.fog) return; const h = camera.position.y, k = 1 + Math.max(0, Math.min(1, (420 - h) / 380)) * 0.9; scene.fog.near = R * 1.15 * k; scene.fog.far = R * 2.6 * k; }
 controls.addEventListener('change', syncFog); syncFog();

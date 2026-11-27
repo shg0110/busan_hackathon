@@ -46,7 +46,7 @@ const JUNC_CLEAR = 15;         // 교차로 앞뒤로 중앙선·차선을 비�
 
 // ── 지형(terrain.js, seohogyun-31): 켜져 있으면 모든 바닥 층을 땅 높이에 붙인다. 꺼져 있으면 아래는 모두 그대로(높이 0) ──
 const TON = !!window.TERRAIN_ON, TH = (typeof window.heightAt === 'function') ? window.heightAt : () => 0;
-const LIFT = 0.05;   // 지형 면 위로 띄우는 높이(깊이 다툼 방지는 polygonOffset 이 주로 맡음)
+const LIFT = 0.2;   // 지형 면 위로 띄우는 높이. 0.05 였을 때 8m 로 나눈 차도 면이 6m 지형 격자의 오목한 곳에서 땅 밑으로 들어가 보도블록이 차도를 가로질러 보였다(11-27)
 // 삼각형을 가장 긴 변의 가운데에서 둘로 나누기를 되풀이해 모든 변이 maxE 이하가 되게(감는 방향 유지). 6m 지형 격자 위에서 긴 삼각형이 땅을 뚫거나 뜨지 않게
 function densify(pos, maxE) {
   const out = [], st = [];
@@ -179,7 +179,7 @@ function stripe(m, off, wd, s0, s1, y, out) {
   }
 }
 // 길을 따라 솟은 띠(연석): 윗면 + 양 옆면. 삼각형마다 감는 방향을 바깥 법선에 맞춰 앞면만 그려도 되게 한다
-function raised(m, off, wd, H, s0, s1, pos, nrm, step = 3) {
+function raised(m, off, wd, H, s0, s1, pos, nrm, step = 6) {
   const tri = (a, b, c, n) => {
     const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
     const cx = uy * vz - uz * vy, cy = uz * vx - ux * vz, cz = ux * vy - uy * vx;
@@ -187,9 +187,14 @@ function raised(m, off, wd, H, s0, s1, pos, nrm, step = 3) {
     pos.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]); nrm.push(n[0], n[1], n[2], n[0], n[1], n[2], n[0], n[1], n[2]);
   };
   const quad = (a, b, c, d, n) => { tri(a, b, c, n); tri(a, c, d, n); };
+  // 표본: 시작·끝, 길 선의 꼭짓점(꺾이는 곳은 꼭 지킴), 그 사이는 step 간격(전엔 3m 고정이라 연석 삼각형이 8.8만 개, 20 측정)
+  const S = [s0, s1]; for (const c of m.w.cum) if (c > s0 + 0.3 && c < s1 - 0.3) S.push(c);
+  S.sort((a, b) => a - b);
+  const samples = [];
+  for (let k = 0; k < S.length; k++) { samples.push(S[k]); if (k < S.length - 1) { const g = S[k + 1] - S[k], n = Math.ceil(g / step); for (let t = 1; t < n; t++) samples.push(S[k] + g * t / n); } }
   let prev = null;
-  for (let s = s0; s <= s1 + 1e-6; s = Math.min(s1, s + step)) {
-    const q = m.w.at(s), cx = q.x + q.nx * off, cz = q.z + q.nz * off, h = wd / 2;
+  for (const s of samples) {
+    const q = m.w.at(Math.min(s, m.w.L)), cx = q.x + q.nx * off, cz = q.z + q.nz * off, h = wd / 2;
     const cur = { i: [cx - q.nx * h, cz - q.nz * h], o: [cx + q.nx * h, cz + q.nz * h], nx: q.nx, nz: q.nz };
     cur.hi = TH(cur.i[0], cur.i[1]) + (TON ? LIFT : 0); cur.ho = TH(cur.o[0], cur.o[1]) + (TON ? LIFT : 0);   // 지형이 꺼져 있으면 0
     if (prev) {
@@ -198,7 +203,7 @@ function raised(m, off, wd, H, s0, s1, pos, nrm, step = 3) {
       quad([prev.i[0], prev.hi - dn, prev.i[1]], [cur.i[0], cur.hi - dn, cur.i[1]], [cur.i[0], cur.hi + H, cur.i[1]], [prev.i[0], prev.hi + H, prev.i[1]], [-cur.nx, 0, -cur.nz]);
       quad([prev.o[0], prev.ho - dn, prev.o[1]], [cur.o[0], cur.ho - dn, cur.o[1]], [cur.o[0], cur.ho + H, cur.o[1]], [prev.o[0], prev.ho + H, prev.o[1]], [cur.nx, 0, cur.nz]);
     }
-    prev = cur; if (s >= s1) break;
+    prev = cur;
   }
 }
 // 띠(꺾임 이음 각도 제한) + caps=true 면 양 끝에 둥근 원판(교차로 이음새 메움, app.js ribbon 과 같은 방식)
@@ -320,8 +325,9 @@ function faceUp(pos, uv) {
   }
 }
 const made = [];
-const NO_DENSIFY = new Set(['water']);   // 바다는 높이 0 이라 잘게 나눌 필요 없음
-const ROADLIKE = new Set(['foot', 'service', 'minor-edge', 'minor', 'link', 'major-edge', 'major', 'walk', 'corner', 'alley-edge']);   // 길 띠는 8m 로(삼각형 수 줄이기)
+const NO_DENSIFY = new Set(['water']);
+const ZERO_BASE = new Set(['water', 'foam']);   // 바다는 높이 0 이라 잘게 나눌 필요 없음
+const ROADLIKE = new Set(['surf-concrete', 'surf-pavers', 'surf-dirt', 'foot', 'service', 'minor-edge', 'minor', 'link', 'major-edge', 'major', 'walk', 'corner', 'alley-edge']);   // 길 띠는 8m 로(삼각형 수 줄이기)
 function flat(pos, color, order, glow, name, tex) {
   if (!pos.length) return null;
   faceUp(pos);
@@ -329,7 +335,8 @@ function flat(pos, color, order, glow, name, tex) {
   if (TON) {   // 6m 이하로 나눈 뒤 꼭짓점마다 땅 높이를 더하고, 법선은 땅 기울기
     if (!NO_DENSIFY.has(name)) pos = densify(pos, ROADLIKE.has(name) ? 8 : 6);
     const n2 = new Float32Array(pos.length);
-    for (let i = 0; i < pos.length; i += 3) { const x = pos[i], z = pos[i + 2]; pos[i + 1] += TH(x, z) + LIFT; const n = terrainNormal(x, z); n2[i] = n[0]; n2[i + 1] = n[1]; n2[i + 2] = n[2]; }
+    const zb = ZERO_BASE.has(name);   // 물·물거품은 바다 높이 0 에 고정(해안 바다 격자점은 지형이 음수라 따라가면 물이 꺼진다)
+    for (let i = 0; i < pos.length; i += 3) { const x = pos[i], z = pos[i + 2]; pos[i + 1] += (zb ? 0 : TH(x, z)) + LIFT; const n = zb ? [0, 1, 0] : terrainNormal(x, z); n2[i] = n[0]; n2[i + 1] = n[1]; n2[i + 2] = n[2]; }
     var nrmT = n2;
   } else for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1;
   const g = new THREE.BufferGeometry();
@@ -341,7 +348,7 @@ function flat(pos, color, order, glow, name, tex) {
     g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   }
   const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color, depthWrite: false, side: THREE.DoubleSide, emissive: glow || '#000000', map: tex || null,
-    polygonOffset: TON, polygonOffsetFactor: -1, polygonOffsetUnits: -4 }));   // 지형 면(깊이 씀)보다 앞에 그려지게
+    polygonOffset: TON, polygonOffsetFactor: -2, polygonOffsetUnits: -8 }));   // 지형 면(깊이 씀)보다 앞에 그려지게
   m.renderOrder = order; m.receiveShadow = true; m.name = 'ground-' + (name || order); scene.add(m); made.push(m); return m;
 }
 
@@ -369,6 +376,45 @@ function openSpans(m, clear, extra) {
   if (s < m.w.L) spans.push([s, m.w.L]);
   return spans.filter(([a, b]) => b - a > 3);
 }
+// 길 선이 25° 넘게 꺾이는 꼭짓점(길을 따른 거리). 옆으로 띄운 선(차선·중앙선)이 이런 곳에서 뒤로 접혀 갈고리처럼 보였다(11-27 거제대로 캡처)
+function sharpAt(m) {
+  if (m._sharp) return m._sharp;
+  const p = m.r.p, out = [], c25 = Math.cos(25 * Math.PI / 180);
+  for (let i = 1; i < p.length - 1; i++) {
+    const ax = p[i][0] - p[i - 1][0], az = p[i][1] - p[i - 1][1], bx = p[i + 1][0] - p[i][0], bz = p[i + 1][1] - p[i][1];
+    if ((ax * bx + az * bz) / ((Math.hypot(ax, az) * Math.hypot(bx, bz)) || 1) < c25) out.push(m.w.cum[i]);
+  }
+  return (m._sharp = out);
+}
+// [a, b] 에서 급한 꺾임 앞뒤 pad m 를 뺀 구간들
+function cutSharp(m, a, b, pad) {
+  const out = []; let s0 = a;
+  for (const s of sharpAt(m)) { if (s + pad <= s0 || s - pad >= b) continue; if (s - pad > s0) out.push([s0, s - pad]); s0 = Math.max(s0, s + pad); }
+  if (b > s0) out.push([s0, b]);
+  return out.filter(([x, y]) => y - x > 1);
+}
+// 차도 선분 격자: 점이 '다른' 차도 위(그 길 가운데선에서 폭/2 + 0.3m 안)인지. 중앙분리 도로(거제대로처럼 같은 이름 일방 두 가닥)는 가닥 사이가 6~15m 라
+// 폭 12m 로 그리면 서로 겹치고, 안쪽 연석이 반대편 차도 위에 솟았다
+const vehSegs = []; D.roads.forEach((r, ri) => { if (vehicle[ri] && !r.br && r.p.length > 1) for (let i = 0; i < r.p.length - 1; i++) vehSegs.push([r.p[i], r.p[i + 1], r.w, ri]); });
+const vehGrid = (() => {
+  const cell = 20, map = new Map(), K = (i, j) => i * 100003 + j;
+  vehSegs.forEach((sg, idx) => { const [a, b] = sg; for (let i = Math.floor(Math.min(a[0], b[0]) / cell); i <= Math.floor(Math.max(a[0], b[0]) / cell); i++) for (let j = Math.floor(Math.min(a[1], b[1]) / cell); j <= Math.floor(Math.max(a[1], b[1]) / cell); j++) { const k = K(i, j); let l = map.get(k); if (!l) map.set(k, l = []); l.push(idx); } });
+  return (x, z, ri, ri2) => { const ci = Math.floor(x / cell), cj = Math.floor(z / cell);
+    for (let i = ci - 1; i <= ci + 1; i++) for (let j = cj - 1; j <= cj + 1; j++) { const l = map.get(K(i, j)); if (!l) continue;
+      for (const idx of l) { const sg = vehSegs[idx]; if (sg[3] !== ri && sg[3] !== ri2 && segDist(x, z, sg[0], sg[1]) < sg[2] / 2 + 0.3) return true; } }
+    return false; };
+})();
+// 연석을 그릴 구간에서 다른 차도 위에 들어가는 곳을 뺀다(2m 간격으로 봄)
+function freeOfRoads(m, off, a, b) {
+  const out = []; let st = null;
+  for (let s = a; ; s = Math.min(b, s + 2)) {
+    const q = m.w.at(s), ok = !vehGrid(q.x + q.nx * off, q.z + q.nz * off, m.ri);
+    if (ok && st === null) st = s;
+    if ((!ok || s >= b) && st !== null) { const e = ok ? b : s - 1; if (e - st > 2) out.push([st, e]); st = null; }
+    if (s >= b) break;
+  }
+  return out;
+}
 const stats = { centerM: 0, laneM: 0, edgeM: 0, parking: 0 };
 
 // ── 지형 면(지형이 켜졌을 때만): 바탕을 6m 격자 지형 메시로(깊이를 써서 언덕이 뒤를 가림) ──
@@ -388,7 +434,10 @@ if (TON && window.TERRAIN) {
     const k = jj * nx + ii, x = T.x0 + ii * T.cell, z = T.z0 + jj * T.cell;
     P[k * 3] = x; P[k * 3 + 1] = TH(x, z); P[k * 3 + 2] = z; UV[k * 2] = ii / (nx - 1); UV[k * 2 + 1] = 1 - jj / (nz - 1);
   }
-  for (let jj = 0; jj < nz - 1; jj++) for (let ii = 0; ii < nx - 1; ii++) { const a = jj * nx + ii, b = a + 1, c = a + nx, d = c + 1; idx.push(a, c, b, b, c, d); }   // 위(+y)를 보게
+  // 바다 칸(네 꼭짓점이 모두 물 다각형 안)은 위에 물이 덮여 보이지 않으므로 만들지 않는다(삼각형 줄이기). 높이 0 인 땅이 비지 않게 높이가 아니라 다각형으로 판정
+  const seaV = new Uint8Array(nx * nz);
+  for (let jj = 0; jj < nz; jj++) { const z = T.z0 + jj * T.cell, rows = D.water.map(w => rowCross(w.p, z)); for (let ii = 0; ii < nx; ii++) if (rows.some(xs => inRow(xs, T.x0 + ii * T.cell))) seaV[jj * nx + ii] = 1; }
+  for (let jj = 0; jj < nz - 1; jj++) for (let ii = 0; ii < nx - 1; ii++) { const a = jj * nx + ii, b = a + 1, c = a + nx, d = c + 1; if (seaV[a] && seaV[b] && seaV[c] && seaV[d]) continue; idx.push(a, c, b, b, c, d); }   // 위(+y)를 보게
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(P, 3)); g.setAttribute('uv', new THREE.BufferAttribute(UV, 2)); g.setIndex(idx); g.computeVertexNormals();
   const tm = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: '#ffffff', map: landTex }));
   tm.renderOrder = 0; tm.receiveShadow = true; tm.name = 'ground-terrain'; scene.add(tm); made.push(tm);
@@ -456,8 +505,11 @@ const LANDUSE = {
 // ── 도로 포장: 등급마다 다른 회색. 큰길은 가장자리 0.6m 를 한 톤 어둡게(연석 쪽 그늘) ──
 {
   const foot = [], service = [], minorEdge = [], minor = [], link = [], majorEdge = [], major = [];
+  const concrete = [], pavers = [], dirt = [];   // OSM surface 가 아스팔트가 아닌 길(roadcal.js 가 단 r.surf): 콘크리트·보도블록·흙
+  const SURF = { concrete: concrete, 'concrete:plates': concrete, paving_stones: pavers, sett: pavers, dirt: dirt, ground: dirt, gravel: dirt, unpaved: dirt };
   for (const r of D.roads) {
     if (r.br || r.p.length < 2) continue;
+    if (r.surf && SURF[r.surf]) { ribbon(r.p, r.w, 0, SURF[r.surf], true); continue; }
     if (r.ped || FOOT.has(r.k)) { ribbon(r.p, r.w, 0, foot, true); continue; }
     if (r.k === 'service') { ribbon(r.p, r.w, 0, service, true); continue; }
     if (MAJOR.has(r.k)) { ribbon(r.p, r.w, 0, majorEdge, true); ribbon(r.p, r.w - 1.2, 0, major, true); continue; }
@@ -471,12 +523,16 @@ const LANDUSE = {
   flat(link, G.link, 7.45, null, 'link', TEX.asphalt);
   flat(majorEdge, G.majorEdge, 7.5, null, 'major-edge');
   flat(major, G.major, 7.6, null, 'major', TEX.asphalt);
+  flat(concrete, '#c9cacb', 7.25, null, 'surf-concrete', TEX.slab);
+  flat(pavers, G.foot, 7.25, null, 'surf-pavers', TEX.paver);
+  flat(dirt, '#cdbfa6', 7.25, null, 'surf-dirt', TEX.dirt);
+  stats.surfRoads = D.roads.filter(r => r.surf && SURF[r.surf]).length;
 }
 
 // ── 인도: 큰길 전체 폭 + 양쪽 2.5m 를 길 아래 순서로 깔면 길이 가운데를 덮어 양쪽 띠만 남는다 ──
 {
   const pos = [];
-  for (const m of majors) if (!m.r.br) ribbon(m.r.p, m.r.w + WALK_W * 2, 0, pos, true);
+  for (const m of majors) if (!m.r.br && m.r.sw !== false) ribbon(m.r.p, m.r.w + WALK_W * 2, 0, pos, true);   // r.sw: roadcal.js 가 단 인도 있음 표시(사람 걷는 자리와 같은 기준)
   flat(pos, G.walk, 3.5, null, 'walk', TEX.paver);   // 녹지(1~3) 위, 물(4)·길 아래
 }
 
@@ -487,13 +543,14 @@ const LANDUSE = {
     const w = m.r.w, ow = !!m.r.ow, ln = m.r.ln || 0;
     const cwCut = (cwOn.get(m.ri) || []).map(c => [c.s - c.w / 2 - 2, c.s + c.w / 2 + 2]);   // 횡단보도 위와 앞뒤 2m 는 중앙선·차선 없음
     for (const [a, b] of openSpans(m, JUNC_CLEAR, cwCut)) {
-      if (!ow) { stripe(m, 0, 0.3, a, b, 0.03, center); stats.centerM += b - a; }
+      if (!ow) for (const [c0, c1] of cutSharp(m, a, b, 3)) { stripe(m, 0, 0.3, c0, c1, 0.03, center); stats.centerM += c1 - c0; }
       // 교차로 쪽 끝 18m 는 실선(진로변경 제한선), 그 사이는 3m 칠하고 5m 비우는 점선
       const SOLID = 18, sa = a > 0.5 ? Math.min(b, a + SOLID) : a, sb = b < m.w.L - 0.5 ? Math.max(sa, b - SOLID) : b;
+      const sharp = sharpAt(m);
       const dash = (off) => {
-        if (sa > a) { stripe(m, off, 0.15, a, sa, 0.03, lane); stats.laneM += sa - a; }
-        for (let s = sa; s + 3 <= sb; s += 8) { stripe(m, off, 0.15, s, s + 3, 0.03, lane); stats.laneM += 3; }
-        if (b > sb) { stripe(m, off, 0.15, sb, b, 0.03, lane); stats.laneM += b - sb; }
+        if (sa > a) for (const [c0, c1] of cutSharp(m, a, sa, 3)) { stripe(m, off, 0.15, c0, c1, 0.03, lane); stats.laneM += c1 - c0; }
+        for (let s = sa; s + 3 <= sb; s += 8) { if (sharp.some(v => v > s - 3 && v < s + 6)) continue; stripe(m, off, 0.15, s, s + 3, 0.03, lane); stats.laneM += 3; }
+        if (b > sb) for (const [c0, c1] of cutSharp(m, sb, b, 3)) { stripe(m, off, 0.15, c0, c1, 0.03, lane); stats.laneM += c1 - c0; }
       };
       const per = lanesPerDir(m.r);
       if (ow) for (let k = 1; k < per; k++) dash(-w / 2 + k * w / per);
@@ -501,7 +558,7 @@ const LANDUSE = {
     }
     // 연석: 차도 가장자리 바로 바깥 0.2m 폭, 15cm 솟은 상자(사람 눈높이에서 길 가장자리가 입체로 보이게). 교차로 앞뒤 8m 는 비움(교차로 입구. 큰길끼리 만나는 모서리는 아래에서 곡선으로 이음)
     const rampCut = (cwOn.get(m.ri) || []).filter(c => c.ramp).map(c => [c.s - c.w / 2, c.s + c.w / 2]);   // 보도턱낮춤여부 = Y 인 횡단보도 폭만큼 연석 없음
-    if (!m.r.br) for (const [a, b] of openSpans(m, 8, rampCut)) for (const sgn of [1, -1]) { raised(m, sgn * (w / 2 + 0.1), 0.2, 0.15, a, b, curb.pos, curb.nrm); stats.curbM = (stats.curbM || 0) + (b - a); }
+    if (!m.r.br) for (const [a, b] of openSpans(m, 8, rampCut)) for (const sgn of [1, -1]) for (const [c0, c1] of freeOfRoads(m, sgn * (w / 2 + 0.1), a, b)) { raised(m, sgn * (w / 2 + 0.1), 0.2, 0.15, c0, c1, curb.pos, curb.nrm); stats.curbM = (stats.curbM || 0) + (c1 - c0); }
   }
   // ── 교차로 모서리: 큰길끼리 만나는 모서리에서, 끊긴 연석(교차점에서 8m)을 곡선으로 잇고 곡선과 모서리 사이 쐐기는 아스팔트로 ──
   // 예전엔 인도 모서리가 직각이고 연석이 모서리를 돌지 않았다(11-27 근접 캡처). 곡선은 두 길 가장자리선이 만나는 점을 조절점으로 한 2차 베지어
@@ -513,7 +570,7 @@ const LANDUSE = {
       for (const dir of [-1, 1]) {
         const s2 = j.s + dir * CUT; if (s2 < 0.5 || s2 > m.w.L - 0.5) continue;
         const q = m.w.at(s2), dx = q.x - j.p[0], dz = q.z - j.p[1], l = Math.hypot(dx, dz) || 1;
-        list.push({ p: j.p, u: [dx / l, dz / l], h: m.r.w / 2 });
+        list.push({ p: j.p, u: [dx / l, dz / l], h: m.r.w / 2, ri: m.ri });
       }
     }
     const cr = (a, b) => a[0] * b[1] - a[1] * b[0];
@@ -537,6 +594,8 @@ const LANDUSE = {
         };
         const e = meet(A.h, B.h), c = meet(A.h + 0.1, B.h + 0.1);
         if (!e || !c || e.t <= 0 || e.s <= 0 || e.t >= CUT - 0.3 || e.s >= CUT - 0.3) continue;
+        // 모서리가 두 팔 말고 다른 차도 위면(중앙분리 도로의 반대 가닥 등) 그리지 않는다: 차도 한가운데 둥근 연석이 생겼다(11-27 거제대로)
+        if (vehGrid(e.C[0], e.C[1], A.ri, B.ri)) continue;
         // 아스팔트 쐐기: 모서리점 C 에서 곡선까지 부채꼴
         const EA = [e.oA[0] + A.u[0] * CUT, e.oA[1] + A.u[1] * CUT], EB = [e.oB[0] + B.u[0] * CUT, e.oB[1] + B.u[1] * CUT];
         const crv = bez(EA, e.C, EB, 10);
@@ -603,6 +662,8 @@ if (D.parking && D.parking.length) {
     out.push(A[0], yy, A[1], B[0], yy, B[1], C[0], yy, C[1], A[0], yy, A[1], C[0], yy, C[1], D[0], yy, D[1]);
   };
   for (const c of CW) {
+    // 건너는 길이는 지금 그려진 차도 폭(roadcal.js 가 바꿨으면 그 폭). seohogyun-20 보행 신호등도 c.span 을 쓰므로 여기서 맞춰 둔다
+    if (D.roads[c.ri] && D.roads[c.ri].w) c.span = D.roads[c.ri].w;
     const ax = c.dx, az = c.dz, nx = -az, nz = ax, half = (c.span || 12) / 2 - 0.3, hl = (c.w || 4) / 2;
     for (let o = -half + 0.25; o <= half - 0.25 + 1e-6; o += 1.0) rect(c.x + nx * o, c.z + nz * o, ax, az, nx, nz, hl, 0.25, y, pos);
     if (c.tactile) for (const sg of [1, -1]) { const o = sg * ((c.span || 12) / 2 + 0.65); rect(c.x + nx * o, c.z + nz * o, ax, az, nx, nz, hl, 0.3, 0.028, tac); }
@@ -613,6 +674,7 @@ if (D.parking && D.parking.length) {
     for (let yy = 0; yy < 4; yy++) for (let xx = 0; xx < 4; xx++) { g.beginPath(); g.arc(xx * 16 + 8, yy * 16 + 8, 4, 0, Math.PI * 2); g.fill(); }
   }, 0.3);
   flat(tac, '#ffffff', 8.9, null, 'tactile', dots);
+  TEX.dots = dots;   // 정류장 점자블록도 같은 질감
   stats.crosswalks = CW.length; stats.tactile = CW.filter(c => c.tactile).length;
 }
 
@@ -654,7 +716,7 @@ if (D.parking && D.parking.length) {
     g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
     const nrm = new Float32Array(pos.length); for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1; g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
     // 빛을 받는 재질이라 밤(ea #63 하루 빛)에는 함께 어두워진다
-    const mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide, polygonOffset: TON, polygonOffsetFactor: -1, polygonOffsetUnits: -4 }));
+    const mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide, polygonOffset: TON, polygonOffsetFactor: -2, polygonOffsetUnits: -8 }));
     mesh.renderOrder = 4.1; mesh.name = 'ground-water-depth'; scene.add(mesh); made.push(mesh);
     stats.waterCells = pos.length / 18;
   }
@@ -700,7 +762,7 @@ let edgeFollow = null;
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
   const mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: c, vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false,
-    polygonOffset: TON, polygonOffsetFactor: -1, polygonOffsetUnits: -4 }));
+    polygonOffset: TON, polygonOffsetFactor: -2, polygonOffsetUnits: -8 }));
   mesh.renderOrder = 8.95; mesh.name = 'ground-edge-fade'; scene.add(mesh); made.push(mesh);
   // 하루 빛(ea #63): 밤에는 배경·안개가 어두워지므로 이 띠도 배경색을 따라가야 지도 끝에 흰 띠가 남지 않는다
   // 그릴 때마다 배경색을 복사한다(map-light 는 밤 정도가 0.02 넘게 바뀔 때만 와서 노을 구간의 배경 변화를 다 따라가지 못함)
@@ -767,8 +829,83 @@ if (M.water && M.water.material) M.water.material.color.set(G.water);
 
 // 버스 정류장 노면 상자·가로수 보호판은 규칙으로 놓은 것이라 지웠다(11-27 "실제 자료가 아닌 거는 없애자")
 
+// ── 정류장 점자블록(실제 자료: OSM 정류장 tactile_paving=yes, seohogyun-20 이 load 뒤 window.__decor.spots.busTactile = [{ x, z, ri }]) ──
+// 점자블록이 '있다'는 것만 자료다. 크기·모양은 일반형(정류장 쪽 연석 바로 뒤 인도에 길 방향 2m × 0.6m 점형 블록)으로 그린다
+function busTactile() {
+  const B = (window.__decor && window.__decor.spots && window.__decor.spots.busTactile) || [];
+  if (!B.length || !TEX.dots) return;
+  const pos = []; let n = 0;
+  for (const b of B) {
+    let best = null;
+    const look = (i, r) => { for (let k = 0; k < r.p.length - 1; k++) { const d = segDist(b.x, b.z, r.p[k], r.p[k + 1]); if (!best || d < best.d) best = { d, a: r.p[k], c: r.p[k + 1], r }; } };
+    if (b.ri != null && D.roads[b.ri]) look(b.ri, D.roads[b.ri]); else D.roads.forEach((r, i) => { if (vehicle[i] && r.p.length > 1) look(i, r); });
+    if (!best || best.d > best.r.w / 2 + 8) continue;
+    const dx = best.c[0] - best.a[0], dz = best.c[1] - best.a[1], L = Math.hypot(dx, dz) || 1, ux = dx / L, uz = dz / L;
+    const t = Math.max(0, Math.min(L, (b.x - best.a[0]) * ux + (b.z - best.a[1]) * uz)), px = best.a[0] + ux * t, pz = best.a[1] + uz * t;
+    let nx = -uz, nz = ux; if ((b.x - px) * nx + (b.z - pz) * nz < 0) { nx = -nx; nz = -nz; }   // 정류장 쪽
+    const off = best.r.w / 2 + 0.5, cx = px + nx * off, cz = pz + nz * off, y = 0.028;
+    const P = (u, v) => [cx + ux * u + nx * v, cz + uz * u + nz * v], A = P(-1, -0.3), B2 = P(1, -0.3), C = P(1, 0.3), E = P(-1, 0.3);
+    pos.push(A[0], y, A[1], B2[0], y, B2[1], C[0], y, C[1], A[0], y, A[1], C[0], y, C[1], E[0], y, E[1]); n++;
+  }
+  const m = flat(pos, '#ffffff', 8.9, null, 'bus-tactile', TEX.dots);
+  if (m && M.groundPhotoOn && M.groundPhotoOn()) m.visible = false;   // 사진 바닥이면 숨김(사진에 이미 있음)
+  if (window.__ground) window.__ground.busTactile = n;
+  M.need && M.need();
+}
+if (document.readyState === 'complete') setTimeout(busTactile, 0); else addEventListener('load', () => setTimeout(busTactile, 0));   // decor.js 의 load 처리 다음
+
+// ── 사진 바닥(정사영상, seohogyun-20 이 만드는 data/okpo_ortho.js → window.ORTHO = { img, src, year }): ?ground=photo 또는 __map.setGroundPhoto(true) ──
+// 지형 면 그림을 사진으로 바꾸고, 사진에 이미 있는 길·인도·연석·노면 표시·물거품은 숨긴다(사진과 OSM 선이 어긋나 겹쳐 보이지 않게). 건물·이름표·흐름 띠는 그대로.
+// 사진은 지형 격자 범위(x0 ~ x0+(nx-1)·cell, z0 ~ …)에 꽉 차고 위쪽이 북쪽이어야 한다. 자료가 없으면 아무것도 하지 않고 false
+{
+  // 물(바다 바탕·깊이 색)은 남긴다: 지형 면에 바다 칸이 없어(#131) 숨기면 바다가 비어 보였다
+  const KEEP = new Set(['ground-terrain', 'ground-edge-fade', 'ground-water', 'ground-water-depth']);
+  let photoTex = null, photoOn = false;
+  const tm = made.find(m => m.name === 'ground-terrain');
+  const apply = (on) => {
+    for (const m of made) if (!KEEP.has(m.name)) m.visible = !on;
+    tm.material.map = on ? photoTex : landTex; tm.material.needsUpdate = true;
+    if (M.water) M.water.visible = false;
+    photoOn = on; if (window.__ground) window.__ground.photo = on;
+    if (M.renderer) M.renderer.shadowMap.needsUpdate = true; M.need && M.need();
+    document.dispatchEvent(new CustomEvent('ground-photo', { detail: { on } }));
+  };
+  M.setGroundPhoto = (on) => {
+    const O = window.ORTHO;
+    if (!tm || !O || !O.img) return false;
+    if (!on) { if (photoOn) apply(false); return true; }
+    if (photoTex) { apply(true); return true; }
+    new THREE.TextureLoader().load(O.img, (t) => {
+      t.encoding = THREE.sRGBEncoding;
+      if (M.renderer && M.renderer.capabilities) t.anisotropy = Math.min(8, M.renderer.capabilities.getMaxAnisotropy());
+      photoTex = t; apply(true);
+    }, undefined, () => console.warn('사진 바닥: 정사영상을 불러오지 못함', O.img));
+    return true;
+  };
+  M.groundPhotoOn = () => photoOn;
+  if (/[?&]ground=photo/.test(location.search)) M.setGroundPhoto(true);
+}
+
 // 지형 그림에 넓은 면을 순서대로 칠한다(토지 이용 0.5~ → 숲 1 → 잔디 2 → 놀이터 2.5 → 인조잔디 3 → 주차장 4.5)
-if (TON && LC) { paintQ.sort((a, b) => a[0] - b[0]); for (const [, p, col, tk] of paintQ) paintArea(p, col, tk); landTex.needsUpdate = true; stats.painted = paintQ.length; }
+if (TON && LC) { paintQ.sort((a, b) => a[0] - b[0]); for (const [, p, col, tk] of paintQ) paintArea(p, col, tk); stats.painted = paintQ.length; }
+// 음영 기복(실제 땅 높이에서): 위에서 보면 해가 비탈을 약하게만 비춰 언덕이 잘 안 읽혀, 북서쪽 빛 기준 기복 음영을 지형 그림에 옅게 곱한다.
+// 512² 로 계산해 늘려 깐다(부드러운 기복만, 길·건물 경계는 건드리지 않음). 세기 HS_K 는 해 그림자와 겹쳐 두 번 그늘지지 않게 옅게
+const HS_K = 0.35;
+if (TON && LC && window.TERRAIN) {
+  const T = window.TERRAIN, N = 512, W = (T.nx - 1) * T.cell, Hh = (T.nz - 1) * T.cell, e = Math.max(W, Hh) / N;
+  const cv = document.createElement('canvas'); cv.width = cv.height = N; const g = cv.getContext('2d'), im = g.createImageData(N, N), d = im.data;
+  const lx = -0.6, lz = -0.6, ly = 0.53;   // 북서(위 왼쪽)에서 비추는 빛
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const x = T.x0 + (i + 0.5) / N * W, z = T.z0 + (j + 0.5) / N * Hh;
+    const gx = (TH(x + e, z) - TH(x - e, z)) / (2 * e), gz = (TH(x, z + e) - TH(x, z - e)) / (2 * e), l = Math.hypot(gx, 1, gz);
+    const sh = Math.max(0, (-gx * lx + ly - gz * lz) / l) / Math.hypot(lx, ly, lz);   // 0~1, 평지 ≈ 0.53/0.98
+    const flatSh = ly / Math.hypot(lx, ly, lz), v = Math.max(0, Math.min(1, 1 + (sh - flatSh) * 1.6));   // 평지는 1(그대로), 빛 등진 비탈은 어둡게, 빛 받는 비탈은 1 위(잘림)
+    const k = (j * N + i) * 4; d[k] = d[k + 1] = d[k + 2] = Math.round(255 * v); d[k + 3] = 255;
+  }
+  g.putImageData(im, 0, 0);
+  LC.save(); LC.globalCompositeOperation = 'multiply'; LC.globalAlpha = HS_K; LC.imageSmoothingEnabled = true; LC.drawImage(cv, 0, 0, LC.canvas.width, LC.canvas.height); LC.restore();
+}
+if (TON && LC) landTex.needsUpdate = true;
 if (M.renderer) M.renderer.shadowMap.needsUpdate = true;
 M.need && M.need();
 
@@ -778,7 +915,7 @@ window.__ground = {
   centerM: Math.round(stats.centerM), laneM: Math.round(stats.laneM), edgeM: Math.round(stats.edgeM), curbM: Math.round(stats.curbM || 0),
   crosswalks: stats.crosswalks || 0, tactile: stats.tactile || 0, rampCuts: [...cwOn.values()].flat().filter(c => c.ramp).length, onMajor: [...cwOn.values()].flat().length,
   parking: stats.parking, landuse: stats.landuse || 0, playgrounds: stats.playgrounds || 0, corners: stats.corners || 0,
-  wornMeshes: stats.wornMeshes || 0, waterCells: stats.waterCells || 0, coastM: stats.coastM || 0,
+  wornMeshes: stats.wornMeshes || 0, waterCells: stats.waterCells || 0, coastM: stats.coastM || 0, surfRoads: stats.surfRoads || 0,
   terrain: TON, groundTris: made.reduce((t, m) => t + (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3, 0) | 0,
 };
 })();

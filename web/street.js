@@ -107,7 +107,7 @@ function laneStrip(q, half, off, y, out) {   // 선을 따라 [off-half, off+hal
   }
 }
 function meshOf(pos, color, opacity, order) {
-  if (M.TON) for (let i = 0; i < pos.length; i += 3) pos[i + 1] += M.hAt(pos[i], pos[i + 2]);   // 지형 켜지면 꼭짓점마다 땅 높이
+  if (M.TON) for (let i = 0; i < pos.length; i += 3) pos[i + 1] += M.hAt(pos[i], pos[i + 2]) + M.GL;   // 지형 켜지면 꼭짓점마다 땅 높이 + 바닥층 위
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, side: THREE.DoubleSide }));
   m.renderOrder = order; return m;
@@ -141,9 +141,9 @@ function drawBand(s) {
   const mid = q[Math.floor(q.length / 2)];
   ends.forEach((e, k) => {
     const disc = new THREE.Mesh(new THREE.CircleGeometry(4.2, 28), new THREE.MeshBasicMaterial({ color: '#212529', depthWrite: false }));
-    disc.rotation.x = -Math.PI / 2; disc.position.set(e[0], 0.1 + M.hAt(e[0], e[1]), e[1]); disc.renderOrder = 9.7; band.add(disc);
+    disc.rotation.x = -Math.PI / 2; disc.position.set(e[0], 0.1 + M.GL + M.hAt(e[0], e[1]), e[1]); disc.renderOrder = 9.7; band.add(disc);
     const ring = new THREE.Mesh(new THREE.RingGeometry(4.2, 5.4, 28), new THREE.MeshBasicMaterial({ color: '#ffd43b', depthWrite: false }));
-    ring.rotation.x = -Math.PI / 2; ring.position.set(e[0], 0.11 + M.hAt(e[0], e[1]), e[1]); ring.renderOrder = 9.7; band.add(ring);
+    ring.rotation.x = -Math.PI / 2; ring.position.set(e[0], 0.11 + M.GL + M.hAt(e[0], e[1]), e[1]); ring.renderOrder = 9.7; band.add(ring);
     const dir = (() => { const dx = e[0] - mid[0], dz = e[1] - mid[1]; return Math.abs(dx) > Math.abs(dz) ? (dx > 0 ? '동쪽' : '서쪽') : (dz > 0 ? '남쪽' : '북쪽'); })();
     addLabel(names ? `${k ? '끝' : '시작'} · ${names[k]}` : `${dir} 끝`, 'street-end', e[0], 3, e[1]);
   });
@@ -232,6 +232,7 @@ function render(s) {
     <p class="st-sub">어느 빈 층에 열면 손님이 많을까</p>
     <div class="st-rank">
       <select id="rk-cat" aria-label="업종">${SIM.subOptions ? SIM.subOptions('viet') : ''}</select>
+      <div class="rk-hours"><label>여는 시각<select id="rk-open"></select></label><label>닫는 시각<select id="rk-close"></select></label></div>
       <button class="btn-primary btn-main" id="rk-run">빈 층이 있는 ${nEmptyB(s)}채에 가게 열어 보기</button>
     </div>
     <div id="rk-out"></div>
@@ -242,13 +243,15 @@ function render(s) {
   // 주 버튼에 고른 업종을 넣어 누르기 전에 무엇을 하는지 알 수 있게: '빈 층이 있는 7채에 베트남 음식점 열어 보기'
   const sel = document.getElementById('rk-cat'), runLabel = () => { const sb = SIM && SIM.SUB[sel.value];
     document.getElementById('rk-run').textContent = `${nEmptyB(s)}채의 빈 층에 열어 보기`; };   // 업종은 바로 위 선택 칸에 보임(버튼은 한 줄로)
-  sel.addEventListener('change', runLabel); runLabel();
+  // 내 가게 영업시간: 업종을 바꾸면 그 업종 값으로 채우고, 직접 바꿔서 순위를 낼 수 있게
+  const rkH = () => { if (SIM && SIM.fillHours) SIM.fillHours(document.getElementById('rk-open'), document.getElementById('rk-close'), sel.value); };
+  sel.addEventListener('change', runLabel); sel.addEventListener('change', rkH); runLabel(); rkH();
   if (!w.empty) document.getElementById('rk-run').disabled = true;
   setTimeout(() => flow(s), 60);
 }
 function flow(s) {
   if (!SIM) { document.getElementById('st-flow').innerHTML = ''; return; }
-  const key = s.id;
+  const key = s.id + ':' + SIM.cfgVer;   // 시간 정하기를 바꾸면 다시 계산
   if (!flowCache[key]) {
     const set = SIM.nodesNear(s.pRoad || s.p, 14);   // 실제 도로에 붙인 선(drawBand 에서 만듦) 기준
     flowCache[key] = { wd: SIM.flowDay(false, set), we: SIM.flowDay(true, set) };
@@ -269,6 +272,7 @@ function flow(s) {
 }
 function rank(s) {
   const sub = document.getElementById('rk-cat').value, cfg = SIM.SUB[sub];   // 세부 업종 기본값(대표 메뉴 1인 지출·자리)
+  const hrs = SIM.readHours(document.getElementById('rk-open'), document.getElementById('rk-close'));   // 내 가게 영업시간
   // 건물마다 가장 낮은 빈 층 하나(같은 건물 위층은 위치가 같아 결과도 같음)
   const slots = s.slots.map(x => { const f = x.fl.filter(f => f[1] === 'empty').sort((a, c) => a[0] - c[0])[0]; return f ? { ...x, floor: f[0], area: f[2] } : null; }).filter(Boolean);
   const out = document.getElementById('rk-out'), btn = document.getElementById('rk-run');
@@ -280,12 +284,12 @@ function rank(s) {
       SIM.restore(); btn.disabled = false;
       res.sort((a, b) => (b.r.wd + b.r.we) - (a.r.wd + a.r.we));
       out.innerHTML = `<table class="exp-cmp rk"><tr><th>순위</th><th>자리</th><th>평일</th><th>주말</th><th>평일 매출</th></tr>${res.map((x, k) => `<tr data-b="${x.b}"><td>${k + 1}</td><td>${x.floor}층 · ${x.side === 'L' ? '왼쪽' : '오른쪽'} ${Math.round(x.s)}m${x.area ? ` · <span class="nw">${Math.round(x.area)}㎡</span>` : ''}</td><td>${Math.round(x.r.wd)}명</td><td>${Math.round(x.r.we)}명</td><td>${SIM.won(x.r.wdWon)}</td></tr>`).join('')}</table>
-        <p class="exp-foot">${esc(document.getElementById('rk-cat').selectedOptions[0].textContent)} · 1인 ${SIM.wonX(cfg.basket)}(대표 메뉴 기준) · 건물마다 가장 낮은 빈 층, 평일·주말 2번씩 평균(사람 1:1), 2층 이상은 눈에 덜 띄는 것(가정)을 반영 · 계산 ${((performance.now() - t0) / 1000).toFixed(1)}초. 행을 누르면 그 건물로 가서 자세히 실험할 수 있습니다. 가상 인물로 자리끼리 비교한 값입니다.</p>`;
+        <p class="exp-foot">${esc(document.getElementById('rk-cat').selectedOptions[0].textContent)} · 영업 ${SIM.hoursTxt(hrs)} · 1인 ${SIM.wonX(cfg.basket)}(대표 메뉴 기준) · 건물마다 가장 낮은 빈 층, 평일·주말 2번씩 평균(사람 1:1), 2층 이상은 눈에 덜 띄는 것(가정)을 반영 · 계산 ${((performance.now() - t0) / 1000).toFixed(1)}초. 행을 누르면 그 건물로 가서 자세히 실험할 수 있습니다. 가상 인물로 자리끼리 비교한 값입니다.</p>`;
       out.querySelectorAll('tr[data-b]').forEach(tr => tr.onclick = () => flyBuilding(+tr.dataset.b));
       need(); return;
     }
     const x = slots[i++];
-    res.push({ ...x, r: SIM.trySlot(x.b, x.floor, sub, cfg.basket, cfg.seats, 2) });
+    res.push({ ...x, r: SIM.trySlot(x.b, x.floor, sub, cfg.basket, cfg.seats, 2, hrs) });
     out.querySelector('.prog i').style.width = (100 * i / slots.length) + '%'; document.getElementById('rk-p').textContent = `${i} / ${slots.length}`;
     setTimeout(next, 0);
   }
@@ -378,5 +382,6 @@ else {
 // 밤에는 거리 층 띠도 제 색 그대로(floors.js 와 같게)
 document.addEventListener('map-light', (e) => { if (!sBands) return; const n = e.detail.night >= 0.5, basic = sBands.material.isMeshBasicMaterial;
   if (n !== basic) { sBands.material.dispose(); sBands.material = n ? new THREE.MeshBasicMaterial({ vertexColors: true }) : new THREE.MeshLambertMaterial({ vertexColors: true }); need(); } });
+document.addEventListener('sim-config', () => { if (cur && SIM) flow(cur); });
 window.__street = { choose, get cur() { return cur; }, flowCache };
 })();
