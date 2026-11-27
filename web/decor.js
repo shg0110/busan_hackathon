@@ -5,7 +5,7 @@
      지운 것: 가로수 1,381, 가로등 550, 신호등 63, 볼라드 326, 도로명판 79, 전봇대 450·전선 352, 어린이보호구역 울타리 기둥 278·표지판,
               놀이기구(그네 19·미끄럼틀 20), 벤치 22·화분 21, 바다 이름 '옥포만'(물 자료에 이름 없음).
      남긴 것:
-     - 버스 정류장 쉼터: OSM 정류장 실제 위치(SIM_DATA.stops). 쉼터 모양은 일반형이다.
+     - 버스 정류장: OSM 정류장 실제 위치와 속성(쉼터·벤치·쓰레기통 있음/없음, 이름). 쉼터·표지 모양은 일반형이다.
      - 녹지(OSM 공원·숲·놀이터·덤불 면) 안의 나무·관목: 녹지를 나타내는 그림이다. 한 그루씩의 자리·모양·색(11월 말)은 실제가 아니다.
      - '한화오션 옥포조선소 방향' 이름표: OSM 지명이 지도 밖에 있어 가장자리에 방향으로 보인다.
    난수는 씨앗을 고정해 화면이 열 때마다 같게 나온다. */
@@ -414,46 +414,69 @@ function addMerged(parts, name) {
 }
 // 점에서 가장 가까운 차도 선분: {r, px, pz, nx, nz, side, rot} (rot: 길 방향이 상자 x 축이 되게)
 
-// ── 버스 정류장 쉼터: SIM_DATA.stops(OSM 버스 정류장 실제 위치). sim 자료가 decor 뒤에 불러와지므로 load 뒤에 그린다 ──
+// ── 버스 정류장: OSM 정류장(STREET_OBJS.busstops, highway=bus_stop)의 실제 속성대로 — 쉼터는 shelter=yes 인 곳에만, 벤치·쓰레기통은 그 표시가 있을 때,
+//    표지 기둥은 모든 정류장(정류장 표지가 있다는 것이 정류장의 뜻). 이름은 가까이 볼 때 작은 이름표로. 자료가 없으면 SIM_DATA.stops 에 쉼터만(예전 방식).
+//    tactile_paving=yes 인 곳은 바닥(ground.js, seohogyun-31)이 점자블록을 깔 수 있게 spots.busTactile 로 내보낸다
 function busStops() {
-  const S = window.SIM_DATA && window.SIM_DATA.stops; if (!S || !S.length || !THREE.BufferGeometryUtils) return;
-  const parts = [];
+  const O = window.STREET_OBJS && window.STREET_OBJS.busstops;
+  const S = (O && O.length) ? O : ((window.SIM_DATA && window.SIM_DATA.stops) || []).map(s => ({ x: s.x, z: s.z, name: s.n, shelter: true }));
+  if (!S.length || !THREE.BufferGeometryUtils) return;
+  const parts = [], st = { stops: 0, shelters: 0, benches: 0, bins: 0, tactile: 0, named: 0 };
+  spots.busTactile = [];
   let gy = 0;
-  const box = (w, h, d, x, y, z, rot, cx, cz, col) => boxPart(parts, w, h, d, x, y + gy, z, rot, cx, cz, col);   // gy = 그 쉼터 자리 땅 높이
-  for (const st of S) {
+  const box = (w, h, d, x, y, z, rot, cx, cz, col) => boxPart(parts, w, h, d, x, y + gy, z, rot, cx, cz, col);   // gy = 그 정류장 자리 땅 높이
+  const lbox = document.getElementById('labels');
+  for (const s of S) {
+    if (!inside(s.x, s.z, 2)) continue;
     // 가장 가까운 차도 선분의 방향으로 돌리고, 정류장 점이 있는 쪽 길 가장자리 바깥 1.2m 에 둔다
     let best = null, bd = Infinity;
-    for (const [ri, i] of RG.at(st.x, st.z)) {
+    for (const [ri, i] of RG.at(s.x, s.z)) {
       if (!vehicle[ri]) continue;
-      const r = D.roads[ri], d = segDist(st.x, st.z, r.p[i], r.p[i + 1]);
-      if (d < bd) { bd = d; best = [r, i]; }
+      const r = D.roads[ri], d = segDist(s.x, s.z, r.p[i], r.p[i + 1]);
+      if (d < bd) { bd = d; best = [r, i, ri]; }
     }
-    let rot = 0, cx = st.x, cz = st.z;
+    let rot = 0, cx = s.x, cz = s.z;
     if (best && bd < 25) {
       const [r, i] = best, a = r.p[i], b = r.p[i + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
       const dx = (b[0] - a[0]) / L, dz = (b[1] - a[1]) / L;
-      const t = Math.max(0, Math.min(L, (st.x - a[0]) * dx + (st.z - a[1]) * dz));
+      const t = Math.max(0, Math.min(L, (s.x - a[0]) * dx + (s.z - a[1]) * dz));
       const px = a[0] + dx * t, pz = a[1] + dz * t, nx = -dz, nz = dx;
-      const side = ((st.x - px) * nx + (st.z - pz) * nz) >= 0 ? 1 : -1;
+      const side = ((s.x - px) * nx + (s.z - pz) * nz) >= 0 ? 1 : -1;
       const off = r.w / 2 + 1.2;
       cx = px + nx * off * side; cz = pz + nz * off * side;
       rot = -Math.atan2(dz, dx);
-      if (side < 0) rot += Math.PI;   // 쉼터 등판이 길 반대쪽(인도 안쪽)으로 가게
+      if (side < 0) rot += Math.PI;   // 쉼터 등판이 길 반대쪽(인도 안쪽)으로 가게(지역 +z = 인도 안쪽)
     }
     gy = GH(cx, cz);
-    stats.hiddenTrees = (stats.hiddenTrees || 0) + hideTreesNear(cx, cz, 4.5);
-    spots.bus.push([+cx.toFixed(1), +cz.toFixed(1)]);   // 쉼터·표지 기둥과 겹치는 가로수는 숨긴다
-    // 지붕·등판·기둥 2개·표지 기둥·표지판
-    box(3.4, 0.12, 1.5, 0, 2.5, 0.1, rot, cx, cz, '#5b6573');
-    box(3.2, 1.9, 0.06, 0, 1.25, 0.8, rot, cx, cz, '#cfe0ec');
-    box(0.1, 2.5, 0.1, -1.55, 1.25, 0.8, rot, cx, cz, '#5b6573');
-    box(0.1, 2.5, 0.1, 1.55, 1.25, 0.8, rot, cx, cz, '#5b6573');
+    stats.hiddenTrees = (stats.hiddenTrees || 0) + hideTreesNear(cx, cz, s.shelter ? 4.5 : 2.5);
+    spots.bus.push([+cx.toFixed(1), +cz.toFixed(1)]);
+    if (s.shelter === true) {   // 지붕·등판·기둥 2개
+      box(3.4, 0.12, 1.5, 0, 2.5, 0.1, rot, cx, cz, '#5b6573');
+      box(3.2, 1.9, 0.06, 0, 1.25, 0.8, rot, cx, cz, '#cfe0ec');
+      box(0.1, 2.5, 0.1, -1.55, 1.25, 0.8, rot, cx, cz, '#5b6573');
+      box(0.1, 2.5, 0.1, 1.55, 1.25, 0.8, rot, cx, cz, '#5b6573');
+      if (s.bench !== false) { box(2.4, 0.06, 0.38, 0, 0.45, 0.55, rot, cx, cz, '#a47b55'); box(0.06, 0.45, 0.34, -1.1, 0.22, 0.55, rot, cx, cz, '#4a5260'); box(0.06, 0.45, 0.34, 1.1, 0.22, 0.55, rot, cx, cz, '#4a5260'); st.benches++; }
+      st.shelters++;
+    } else if (s.bench === true) {   // 쉼터 없이 벤치만
+      box(1.6, 0.06, 0.42, 0, 0.45, 0.4, rot, cx, cz, '#a47b55'); box(1.6, 0.36, 0.05, 0, 0.72, 0.6, rot, cx, cz, '#a47b55');
+      for (const lx of [-0.68, 0.68]) box(0.07, 0.45, 0.4, lx, 0.22, 0.4, rot, cx, cz, '#4a5260');
+      st.benches++;
+    }
+    // 표지 기둥과 파란 정류장 표지판(모든 정류장)
     box(0.08, 2.9, 0.08, 2.3, 1.45, -0.4, rot, cx, cz, '#5b6573');
-    box(0.55, 0.55, 0.06, 2.3, 2.75, -0.4, rot, cx, cz, '#2f3b4a');
+    box(0.06, 0.55, 0.55, 2.3, 2.75, -0.4, rot, cx, cz, '#1d4e9a');
+    if (s.bin === true) { box(0.4, 0.75, 0.4, -2.2, 0.375, 0.2, rot, cx, cz, '#4e5968'); box(0.44, 0.06, 0.44, -2.2, 0.78, 0.2, rot, cx, cz, '#3d434b'); st.bins++; }
+    if (s.tactile === true) { spots.busTactile.push(best ? { x: +s.x.toFixed(1), z: +s.z.toFixed(1), ri: best[2] } : { x: +s.x.toFixed(1), z: +s.z.toFixed(1) }); st.tactile++; }
+    if (s.name && /[가-힣]/.test(s.name) && lbox && M.labels) {   // 이름표: 가까이 볼 때만(pri 2), 건물 뒤면 숨음(app.js 가림). 한글 이름이 없으면(로마자뿐) 옮겨 짓지 않고 달지 않는다
+      const el = document.createElement('div'); el.className = 'lbl place bus';
+      el.innerHTML = '<b>버스</b>' + (M.esc ? M.esc(s.name) : String(s.name).replace(/[<&>"]/g, ''));
+      lbox.appendChild(el); M.labels.push({ el, x: cx, y: 3.2, z: cz, pri: 2, kind: 'place', w: 0, h: 0 }); st.named++;
+    }
+    st.stops++;
   }
   addMerged(parts, 'decor-bus');
-  stats.busStops = S.length;
-  if (window.__decor) { window.__decor.busStops = S.length; window.__decor.hiddenTrees = stats.hiddenTrees || 0; }
+  stats.busStops = st.stops; stats.bus = st;
+  if (window.__decor) { window.__decor.busStops = st.stops; window.__decor.bus = st; window.__decor.hiddenTrees = stats.hiddenTrees || 0; }
   if (M.renderer) M.renderer.shadowMap.needsUpdate = true;
   M.need && M.need();
 }

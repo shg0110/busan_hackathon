@@ -946,6 +946,316 @@
    "id": 12963725044
   }
  ],
+ "busstops": [
+  {
+   "x": 30.0,
+   "z": 216.6,
+   "id": 4003575764,
+   "name": "옥포1동주민센터",
+   "shelter": false,
+   "bench": true,
+   "bin": false,
+   "tactile": false,
+   "ref": "2508"
+  },
+  {
+   "x": 57.4,
+   "z": 180.9,
+   "id": 4003575766,
+   "name": "옥포1동주민센터",
+   "shelter": false,
+   "bench": true,
+   "bin": false,
+   "tactile": false,
+   "ref": "2510"
+  },
+  {
+   "x": -254.4,
+   "z": 289.9,
+   "id": 4003717147,
+   "name": "Okpo-sageori",
+   "shelter": true,
+   "bench": true,
+   "bin": false,
+   "tactile": false,
+   "ref": "2518"
+  },
+  {
+   "x": -255.5,
+   "z": 332.1,
+   "id": 4003717148,
+   "name": "",
+   "shelter": true,
+   "bench": true,
+   "bin": false,
+   "tactile": null,
+   "ref": ""
+  },
+  {
+   "x": 96.9,
+   "z": -177.2,
+   "id": 4015853311,
+   "name": "",
+   "shelter": true,
+   "bench": true,
+   "bin": false,
+   "tactile": false,
+   "ref": ""
+  },
+  {
+   "x": 882.8,
+   "z": -702.2,
+   "id": 4017681191,
+   "name": "",
+   "shelter": null,
+   "bench": null,
+   "bin": null,
+   "tactile": null,
+   "ref": ""
+  },
+  {
+   "x": -89.6,
+   "z": 535.5,
+   "id": 4264185271,
+   "name": "",
+   "shelter": true,
+   "bench": true,
+   "bin": false,
+   "tactile": false,
+   "ref": "2517"
+  },
+  {
+   "x": -307.9,
+   "z": -164.2,
+   "id": 4316938491,
+   "name": "옥포국제시장",
+   "shelter": true,
+   "bench": true,
+   "bin": null,
+   "tactile": null,
+   "ref": "2521"
+  },
+  {
+   "x": -716.7,
+   "z": -359.1,
+   "id": 4469546291,
+   "name": "거제소방서",
+   "shelter": true,
+   "bench": true,
+   "bin": false,
+   "tactile": false,
+   "ref": "2631"
+  },
+  {
+   "x": -502.3,
+   "z": -30.7,
+   "id": 4469550491,
+   "name": "",
+   "shelter": null,
+   "bench": null,
+   "bin": null,
+   "tactile": null,
+   "ref": ""
+  },
+  {
+   "x": -571.0,
+   "z": -168.7,
+   "id": 4469638991,
+   "name": "",
+   "shelter": null,
+   "bench": null,
+   "bin": null,
+   "tactile": null,
+   "ref": ""
+  },
+  {
+   "x": -692.2,
+   "z": -363.6,
+   "id": 4469673489,
+   "name": "거제소방서",
+   "shelter": true,
+   "bench": true,
+   "bin": false,
+   "tactile": false,
+   "ref": "2632"
+  },
+  {
+   "x": -640.7,
+   "z": -618.1,
+   "id": 12927400031,
+   "name": "거제경찰서",
+   "shelter": true,
+   "bench": true,
+   "bin": false,
+   "tactile": true,
+   "ref": "2639"
+  },
+  {
+   "x": -250.7,
+   "z": -458.2,
+   "id": 12927470664,
+   "name": "아주신협 옥포지점",
+   "shelter": true,
+   "bench": true,
+   "bin": false,
+   "tactile": false,
+   "ref": "2613"
+  },
+  {
+   "x": -376.7,
+   "z": -528.0,
+   "id": 12927474620,
+   "name": "옥현상가",
+   "shelter": true,
+   "bench": true,
+   "bin": false,
+   "tactile": false,
+   "ref": ""
+  },
+  {
+   "x": -632.9,
+   "z": -644.7,
+   "id": 12927481619,
+   "name": "거제경찰서",
+   "shelter": true,
+   "bench": true,
+   "bin": false,
+   "tactile": true,
+   "ref": "2638"
+  },
+  {
+   "x": -376.0,
+   "z": -541.0,
+   "id": 12949550954,
+   "name": "옥현상가",
+   "shelter": true,
+   "bench": true,
+   "bin": false,
+   "tactile": true,
+   "ref": "2627"
+  },
+  {
+   "x": -269.8,
+   "z": -295.5,
+   "id": 12949582322,
+   "name": "",
+   "shelter": false,
+   "bench": true,
+   "bin": false,
+   "tactile": false,
+   "ref": "2612"
+  },
+  {
+   "x": -290.2,
+   "z": -350.1,
+   "id": 12949593528,
+   "name": "",
+   "shelter": false,
+   "bench": true,
+   "bin": false,
+   "tactile": null,
+   "ref": ""
+  },
+  {
+   "x": -516.8,
+   "z": -665.9,
+   "id": 12949597739,
+   "name": "한신APT",
+   "shelter": true,
+   "bench": true,
+   "bin": false,
+   "tactile": false,
+   "ref": "2624"
+  },
+  {
+   "x": -513.3,
+   "z": -678.2,
+   "id": 12949610902,
+   "name": "한신APT",
+   "shelter": true,
+   "bench": true,
+   "bin": false,
+   "tactile": false,
+   "ref": "2628"
+  },
+  {
+   "x": -636.0,
+   "z": -476.4,
+   "id": 12951376879,
+   "name": "소방서",
+   "shelter": false,
+   "bench": false,
+   "bin": false,
+   "tactile": false,
+   "ref": "2629"
+  },
+  {
+   "x": 247.6,
+   "z": -263.3,
+   "id": 12951413434,
+   "name": "옥포복지회관",
+   "shelter": true,
+   "bench": true,
+   "bin": false,
+   "tactile": false,
+   "ref": "2641"
+  },
+  {
+   "x": -648.4,
+   "z": -435.7,
+   "id": 12951416429,
+   "name": "소방서",
+   "shelter": false,
+   "bench": false,
+   "bin": false,
+   "tactile": false,
+   "ref": "2623"
+  },
+  {
+   "x": -284.8,
+   "z": -183.0,
+   "id": 12952008128,
+   "name": "옥포국제시장",
+   "shelter": false,
+   "bench": false,
+   "bin": false,
+   "tactile": false,
+   "ref": "2611"
+  },
+  {
+   "x": 351.6,
+   "z": -288.4,
+   "id": 12952028779,
+   "name": "",
+   "shelter": true,
+   "bench": true,
+   "bin": false,
+   "tactile": false,
+   "ref": ""
+  },
+  {
+   "x": -675.9,
+   "z": -818.0,
+   "id": 12953137013,
+   "name": "옥포시립테니스장",
+   "shelter": true,
+   "bench": true,
+   "bin": false,
+   "tactile": false,
+   "ref": "2656"
+  },
+  {
+   "x": 42.1,
+   "z": -242.0,
+   "id": 12958953823,
+   "name": "",
+   "shelter": false,
+   "bench": null,
+   "bin": null,
+   "tactile": null,
+   "ref": ""
+  }
+ ],
  "meta": {
   "src": "OpenStreetMap 기여자(ODbL)",
   "fetched": "2026-11-27",
@@ -954,7 +1264,8 @@
    "signals": 20,
    "hydrants": 12,
    "benches": 6,
-   "postboxes": 2
+   "postboxes": 2,
+   "busstops": 28
   }
  }
 }
