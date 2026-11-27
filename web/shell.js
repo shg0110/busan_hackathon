@@ -61,7 +61,8 @@ function mapFail(title, body) {
   L.classList.remove('done'); L.classList.add('fail');
   L.innerHTML = `<div><b>${title}</b><span>${body}</span></div>`;
 }
-if (!glOK) mapFail('이 브라우저에서는 3D 지도를 그릴 수 없습니다', '크롬 최신판에서 열어 주세요. 크롬이라면 설정 → 시스템 → ‘가능한 경우 그래픽 가속 사용’을 켜고 다시 시작해 주세요. 왼쪽 기록지의 숫자는 그대로 볼 수 있습니다.');
+// app.js(ea #123)가 렌더러를 못 만들면 window.__glFail 을 남기고 멈춘다: shell.js 는 app.js 뒤라 여기서 바로 안다
+if (!glOK || window.__glFail) mapFail('이 브라우저에서는 3D 지도를 그릴 수 없습니다', '크롬 최신판에서 열어 주세요. 크롬이라면 설정 → 시스템 → ‘가능한 경우 그래픽 가속 사용’을 켜고 다시 시작해 주세요. 왼쪽 기록지의 숫자는 그대로 볼 수 있습니다.');
 else setTimeout(() => { if (!window.__ready) mapFail('지도를 그리지 못했습니다', '새로고침해 주세요. 계속되면 크롬 최신판에서 열어 주세요. 왼쪽 기록지의 숫자는 그대로 볼 수 있습니다.'); }, 20000);
 
 
