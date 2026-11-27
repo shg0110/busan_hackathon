@@ -99,35 +99,47 @@ function tree(t) {
 }
 // 가게 노드별 '모든 노드까지 거리' 표(Float32, 한 번만 계산해 계속 씀). 실험·순위 계산은 경로 모양 없이 거리만 쓴다.
 // 전에는 최근 400개만 기억하는 나무가 가게·집 2,600곳 사이에서 밀려나 같은 계산을 되풀이해 실험 1번이 40초 걸렸다(11-27)
-const DT = new Map();
-function distTable(n) { let a = DT.get(n); if (!a) { a = Float32Array.from(computeTree(n).dist); DT.set(n, a); } return a; }
+// 거리표 = 길 나무의 거리(같은 계산을 두 번 하지 않게 나무 하나를 함께 씀)
+const distTable = (n) => tree(n).dist;
+// 나무를 둘 '뿌리' 노드: 가게·조선소 입구·정류장(수가 적다). 집 쪽 나무는 만들지 않고, 길이 무방향이라
+// 가게→집 길은 '가게를 뿌리로 한 나무'에서 집부터 따라가 뒤집으면 된다(예전엔 집 1,500곳마다 나무를 따로 만들어 0.5초·메모리 수백 MB)
 let SHOPNODE = null;
+function isRoot(n) { if (!SHOPNODE) { SHOPNODE = new Set(SHOPS.map(s => s.node)); for (const g of GATES) SHOPNODE.add(g.node); for (const s of STOPS) SHOPNODE.add(s.node); } return SHOPNODE.has(n); }
 function distBetween(a, b) {
-  if (!SHOPNODE) SHOPNODE = new Set(SHOPS.map(s => s.node));
-  if (SHOPNODE.has(b)) return distTable(b)[a];
-  if (SHOPNODE.has(a)) return distTable(a)[b];
+  if (isRoot(b)) return tree(b).dist[a];
+  if (isRoot(a)) return tree(a).dist[b];
   return tree(b).dist[a];
 }
+// 다익스트라: 힙은 미리 잡은 숫자 배열(예전엔 [a,b]=[b,a] 교환이 매번 배열을 만들어 느렸음)
+// 계산 중 거리는 64비트로: 32비트로 두면 반올림돼 '꺼낸 거리 > 저장된 거리'가 되어 노드를 건너뛴다(2026-11-27 고침). 저장은 32비트(메모리 절반)
+let HN = new Int32Array(0), HD = new Float64Array(0), DW = new Float64Array(0);
 function computeTree(t) {
-  let T;
-  // 거리는 64비트로: 32비트로 두면 저장할 때 반올림돼 '꺼낸 거리 > 저장된 거리'가 되어 노드를 건너뛴다(길 찾기가 출발점 근처에서 멈춤, 2026-11-27 고침)
-  const dist = new Float64Array(NN).fill(Infinity), nxt = new Int32Array(NN).fill(-1);
-  const hn = [t], hd = [0]; dist[t] = 0;
-  while (hn.length) {
-    // 이진 힙 꺼내기
-    const u = hn[0], du = hd[0]; const ln = hn.pop(), ld = hd.pop();
-    if (hn.length) { hn[0] = ln; hd[0] = ld; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i;
-      if (l < hn.length && hd[l] < hd[m]) m = l; if (r < hn.length && hd[r] < hd[m]) m = r; if (m === i) break;
-      [hn[i], hn[m]] = [hn[m], hn[i]]; [hd[i], hd[m]] = [hd[m], hd[i]]; i = m; } }
+  if (DW.length < NN) DW = new Float64Array(NN);
+  let cap = Math.max(HN.length, NN * 4); if (HN.length < cap) { HN = new Int32Array(cap); HD = new Float64Array(cap); }
+  const dist = DW, nxt = new Int32Array(NN).fill(-1); dist.fill(Infinity, 0, NN);
+  let n = 1; HN[0] = t; HD[0] = 0; dist[t] = 0;
+  while (n) {
+    const u = HN[0], du = HD[0]; n--;
+    if (n) { const ln = HN[n], ld = HD[n]; let i = 0;
+      for (;;) { const l = 2 * i + 1, r = l + 1; let m = i, md = ld;
+        if (l < n && HD[l] < md) { m = l; md = HD[l]; } if (r < n && HD[r] < md) { m = r; md = HD[r]; }
+        if (m === i) break; HN[i] = HN[m]; HD[i] = HD[m]; i = m; }
+      HN[i] = ln; HD[i] = ld; }
     if (du > dist[u]) continue;
     const A = ADJ[u];
     for (let j = 0; j < A.length; j += 2) { const v = A[j], nd = du + A[j + 1];
-      if (nd < dist[v]) { dist[v] = nd; nxt[v] = u; hn.push(v); hd.push(nd); let i = hn.length - 1;
-        while (i > 0) { const p = (i - 1) >> 1; if (hd[p] <= hd[i]) break; [hn[i], hn[p]] = [hn[p], hn[i]]; [hd[i], hd[p]] = [hd[p], hd[i]]; i = p; } } }
+      if (nd < dist[v]) { dist[v] = nd; nxt[v] = u;
+        if (n >= HN.length) { const h2 = new Int32Array(HN.length * 2), d2 = new Float64Array(HN.length * 2); h2.set(HN); d2.set(HD); HN = h2; HD = d2; }
+        let i = n++; while (i > 0) { const p = (i - 1) >> 1; if (HD[p] <= nd) break; HN[i] = HN[p]; HD[i] = HD[p]; i = p; } HN[i] = v; HD[i] = nd; } }
   }
-  T = { dist, nxt }; return T;
+  return { dist: Float32Array.from(dist.subarray(0, NN)), nxt };
 }
-function pathFrom(a, t) { const T = tree(t), p = [a]; let u = a, guard = 0; while (u !== t && u >= 0 && guard++ < 20000) { u = T.nxt[u]; if (u >= 0) p.push(u); } return p; }
+// a → t 길: t 가 뿌리면 t 나무를 따라가고, 아니면(집 등) a 를 뿌리로 한 나무에서 t 부터 따라가 뒤집는다
+function pathFrom(a, t) {
+  const fwd = isRoot(t) || !isRoot(a), root = fwd ? t : a, start = fwd ? a : t, T = tree(root), p = [start];
+  let u = start, guard = 0; while (u !== root && u >= 0 && guard++ < 20000) { u = T.nxt[u]; if (u >= 0) p.push(u); }
+  return fwd ? p : p.reverse();
+}
 
 // ── 가게 ─────────────────────────────────────────────────
 // 가게마다 가격·자리·매력은 업종 기준값에서 이름 해시로 ±(같은 이름 = 언제나 같은 값)
@@ -583,7 +595,8 @@ function restoreSnap(k) {
   const S = k.STATS; STATS = { visits: S.visits.slice(), spend: S.spend.slice(), lost: S.lost.slice(), noMoney: S.noMoney,
     byHour: S.byHour.map(h => h && h.slice()), byGroup: S.byGroup.map(g => g && { ...g }) };
 }
-function keep(s) { if (s % 60 === 0 && CK.key === liveKey && !CK.m.has(s) && SHOP_ST.length === SHOPS.length) CK.m.set(s, snap(s)); }
+// 2시간마다 저장(사람 2만 명이라 저장점 1개가 약 6MB — 1시간마다면 60MB)
+function keep(s) { if (s % 120 === 0 && CK.key === liveKey && !CK.m.has(s) && SHOP_ST.length === SHOPS.length) CK.m.set(s, snap(s)); }
 function seek(t) {
   const key = scen;
   if (CK.key !== key) { CK.key = key; CK.m.clear(); }
