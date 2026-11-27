@@ -473,8 +473,9 @@ function staticWeights(s) {
     const tier = Math.min(1.6, Math.max(0.25, Math.pow(catRef / ref, e * 0.5)));
     w[k] = s.attract * pref * tier * Math.pow(ref / s.price, e);
   }
-  s.wg = w;
+  s.wg = w; s.wgA = Float64Array.from(WKEYS, k => w[k]);   // wgA: 키 번호로 찾는 같은 값(고를 때 문자열 키 조회가 느렸음)
 }
+const WKI = new Map(WKEYS.map((k, i) => [k, i]));
 for (const s of SHOPS) staticWeights(s);
 const LAM = { pub: 420, mart: 220 };
 const NO_MONEY = { noMoney: true };
@@ -489,14 +490,21 @@ function chooseShop(a, cat, t, nodeFrom) {
   const list = BYCAT[cat], fx = NX[nodeFrom], fz = NZ[nodeFrom], lam = LAM[cat] || 300, far2 = (6 * lam) ** 2, g = a.wk;
   let n = 0, sum = 0, pricey = 0;
   const cw = CW.length >= list.length ? CW : (CW = new Float64Array(list.length * 2)), ci = CI.length >= list.length ? CI : (CI = new Int32Array(list.length * 2));
-  for (let i = 0; i < list.length; i++) {
+  // 출발 노드·업종마다 가까운 가게 번호와 거리 무게를 한 번만 계산(하루 계산 시간의 절반이 여기였음). 순서·곱하는 순서가 같아 결과도 같다
+  // 실험 가게는 늘 목록 맨 끝(addVirtual 이 push)이라 캐시는 실제 가게(nReal 개)만 담고, 끝의 실험 가게는 두 번째 고리에서 그때그때 계산
+  let nReal = list.length; while (nReal > 0 && list[nReal - 1].virtual) nReal--;
+  const key = cat + nodeFrom; let D = DCACHE.get(key);
+  if (!D) { const ix = [], ex = []; for (let i = 0; i < nReal; i++) { const s = list[i], dx = s.x - fx, dz = s.z - fz, d2 = dx * dx + dz * dz; if (d2 > far2) continue; ix.push(i); ex.push(Math.exp(-Math.sqrt(d2) / lam)); }
+    D = { ix: Int32Array.from(ix), ex: Float64Array.from(ex) }; DCACHE.set(key, D); }
+  const IX = D.ix, EX = D.ex, ki = WKI.has(g) ? WKI.get(g) : WKI.get(a.g);
+  const nI = IX.length, tot = nI + list.length - nReal, wal = a.wallet, w0 = CUR_WE;
+  for (let j = 0; j < tot; j++) {   // 앞은 캐시(실제 가게), 뒤는 끝의 실험 가게
+    let i, e; if (j < nI) { i = IX[j]; e = EX[j]; } else { i = nReal + j - nI; const v = list[i], dx = v.x - fx, dz = v.z - fz, d2 = dx * dx + dz * dz; if (d2 > far2) continue; e = Math.exp(-Math.sqrt(d2) / lam); }
     const s = list[i];
-    if (s.off || !openAt(s, t + 5)) continue;
-    const dx = s.x - fx, dz = s.z - fz, d2 = dx * dx + dz * dz;
-    if (d2 > far2) continue;
-    const cap = s.sub === 'yuheung' ? Math.max(a.wallet * 3.5, s.ref * 1.3) : a.wallet;
+    if (s.off || !(t + 5 >= s.open && t + 5 < s.close - LAST_ORDER)) continue;   // openAt(s, t + 5)
+    const cap = s.sub === 'yuheung' ? Math.max(wal * 3.5, s.ref * 1.3) : wal;
     if (payOf(a, s) > cap) { pricey++; continue; }
-    const w = (s.wg[g] ?? s.wg[a.g]) * Math.exp(-Math.sqrt(d2) / lam) * (s.pb ? s.pb[CUR_WE] : 1);
+    const w = (ki !== undefined ? s.wgA[ki] : (s.wg[g] ?? s.wg[a.g])) * e * (s.pb ? s.pb[w0] : 1);
     if (w > 1e-4) { sum += w; cw[n] = sum; ci[n] = i; n++; }
   }
   if (!n) return pricey ? NO_MONEY : null;
@@ -505,6 +513,7 @@ function chooseShop(a, cat, t, nodeFrom) {
   return list[ci[lo]];
 }
 let CW = new Float64Array(0), CI = new Int32Array(0);
+const DCACHE = new Map();   // 업종+출발 노드 → 가까운 실제 가게와 거리 무게(chooseShop). 실제 가게는 바뀌지 않아 비울 일 없음(실험 가게는 따로 계산)
 function startTrip(a, fromNode, toNode, t, render) {
   const d = distBetween(fromNode, toNode);
   const L = isFinite(d) ? d : Math.hypot(NX[fromNode] - NX[toNode], NZ[fromNode] - NZ[toNode]) * 1.3;
