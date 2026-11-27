@@ -90,7 +90,15 @@ function snapToRoad(q, name) {
   widths.sort((a, b) => a - b);
   return { q: sm, w: widths.length ? widths[Math.floor(widths.length / 2)] : 12, hit: hitR };
 }
+// 지형이 켜지면 선을 8m 이하 조각으로 나눈다(꼭짓점마다 땅 높이를 얹으므로 긴 조각은 볼록한 비탈에서 땅 밑으로 들어감)
+function densify(q, step = 8) {
+  if (!M.TON) return q; const o = [q[0]];
+  for (let i = 0; i < q.length - 1; i++) { const [ax, az] = q[i], [bx, bz] = q[i + 1], n = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / step));
+    for (let k = 1; k <= n; k++) o.push([ax + (bx - ax) * k / n, az + (bz - az) * k / n]); }
+  return o;
+}
 function laneStrip(q, half, off, y, out) {   // 선을 따라 [off-half, off+half] 너비의 띠
+  q = densify(q);
   for (let i = 0; i < q.length - 1; i++) {
     const [ax, az] = q[i], [bx, bz] = q[i + 1], dx = bx - ax, dz = bz - az, l = Math.hypot(dx, dz) || 1, nx = -dz / l, nz = dx / l;
     const a0 = off - half, a1 = off + half;

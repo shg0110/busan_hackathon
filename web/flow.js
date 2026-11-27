@@ -27,10 +27,16 @@ function build(F, t) {
   for (let e = 0; e < NE; e++) {
     const v = val[e]; if (v < cap * 0.06) continue;
     const f = Math.min(1, v / cap), a = EA[e], b = EB[e], dx = NX[b] - NX[a], dz = NZ[b] - NZ[a], l = Math.hypot(dx, dz) || 1;
-    const w = (0.9 + f * 2.8) * wk, nx = -dz / l * w / 2, nz = dx / l * w / 2, ya = 0.35 + M.hAt(NX[a], NZ[a]), yb = 0.35 + M.hAt(NX[b], NZ[b]);   // 지형 켜지면 땅 높이
-    pos.push(NX[a] + nx, ya, NZ[a] + nz, NX[b] + nx, yb, NZ[b] + nz, NX[a] - nx, ya, NZ[a] - nz, NX[a] - nx, ya, NZ[a] - nz, NX[b] + nx, yb, NZ[b] + nz, NX[b] - nx, yb, NZ[b] - nz);
+    const w = (0.9 + f * 2.8) * wk, nx = -dz / l * w / 2, nz = dx / l * w / 2;
     const x = f * (RAMP.length - 1), i = Math.min(RAMP.length - 2, Math.floor(x)), c = RAMP[i].clone().lerp(RAMP[i + 1], x - i);
-    for (let k = 0; k < 6; k++) col.push(c.r, c.g, c.b);
+    // 지형이 켜지면 8m 이하 조각으로 나눠 조각 끝마다 땅 높이(긴 선분이 볼록한 비탈에서 땅 밑으로 들어가지 않게)
+    const ns = M.TON ? Math.max(1, Math.ceil(l / 8)) : 1;
+    for (let k = 0; k < ns; k++) {
+      const x0 = NX[a] + dx * k / ns, z0 = NZ[a] + dz * k / ns, x1 = NX[a] + dx * (k + 1) / ns, z1 = NZ[a] + dz * (k + 1) / ns;
+      const ya = 0.35 + M.hAt(x0, z0), yb = 0.35 + M.hAt(x1, z1);
+      pos.push(x0 + nx, ya, z0 + nz, x1 + nx, yb, z1 + nz, x0 - nx, ya, z0 - nz, x0 - nx, ya, z0 - nz, x1 + nx, yb, z1 + nz, x1 - nx, yb, z1 - nz);
+      for (let v = 0; v < 6; v++) col.push(c.r, c.g, c.b);
+    }
   }
   if (mesh) { scene.remove(mesh); mesh.geometry.dispose(); }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));

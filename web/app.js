@@ -454,11 +454,15 @@ scene.add(bMesh);
     let p = b.p.slice(); if (signedArea(p) > 0) p.reverse();
     for (let i = 0; i < p.length; i++) {
       const a = p[i], c = p[(i + 1) % p.length], dx = c[0] - a[0], dz = c[1] - a[1], l = Math.hypot(dx, dz); if (l < 0.3) continue;
-      const nx = -dz / l * OUT, nz = dx / l * OUT, y = 0.04;
-      // 안쪽(벽 밑) 알파 W0 → 바깥 0. 지형이 켜져 있으면 꼭짓점마다 땅 높이
-      const ya = y + hAt(a[0], a[1]), yc = y + hAt(c[0], c[1]), yc2 = y + hAt(c[0] + nx, c[1] + nz), ya2 = y + hAt(a[0] + nx, a[1] + nz);
-      pos.push(a[0], ya, a[1], c[0], yc, c[1], c[0] + nx, yc2, c[1] + nz, a[0], ya, a[1], c[0] + nx, yc2, c[1] + nz, a[0] + nx, ya2, a[1] + nz);
-      for (const al of [W0, W0, 0, W0, 0, 0]) col.push(0.12, 0.14, 0.18, al);
+      const nx = -dz / l * OUT, nz = dx / l * OUT, y = TON ? 0.12 : 0.04;   // 지형 켜면 조금 더 띄움(지형 메시 삼각형과 계산 높이가 몇 cm 달라 얼룩지지 않게)
+      // 안쪽(벽 밑) 알파 W0 → 바깥 0. 지형이 켜져 있으면 8m 이하 조각마다 땅 높이
+      const ns = TON ? Math.max(1, Math.ceil(l / 8)) : 1;
+      for (let k = 0; k < ns; k++) {
+        const p0 = [a[0] + dx * k / ns, a[1] + dz * k / ns], p1 = [a[0] + dx * (k + 1) / ns, a[1] + dz * (k + 1) / ns];
+        const ya = y + hAt(p0[0], p0[1]), yc = y + hAt(p1[0], p1[1]), yc2 = y + hAt(p1[0] + nx, p1[1] + nz), ya2 = y + hAt(p0[0] + nx, p0[1] + nz);
+        pos.push(p0[0], ya, p0[1], p1[0], yc, p1[1], p1[0] + nx, yc2, p1[1] + nz, p0[0], ya, p0[1], p1[0] + nx, yc2, p1[1] + nz, p0[0] + nx, ya2, p0[1] + nz);
+        for (const al of [W0, W0, 0, W0, 0, 0]) col.push(0.12, 0.14, 0.18, al);
+      }
     }
   }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
