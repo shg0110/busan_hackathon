@@ -29,4 +29,12 @@ function place() {
 }
 place();
 dispatchEvent(new Event('resize'));   // 캔버스가 기록지 오른쪽으로 좁아졌으니 지도를 다시 맞춘다
+
+// 지도 위 사용법 안내 띠: 한 번이라도 지도를 만지면(끌기·바퀴·손가락) 또는 15초 뒤 사라진다(app.js 는 누를 때만 숨김)
+const hint = $('hint'), cv = $('c');
+if (hint) {
+  const gone = () => hint.classList.add('gone');
+  if (cv) for (const ev of ['wheel', 'touchstart', 'pointerdown']) cv.addEventListener(ev, gone, { once: true, passive: true });
+  setTimeout(gone, 15000);
+}
 })();

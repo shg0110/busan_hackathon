@@ -39,6 +39,7 @@ function rng(seed) {           // mulberry32: 씨앗 고정 난수
 }
 const rand = rng(20261127);
 const key = (p) => p[0].toFixed(1) + ',' + p[1].toFixed(1);
+function polyArea(p) { let s = 0; for (let i = 0; i < p.length; i++) { const a = p[i], b = p[(i + 1) % p.length]; s += a[0] * b[1] - b[0] * a[1]; } return Math.abs(s / 2); }
 function inPoly(x, z, p) {
   let c = false;
   for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
@@ -224,6 +225,10 @@ for (const g of D.greens) {
     const px = x + (rand() - 0.5) * gap * 0.7, pz = z + (rand() - 0.5) * gap * 0.7;
     if (!inPoly(px, pz, g.p) || !inside(px, pz, 5) || inWater(px, pz)) continue;
     if (nearBuilding(px, pz, 2.2) || nearRoad(px, pz, 1.5, -1)) continue;
+    if (g.k === 'playground' && polyArea(g.p) <= 800) {   // 놀이터는 가운데를 비워 놀이기구 자리로: 나무는 가장자리 3m 띠에만(실제 어린이공원처럼). 800㎡ 넘는 곳은 공원 전체가 놀이터로 표시된 것이라 공원처럼(31도 녹지로 둠)
+      let e = Infinity; for (let i = 0; i < g.p.length; i++) e = Math.min(e, segDist(px, pz, g.p[i], g.p[(i + 1) % g.p.length]));
+      if (e > 3) continue;
+    }
     const shape = rand() < coneP ? 'cone' : 'broad';
     const isWood = g.k === 'wood' || g.k === 'forest';
     (isWood ? greenTrees.wood : greenTrees.other).push([px, pz, h0 + rand() * (h1 - h0), shape === 'cone' ? (isWood ? 0.27 : 0.24) : (isWood ? 0.46 : 0.38), g.k, shape]);
@@ -291,7 +296,19 @@ function hideTreesNear(x, z, r) {
   const broadIdx = [], coneIdx = [];
   trees.forEach((t, i) => (t[5] === 'cone' ? coneIdx : broadIdx).push(i));
   const broad = broadIdx.map(i => trees[i]), cone = coneIdx.map(i => trees[i]);
-  const mk = (geo, color, n) => { const m = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({ color, vertexColors: !!geo.attributes.color }), Math.max(1, n)); m.count = n; return m; };
+  const mk = (geo, color, n, flat) => { const m = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({ color, vertexColors: !!geo.attributes.color, flatShading: !!flat }), Math.max(1, n)); m.count = n; return m; };
+  // 잎 덩이를 매끈한 공(플라스틱처럼 보임)이 아니게: 꼭짓점을 반지름 방향으로 ±amp 흔들고(같은 자리 꼭짓점은 같은 값이라 틈 없음), 면마다 밝기를 조금씩 다르게
+  const hash = (x, y, z) => { const v = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453; return v - Math.floor(v); };
+  const lumpy = (geo, amp) => {
+    const p = geo.attributes.position;
+    for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i), z = p.getZ(i), k = 1 + amp * (hash(+x.toFixed(3), +y.toFixed(3), +z.toFixed(3)) * 2 - 1); p.setXYZ(i, x * k, y * k, z * k); }
+    geo.computeVertexNormals(); return geo;
+  };
+  const mottle = (geo, amt) => {   // shade() 뒤에: 세 꼭짓점(한 면)마다 같은 무작위 배율
+    const c = geo.attributes.color;
+    for (let f = 0; f + 2 < c.count; f += 3) { const k = 1 + amt * (hash(f * 0.37, 1.3, 2.1) * 2 - 1); for (let j = 0; j < 3; j++) c.setXYZ(f + j, c.getX(f + j) * k, c.getY(f + j) * k, c.getZ(f + j) * k); }
+    return geo;
+  };
   // 높이에 따라 밝기를 바꾸는 꼭짓점 색: 아래 lo배 → 위 hi배(인스턴스 색과 곱해진다)
   const shade = (geo, lo, hi) => {
     const p = geo.attributes.position, n = p.count; geo.computeBoundingBox();
@@ -314,7 +331,7 @@ function hideTreesNear(x, z, r) {
   if (broad.length) {
     // 잎 세 덩이: 가운데 큰 덩이 + 양옆으로 비켜 난 덩이 둘(풍성하게, 공 하나로 보이지 않게)
     // 색은 4단계 초록 중 하나를 고르고, 옆 덩이는 조금 밝거나 어둡게
-    const leaf = mk(shade(new THREE.IcosahedronGeometry(1, 1), 0.66, 1.06), '#ffffff', broad.length * 3);
+    const leaf = mk(mottle(shade(lumpy(new THREE.IcosahedronGeometry(1, 1), 0.14), 0.62, 1.08), 0.09), '#ffffff', broad.length * 3, true);
     broad.forEach(([x, z, h, rr], i) => {
       const r = h * rr, k = Math.floor(rand() * LEAF.length), base = LEAF[k].clone().lerp(LEAF[Math.min(LEAF.length - 1, k + 1)], rand() * 0.5);
       const sy = 0.82 + rand() * 0.22;
@@ -333,8 +350,8 @@ function hideTreesNear(x, z, r) {
   }
   if (cone.length) {
     // 침엽: 원뿔 두 단(아래가 넓고 위가 좁게)
-    const coneGeo = new THREE.ConeGeometry(1, 1, 8, 1); coneGeo.translate(0, 0.5, 0); shade(coneGeo, 0.7, 1.04);
-    const needle = mk(coneGeo, '#ffffff', cone.length * 2);
+    const coneGeo = new THREE.ConeGeometry(1, 1, 8, 1).toNonIndexed(); coneGeo.translate(0, 0.5, 0); mottle(shade(coneGeo, 0.68, 1.05), 0.07);
+    const needle = mk(coneGeo, '#ffffff', cone.length * 2, true);
     cone.forEach(([x, z, h, rr], i) => {
       const r = h * rr, c = col.copy(CONE[0]).lerp(CONE[1], rand()).clone();
       q.setFromAxisAngle(up, rand() * Math.PI * 2);
@@ -345,11 +362,12 @@ function hideTreesNear(x, z, r) {
     meshes.push(needle);
   }
   if (shrubs.length) {
-    const bush = mk(shade(new THREE.IcosahedronGeometry(1, 1), 0.7, 1.05), '#ffffff', shrubs.length);
+    const bush = mk(mottle(shade(lumpy(new THREE.IcosahedronGeometry(1, 1), 0.16), 0.66, 1.06), 0.1), '#ffffff', shrubs.length, true);
     shrubs.forEach(([x, z, sz], i) => {
       q.setFromAxisAngle(up, rand() * Math.PI * 2);
       pos.set(x, sz * 0.38, z); scl.set(sz * 0.6, sz * 0.45, sz * 0.6); mtx.compose(pos, q, scl); bush.setMatrixAt(i, mtx);
       bush.setColorAt(i, col.copy(SHRUB[0]).lerp(SHRUB[1], rand()));
+      treeRefs.push({ x, z, parts: [[bush, i]], shrub: true });   // 놀이기구·정류장 자리의 관목도 숨길 수 있게(소품 자리 다툼에는 안 셈)
     });
     meshes.push(bush);
   }
@@ -369,7 +387,7 @@ const PG = new Map(); let pgN = 0;
 const pgKey = (cx, cz) => cx * 100003 + cz;
 function nearProp(x, z, r) {
   for (; pgN < treeRefs.length; pgN++) { const t = treeRefs[pgN], k = pgKey(Math.floor(t.x / 4), Math.floor(t.z / 4)); let a = PG.get(k); if (!a) PG.set(k, a = []); a.push(t); }
-  const hit = (t) => (t.parts.length || t.prop) && Math.abs(t.x - x) < r && Math.abs(t.z - z) < r && Math.hypot(t.x - x, t.z - z) < r;
+  const hit = (t) => !t.shrub && (t.parts.length || t.prop) && Math.abs(t.x - x) < r && Math.abs(t.z - z) < r && Math.hypot(t.x - x, t.z - z) < r;
   if (r > 4) return treeRefs.some(hit);
   const cx = Math.floor(x / 4), cz = Math.floor(z / 4);
   for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) { const a = PG.get(pgKey(cx + i, cz + j)); if (a && a.some(hit)) return true; }
@@ -603,6 +621,79 @@ function trafficLights() {
   return n;
 }
 
+// 놀이터(OSM greens k='playground', 31이 고무칩 포장을 깖): 넓으면 그네와 미끄럼틀, 좁으면 하나. 놀이터 긴 변 방향으로 세운다(장식).
+// 색은 파랑·노랑·초록만(주황·빨강은 빈 층·폐업 표시 색이라 쓰지 않음)
+function beam(parts, a, b, tx, tz, color, rot, cx, cz) {   // 지역 좌표 a→b 를 잇는 막대(단면 tx×tz)
+  const dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2], L = Math.hypot(dx, dy, dz) || 0.01;
+  const g = new THREE.BoxGeometry(tx, L, tz), q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(dx / L, dy / L, dz / L));
+  g.applyQuaternion(q); g.translate((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2); g.rotateY(rot); g.translate(cx, 0, cz);
+  const c = new THREE.Color(color), n = g.attributes.position.count, cols = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) { cols[i * 3] = c.r; cols[i * 3 + 1] = c.g; cols[i * 3 + 2] = c.b; }
+  g.setAttribute('color', new THREE.BufferAttribute(cols, 3)); parts.push(g.toNonIndexed());
+}
+function playgrounds() {
+  const BLUE = '#3d7cc9', YEL = '#f2c230', GRN = '#4f9d69', MET = '#8d939b', parts = [];
+  let swings = 0, slides = 0;
+  const area = (p) => { let s = 0; for (let i = 0; i < p.length; i++) { const a = p[i], b = p[(i + 1) % p.length]; s += a[0] * b[1] - b[0] * a[1]; } return Math.abs(s / 2); };
+  for (const g of D.greens) {
+    if (g.k !== 'playground' || area(g.p) < 45 || area(g.p) > 800) continue;   // 800㎡ 넘는 곳은 공원 전체(고무칩 없이 녹지)
+    const P = g.p; let best = 0, ux = 1, uz = 0;
+    for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i + 1) % P.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L > best) { best = L; ux = (b[0] - a[0]) / L; uz = (b[1] - a[1]) / L; } }
+    const vx = -uz, vz = ux, rot0 = -Math.atan2(uz, ux);
+    let cx = 0, cz = 0; for (const q of P) { cx += q[0]; cz += q[1]; } cx /= P.length; cz /= P.length;
+    let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+    for (const q of P) { const du = (q[0] - cx) * ux + (q[1] - cz) * uz, dv = (q[0] - cx) * vx + (q[1] - cz) * vz; u0 = Math.min(u0, du); u1 = Math.max(u1, du); v0 = Math.min(v0, dv); v1 = Math.max(v1, dv); }
+    const vm = (v0 + v1) / 2, W = (u, v) => [cx + ux * u + vx * v, cz + uz * u + vz * v];
+    // (uc, vc)를 가운데로 긴 방향 반폭 hw·옆 반폭 hd 인 네모가 놀이터 안(가장자리 가장자리 1.2m 밖, 겹치는 관목은 숨김)에 들어가는가. alongV 면 긴 방향이 놀이터 짧은 변 쪽
+    const fits = (uc, vc, hw, hd, alongV) => [[-1, -1], [1, -1], [1, 1], [-1, 1], [0, 0]].every(([a, b]) => {
+      const du = alongV ? b * hd : a * hw, dv = alongV ? a * hw : b * hd, [x, z] = W(uc + du, vc + dv);
+      if (!inPoly(x, z, P) || nearBuilding(x, z, 0.3) || nearRoad(x, z, 0.2, -1)) return false;
+      for (let i = 0; i < P.length; i++) if (segDist(x, z, P[i], P[(i + 1) % P.length]) < 1.2) return false;
+      return true; });
+    // 긴 변 10m 넘으면 그네(한쪽 끝)·미끄럼틀(다른 끝) 둘, 아니면 하나만(넓으면 그네 먼저, 안 들어가면 다른 것)
+    const L = u1 - u0, single = L < 10, mid = (u0 + u1) / 2, first = area(P) >= 90 ? 'swing' : 'slide';
+    const items = single ? [[first, mid], [first === 'swing' ? 'slide' : 'swing', mid]] : [['swing', u0 + 2.6], ['slide', u1 - 3.0]];
+    const placed = [];
+    for (const [kind, uc0] of items) {
+      // 들어갈 자리: 바라는 곳에서 1m씩 비켜 가며(긴 변 방향 먼저, 안 되면 짧은 변 방향). 미끄럼틀은 사다리 -1.45 ~ 판 끝 3.3m라 확인 네모 가운데가 +0.95
+      const hw = kind === 'swing' ? 1.9 : 2.55, hd = kind === 'swing' ? 1.3 : 1.0, off = kind === 'swing' ? 0 : 0.95;
+      let at = null;
+      search: for (const alongV of [false, true]) for (const d of [0, 1, -1, 2, -2, 3, -3]) for (const e of [0, 1, -1, 2, -2]) {
+        const uc = uc0 + d, vc = vm + e, cu = uc + (alongV ? 0 : off), cv = vc + (alongV ? off : 0);
+        if (placed.some(q => Math.hypot(q[0] - uc, q[1] - vc) < 4.5)) continue;
+        if (fits(cu, cv, hw, hd, alongV)) { at = [uc, vc, alongV]; break search; }
+      }
+      if (!at) continue;
+      if (single && placed.length) break;
+      placed.push([at[0], at[1]]);
+      const rot = at[2] ? rot0 - Math.PI / 2 : rot0, [x, z] = W(at[0], at[1]), [hx, hz] = W(at[0] + (at[2] ? 0 : off), at[1] + (at[2] ? off : 0));
+      hideTreesNear(hx, hz, hw + 0.9);
+      if (kind === 'swing') {   // A자 기둥 + 가로대 + 그네 둘
+        beam(parts, [-1.6, 2.25, 0], [1.6, 2.25, 0], 0.11, 0.11, BLUE, rot, x, z);
+        for (const ex of [-1.5, 1.5]) for (const ez of [-0.8, 0.8]) beam(parts, [ex, 2.25, 0], [ex, 0, ez], 0.09, 0.09, BLUE, rot, x, z);
+        for (const sx of [-0.7, 0.7]) {
+          for (const k of [-0.2, 0.2]) beam(parts, [sx + k, 2.2, 0], [sx + k, 0.5, 0], 0.025, 0.025, MET, rot, x, z);
+          beam(parts, [sx - 0.25, 0.47, 0], [sx + 0.25, 0.47, 0], 0.07, 0.3, YEL, rot, x, z);
+        }
+        swings++;
+      } else {   // 기둥 넷 + 발판 + 지붕 + 사다리 + 미끄럼판
+        for (const ex of [-0.6, 0.6]) for (const ez of [-0.6, 0.6]) beam(parts, [ex, 0, ez], [ex, 2.55, ez], 0.1, 0.1, BLUE, rot, x, z);
+        beam(parts, [-0.7, 1.5, 0], [0.7, 1.5, 0], 0.08, 1.4, GRN, rot, x, z);                       // 발판
+        beam(parts, [-0.85, 2.6, 0], [0.85, 2.6, 0], 0.12, 1.7, GRN, rot, x, z);                     // 지붕
+        beam(parts, [0.6, 1.5, 0], [3.3, 0.22, 0], 0.07, 0.7, YEL, rot, x, z);                       // 미끄럼판
+        for (const ez of [-0.38, 0.38]) beam(parts, [0.6, 1.72, ez], [3.3, 0.42, ez], 0.06, 0.06, YEL, rot, x, z);   // 옆 난간
+        for (const ez of [-0.3, 0.3]) beam(parts, [-0.6, 1.5, ez], [-1.45, 0, ez], 0.07, 0.07, BLUE, rot, x, z);     // 사다리 기둥
+        for (let k = 1; k <= 4; k++) { const t = k / 5, lx = -0.6 - 0.85 * t, ly = 1.5 * (1 - t); beam(parts, [lx, ly, -0.3], [lx, ly, 0.3], 0.05, 0.05, MET, rot, x, z); }
+        slides++;
+      }
+      treeRefs.push({ x, z, parts: [], prop: true });
+      (stats.playAt = stats.playAt || []).push([Math.round(x), Math.round(z), kind]);
+    }
+  }
+  addMerged(parts, 'decor-playground');
+  return [swings, slides];
+}
+
 // 볼라드: 횡단보도 양끝, 점자블록(길 가장자리 0.35~0.95m) 바로 뒤 1.25m, 길 방향으로 -2.1·-0.9·0.9·2.1m(가운데는 신호등)(장식)
 function bollards() {
   const CW = (window.__decor && window.__decor.spots && window.__decor.spots.crosswalk) || spots.crosswalk;
@@ -776,7 +867,17 @@ function areaLabels() {
   if (!best) return 0;
   const el = document.createElement('div'); el.className = 'lbl place water'; el.textContent = '옥포만';
   box.appendChild(el); M.labels.push({ el, x: best.x, y: 0, z: best.z, pri: 9, kind: 'place', w: 0, h: 0 });
-  return 1;
+  // 지도 밖 큰 곳(한화오션 옥포조선소 등): 가운데에서 그쪽으로 그은 선이 지도 가장자리(안쪽 45m)와 만나는 곳에 '…방향' 이름표.
+  // 가상 손님의 큰 몫이 조선소 통근자라 어디서 오는지 보이게 한다
+  let n = 1;
+  for (const pl of D.places || []) {
+    const px = pl.x !== undefined ? pl.x : pl.p && pl.p[0], pz = pl.z !== undefined ? pl.z : pl.p && pl.p[1];
+    if (px === undefined || inside(px, pz, 0) || pl.k !== 'industrial') continue;
+    const t = Math.min((HX - 45) / Math.abs(px || 1), (HZ - 45) / Math.abs(pz || 1));
+    const e2 = document.createElement('div'); e2.className = 'lbl place major edge'; e2.textContent = pl.n + ' 방향';
+    box.appendChild(e2); M.labels.push({ el: e2, x: px * t, y: 0, z: pz * t, pri: 8, kind: 'place', w: 0, h: 0 }); n++;
+  }
+  return n;
 }
 
 function afterLoad() {
@@ -785,12 +886,13 @@ function afterLoad() {
   try {
     stats.lights = tm('lights', trafficLights); stats.bollards = tm('bollards', bollards); stats.signs = tm('signs', roadSigns);
     const [poles, wires] = tm('poles', utilityPoles); stats.poles = poles; stats.wires = wires;
+    const [sw, sl] = tm('play', playgrounds); stats.swings = sw; stats.slides = sl;
     stats.school = tm('school', schoolZones); stats.areaLabels = tm('area', areaLabels);
   } catch (e) { console.warn('decor 소품', e); }
   // 보이는 가로수 자리(정류장·신호등 등 때문에 숨긴 것 빼고): ground.js(seohogyun-31)가 load 다음 차례에 읽어 나무 보호판을 깐다
   spots.streetTree = [];
   trees.forEach((t, i) => { if (t[4] === 'street' && treeRefs[i] && treeRefs[i].parts.length) spots.streetTree.push([Math.round(t[0] * 10) / 10, Math.round(t[1] * 10) / 10]); });
-  if (window.__decor) Object.assign(window.__decor, { lights: stats.lights || 0, signs: stats.signs || 0, poles: stats.poles || 0, wires: stats.wires || 0, schoolPosts: stats.school || 0, bollards: stats.bollards || 0, areaLabels: stats.areaLabels || 0, lightAt: stats.lightAt || [], signAt: stats.signAt || [], ms: Object.assign(ms, { all: Math.round(performance.now() - T0) }) });
+  if (window.__decor) Object.assign(window.__decor, { lights: stats.lights || 0, signs: stats.signs || 0, poles: stats.poles || 0, wires: stats.wires || 0, schoolPosts: stats.school || 0, bollards: stats.bollards || 0, swings: stats.swings || 0, slides: stats.slides || 0, playAt: stats.playAt || [], areaLabels: stats.areaLabels || 0, lightAt: stats.lightAt || [], signAt: stats.signAt || [], ms: Object.assign(ms, { all: Math.round(performance.now() - T0) }) });
   if (M.renderer) M.renderer.shadowMap.needsUpdate = true;
   M.need && M.need();
 }
