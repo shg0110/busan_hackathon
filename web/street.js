@@ -10,6 +10,9 @@ const { buildings: B, scene, need, esc } = M;
 // 층 그림 색: 상가 층 3가지(영업·가게 없음·확인 불가)는 진하게, 상가가 아닌 층(주거·기타)은 서로 다른 옅은 색, 자료 없음은 흰 칸 + 테두리
 const COL = { open: '#4fa679', empty: '#f0783a', unknown: '#8d959e', home: '#c3d3e4', other: '#e3d7c1', nodata: '#ffffff' };
 const KO = { open: '영업 중', empty: '가게 없음', unknown: '확인 불가', home: '주거', other: '기타(주차·공공 등)', nodata: '층별 자료 없음' };
+// 범례는 한 줄에 들어가게 짧게, 뜻은 title 과 '어떻게 셌나요'에
+const KO_LG = { ...KO, other: '기타', nodata: '자료 없음' };
+const TIP_LG = { other: '주차장·공공시설처럼 상가도 집도 아닌 층', nodata: '건축물대장에 층별 쓰임 자료가 없는 층', unknown: '사무실·의원·학원 등 가게 여부를 상가정보로 가릴 수 없는 층' };
 
 // ── 탭 ───────────────────────────────────────────────
 const tabs = document.createElement('nav'); tabs.id = 'tabs'; tabs.setAttribute('aria-label', '보기 범위');
@@ -137,10 +140,10 @@ function render(s) {
   panel.innerHTML = `
     <div class="st-head"><h2>${esc(s.ko)}</h2><button class="icon-btn" id="st-close" aria-label="상권 전체로" title="상권 전체로"><svg viewBox="0 0 20 20"><path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
     <p class="st-line"><b>${s.len.toLocaleString('ko-KR')}m</b> 거리에 길가 건물 <b>${s.slots.length}채</b>.<br>상가 층 ${w.floors}개 가운데 <mark>${w.empty}개</mark>에 가게가 없습니다.${w.empty_area_pct != null ? ` 면적으로는 ${w.empty_area_pct}%입니다.` : ''}</p>
-    <p class="st-sub">길 양쪽 건물을 층마다 <span class="lgd">${['open', 'empty', 'unknown', 'home', 'other', 'nodata'].map(k => `<i style="background:${COL[k]}${k === 'nodata' ? ';box-shadow:inset 0 0 0 1px #adb5bd' : ''}"></i>${KO[k]}`).join(' ')}</span></p>
+    <p class="st-sub">길 양쪽 건물을 층마다 <span class="lgd">${['open', 'empty', 'unknown', 'home', 'other', 'nodata'].map(k => `<span class="lg-it"${TIP_LG[k] ? ` title="${TIP_LG[k]}"` : ''}><i style="background:${COL[k]}${k === 'nodata' ? ';box-shadow:inset 0 0 0 1px #adb5bd' : ''}"></i>${KO_LG[k]}</span>`).join(' ')}</span></p>
     ${strip(s)}
     <p class="st-tip">칸을 누르면 그 건물로 갑니다. ${c.empty < w.empty ? `1층만 보면 빈 곳은 ${c.empty}곳뿐이라, 위층까지 봐야 실제 모습이 보입니다.` : `1층만 보면 빈 곳은 ${c.empty}곳입니다.`}</p>
-    <details class="st-how"><summary>어떻게 셌나요</summary><p>건축물대장 층별개요로 층마다 쓰임을 알아내고, 2026년 9월 상가정보에 그 층 가게가 있는지 맞춰 봤습니다. 상가 층 ${w.floors}개 중 영업 ${w.open}, 가게 없음 ${w.empty}, 확인 불가 ${w.unknown}입니다. 길 왼쪽·오른쪽은 주소 건물번호 홀짝으로 나눴습니다(위치로 나눈 것과 ${s.sideCheck.known}곳 중 ${s.sideCheck.agree}곳 같음${s.sideCheck.fixed ? `, 다른 ${s.sideCheck.fixed}곳은 주소를 따름` : ''}).</p></details>
+    <details class="st-how"><summary>어떻게 셌나요</summary><p>건축물대장 층별개요로 층마다 쓰임을 알아내고, 2026년 9월 상가정보에 그 층 가게가 있는지 맞춰 봤습니다. 상가 층 ${w.floors}개 중 영업 ${w.open}, 가게 없음 ${w.empty}, 확인 불가 ${w.unknown}입니다. ‘확인 불가’는 사무실·의원·학원처럼 가게인지 상가정보로 가릴 수 없는 층, ‘기타’는 주차장·공공시설처럼 상가도 집도 아닌 층, ‘자료 없음’은 건축물대장에 층별 쓰임 자료가 없는 층입니다. 길 왼쪽·오른쪽은 주소 건물번호 홀짝으로 나눴습니다(위치로 나눈 것과 ${s.sideCheck.known}곳 중 ${s.sideCheck.agree}곳 같음${s.sideCheck.fixed ? `, 다른 ${s.sideCheck.fixed}곳은 주소를 따름` : ''}).</p></details>
     <p class="st-sub">이 거리를 지나간 가상 손님 <span class="lgd" id="fl-lg"></span></p>
     <div id="st-flow"><p class="exp-wait">계산 중…</p></div>
     <p class="st-sub">어느 빈 층에 열면 손님이 많을까</p>
