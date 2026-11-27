@@ -224,7 +224,7 @@ const B = D.buildings;
 const bPos = [], bNrm = [], bCol = [], bUv = [], triOwner = [];
 const ROOF_UV = [0.95, 0.15];   // 무늬의 흰 칸(지붕은 무늬 없이)
 // 창 무늬는 창 8칸 × 층 8칸 묶음 한 장(repeat 1/8). 낮 무늬와 밤 불빛 무늬가 같은 칸 배치를 써야 창 위치가 맞는다
-const WN = 8, WS = 64;
+const WN = 8, WS = 96;   // 칸 하나 96px(가까이 볼 때 흐릿하지 않게)
 function cellTexture(draw) {
   const cv = document.createElement('canvas'); cv.width = cv.height = WN * WS;
   const g = cv.getContext('2d');
@@ -244,13 +244,33 @@ function floorTexture() {
     g.fillStyle = '#f2f3f5'; g.fillRect(0, S - 4, S, 4);                     // 층 사이 슬래브(v=0 쪽)
   });
 }
+// 건물 종류별 창 무늬(같은 칸 배치): 1 = 상가·사무·숙박·공공(큰 유리창), 2 = 아파트(넓은 창 + 발코니 난간), 3 = 상가 1층 가게 앞면(통유리)
+function glass(g, x, y, w, h, c0, c1) { const gr = g.createLinearGradient(0, y, 0, y + h); gr.addColorStop(0, c0); gr.addColorStop(1, c1); g.fillStyle = gr; g.fillRect(x, y, w, h); }
+const winTexB = cellTexture((g, S) => {   // 큰 유리창(가운데 창살)
+  g.fillStyle = '#ffffff'; g.fillRect(0, 0, S, S);
+  glass(g, 4, S * 0.16, S - 8, S * 0.62, '#9fb1c4', '#d3dde8');
+  g.fillStyle = '#8d99a6'; g.fillRect(4, S * 0.16, S - 8, 2); g.fillRect(S / 2 - 1, S * 0.16, 2, S * 0.62);
+  g.fillStyle = '#eef0f3'; g.fillRect(0, S - 5, S, 5);
+});
+const winTexC = cellTexture((g, S) => {   // 아파트: 넓은 창 + 발코니 난간
+  g.fillStyle = '#ffffff'; g.fillRect(0, 0, S, S);
+  glass(g, 6, S * 0.22, S - 12, S * 0.5, '#b9c6d4', '#e0e7ef');
+  g.fillStyle = '#c9cfd6'; g.fillRect(2, S * 0.56, S - 4, S * 0.16);   // 난간
+  g.fillStyle = '#aeb6bf'; g.fillRect(2, S * 0.56, S - 4, 2);
+  g.fillStyle = '#f2f3f5'; g.fillRect(0, S - 4, S, 4);
+});
+const shopTex = cellTexture((g, S) => {   // 1층 가게 앞면: 통유리 + 위 차양 띠
+  g.fillStyle = '#e9e7e3'; g.fillRect(0, 0, S, S);
+  glass(g, 3, S * 0.2, S - 6, S * 0.66, '#5f7184', '#93a4b5');
+  g.fillStyle = '#4a525b'; g.fillRect(0, S * 0.08, S, S * 0.12);   // 차양·간판 받침
+  g.fillStyle = '#7d8790'; g.fillRect(S / 2 - 1, S * 0.2, 2, S * 0.66);
+});
 // 밤에 불 켜진 창: 칸마다 정해진 확률로 따뜻한 전등색(나머지는 검정 = 빛 없음). 무늬 칸이 아닌 벽·지붕은 검정
-function litTexture() {
-  const cols = ['#ffd38a', '#ffe2b0', '#fff2d8', '#ffc66e', '#e9f0ff'];
+function litTexture(p = 0.46, rect = [7 / 64, 0.24, 0.66, 0.42], cols = ['#ffd38a', '#ffe2b0', '#fff2d8', '#ffc66e', '#e9f0ff']) {
   return cellTexture((g, S, i, j) => {
     g.fillStyle = '#000'; g.fillRect(0, 0, S, S);
     const h = ((i * 73856093) ^ (j * 19349663)) >>> 0, u = (h % 1000) / 1000;
-    if (u < 0.46) { g.fillStyle = cols[h % cols.length]; g.fillRect(7, S * 0.24, S * 0.66, S * 0.42); }
+    if (u < p) { g.fillStyle = cols[h % cols.length]; g.fillRect(rect[0] * S, rect[1] * S, rect[2] * S, rect[3] * S); }
   });
 }
 const tmpC = new THREE.Color();
@@ -275,6 +295,9 @@ const ROOF_HOUSE = pal(['#8db59f', '#97bca9', '#86ae98', '#c9cdd2', '#9fc1ae', '
 function wallOf(b) { const L = WALL_BY[b.k]; return L ? L[b.c % L.length] : wallCols[b.c % wallCols.length]; }
 function roofOf(b) { if (b.k === 'house') return ROOF_HOUSE[(b.c * 7 + b.lv) % ROOF_HOUSE.length]; return b.k === 'apartments' ? roofApt : roofCols[b.c % roofCols.length]; }
 const bRange = [];   // 건물별 [시작 꼭짓점, 끝 꼭짓점]
+const bWst = [], bOffV = [];   // 건물별 창 종류(0 주택 기본, 1 큰 유리창, 2 아파트) + 1층 가게면 4 더함, 무늬 시작 층(offV)
+const STYLE_OF = { apartments: 2, retail: 1, hotel: 1, office: 1, public: 1, school: 1, hospital: 1 };
+const FL = window.FLOORS && window.FLOORS.b;
 const roofRange = [];   // 건물별 지붕 꼭짓점 [시작, 끝] — 지붕만 다른 색으로 칠할 때(빈 층 많은 건물 등)
 function pushTri(a, b, c, n, col, owner) {
   bPos.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
@@ -293,6 +316,8 @@ B.forEach((b, bi) => {
   const v1 = b.k === 'roof' ? 0.15 : (y1 - y0 - 0.6) / fh + 0.0;
   let run = 0;
   const offU = (b.c * 3 + bi * 7) % WN, offV = (bi * 5 + b.c) % WN;
+  { const fl = FL && FL[String(bi)], f1 = fl && fl.find(f => f.n === 1), com = fl && fl.some(f => f.com);
+    let st = STYLE_OF[b.k] ?? (com ? 1 : 0); if (f1 && f1.com) st += 4; bWst.push(st); bOffV.push(offV); }
   for (let i = 0; i < p.length; i++) {
     const a = p[i], c2 = p[(i + 1) % p.length];
     const dx = c2[0] - a[0], dz = c2[1] - a[1], l = Math.hypot(dx, dz);
@@ -367,16 +392,45 @@ const baseCol = Float32Array.from(bCol);
 // 밤에도 '가게 없는 층' 주황 지붕이 보이게: 칠한 지붕 꼭짓점만 glow=1 → 밤 정도만큼 스스로 빛남(셰이더에 한 줄 추가)
 const glowAttr = new THREE.Float32BufferAttribute(new Float32Array(bCol.length / 3), 1);
 bGeo.setAttribute('glow', glowAttr);
+{ const nV = bCol.length / 3, wst = new Float32Array(nV), bid = new Float32Array(nV), woff = new Float32Array(nV);
+  bRange.forEach(([s0, e0], bi) => { for (let v = s0; v < e0; v++) { wst[v] = bWst[bi]; bid[v] = bi; woff[v] = bOffV[bi]; } });
+  bGeo.setAttribute('wst', new THREE.BufferAttribute(wst, 1)); bGeo.setAttribute('bid', new THREE.BufferAttribute(bid, 1)); bGeo.setAttribute('woff', new THREE.BufferAttribute(woff, 1)); }
+// 밤에 '가게 없는 층'은 창 불이 꺼지게: 건물마다 빈 층 비트(1층 = 1)를 1줄 데이터 텍스처로(셰이더가 건물 번호로 읽음)
+const emptyTex = (() => { const W = 4096, d = new Float32Array(W);
+  if (FL) for (const k in FL) { const bi = +k; if (bi >= W) continue; let m = 0; for (const f of FL[k]) if (f.state === 'empty' && f.n >= 1 && f.n <= 24) m |= 1 << (f.n - 1); d[bi] = m; }
+  const t = new THREE.DataTexture(d, W, 1, THREE.RedFormat, THREE.FloatType); t.minFilter = t.magFilter = THREE.NearestFilter; t.needsUpdate = true; return t; })();
 bGeo.computeBoundingSphere();
 // 창 무늬는 가까이 볼 때만(멀리서는 작은 건물이 빽빽해 무늬가 잡음처럼 보인다 → 깨끗한 덩어리로)
 const winTex = floorTexture();
 const litTex = litTexture();
+const litB = litTexture(0.32, [4 / 64, 0.18, 0.88, 0.58], ['#eef4ff', '#fff6e6', '#e3ecff']);   // 사무·상가: 하얀 형광등, 덜 켜짐
+const litC = litTexture(0.58, [6 / 64, 0.24, 0.8, 0.32]);                                  // 아파트: 따뜻한 전등, 많이 켜짐
+const litShop = litTexture(0.85, [3 / 64, 0.22, 0.9, 0.62], ['#fff4d6', '#ffe9b8', '#ffffff']);   // 1층 가게: 대부분 켜짐
 const bMat = new THREE.MeshLambertMaterial({ vertexColors: true, map: null, emissive: '#ffffff', emissiveMap: litTex, emissiveIntensity: 0 });
 const uRoofGlow = { value: 0 };
+const GL2 = renderer.capabilities.isWebGL2;
+// 건물 셰이더에 더하는 것: 밤 주황 지붕 빛남(glow), 건물 종류별 창 무늬·1층 가게 앞면(wst), 밤에 빈 층 불 끄기(bid·woff → emptyTex)
 bMat.onBeforeCompile = (sh) => {
-  sh.uniforms.uRoofGlow = uRoofGlow;
-  sh.vertexShader = 'attribute float glow;\nvarying float vGlow;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vGlow = glow;');
-  sh.fragmentShader = 'uniform float uRoofGlow;\nvarying float vGlow;\n' + sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n  totalEmissiveRadiance += vColor.rgb * vGlow * uRoofGlow;');
+  Object.assign(sh.uniforms, { uRoofGlow, uWinB: { value: winTexB }, uWinC: { value: winTexC }, uShop: { value: shopTex },
+    uLitB: { value: litB }, uLitC: { value: litC }, uLitShop: { value: litShop }, uEmpty: { value: emptyTex } });
+  sh.vertexShader = 'attribute float glow, wst, bid, woff;\nvarying float vGlow, vWst, vBid, vWoff;\nvarying vec2 vRaw;\n' +
+    sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vGlow = glow; vWst = wst; vBid = bid; vWoff = woff; vRaw = uv;');
+  const pick = (a, b, c, d) => `(isShop ? ${d} : (st < 0.5 ? ${a} : (st < 1.5 ? ${b} : ${c})))`;
+  const head = 'uniform float uRoofGlow;\nuniform sampler2D uWinB, uWinC, uShop, uLitB, uLitC, uLitShop, uEmpty;\nvarying float vGlow, vWst, vBid, vWoff;\nvarying vec2 vRaw;\n';
+  const pre = `float st = mod(vWst, 4.0); float flf = floor(vRaw.y - vWoff); bool isShop = vWst > 3.5 && flf < 0.5 && flf > -0.5;`;
+  sh.fragmentShader = head + sh.fragmentShader
+    .replace('#include <map_fragment>', `${pre}
+#ifdef USE_MAP
+  vec4 sampledDiffuseColor = ${pick('texture2D(map, vUv)', 'texture2D(uWinB, vUv)', 'texture2D(uWinC, vUv)', 'texture2D(uShop, vUv)')};
+  diffuseColor *= sampledDiffuseColor;
+#endif`)
+    .replace('#include <emissivemap_fragment>', `#ifdef USE_EMISSIVEMAP
+  vec4 emissiveColor = ${pick('texture2D(emissiveMap, vUv)', 'texture2D(uLitB, vUv)', 'texture2D(uLitC, vUv)', 'texture2D(uLitShop, vUv)')};
+  ${GL2 ? `int fi = int(flf); int msk = int(texelFetch(uEmpty, ivec2(int(vBid + 0.5), 0), 0).r + 0.5);
+  if (fi >= 0 && fi < 24 && ((msk >> fi) & 1) == 1) emissiveColor.rgb *= 0.0;` : ''}
+  totalEmissiveRadiance *= emissiveColor.rgb;
+#endif
+  totalEmissiveRadiance += vColor.rgb * vGlow * uRoofGlow;`);
 };
 const WIN_NEAR = 330;
 function syncWindows() {
