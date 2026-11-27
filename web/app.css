@@ -397,6 +397,9 @@ body .map-tip span { color: var(--g700); }
 body .map-tip b { font-weight: 700; color: var(--g900); }
 body .map-tip b.emp { color: var(--vac); }
 body .map-tip em { font-style: normal; font-size: 12.5px; font-weight: 600; color: var(--primary-ink); margin-top: 2px; }
+/* 기록지·정보창의 모든 선택 칸을 같은 화살표로(브라우저 기본 화살표·화살표 없음이 섞여 있었음: 업종·층·영업시간) */
+#rail select, #info select { -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5 8l5 5 5-5' fill='none' stroke='%234e5968' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat;
+  background-position: right 12px center; background-size: 16px; padding-right: 36px; cursor: pointer; }
 /* 시간 정하기 창(ea #112 .ts-dlg): 선택 칸·검색 칸을 기록지의 '어떤 가게를 열어 볼까요' 칸과 같은 회색 채움으로, 여는/닫는 시각 칸 폭을 같게 */
 body .ts-dlg select { height: 40px; min-width: 96px; padding: 0 34px 0 12px; border: 0; border-radius: 10px; background-color: var(--g100); color: var(--g900);
   font: inherit; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; cursor: pointer; appearance: none; -webkit-appearance: none;
