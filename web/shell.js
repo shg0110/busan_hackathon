@@ -146,6 +146,64 @@ whenReady(() => {
     e.preventDefault();
   });
 
+  // 지도 그림 저장(발표 자료용): 3D 그림 + 지도 위 이름표 + 제목 줄(구간·시각) + 축척 + 출처(OSM ODbL 표시 의무)를 한 장의 PNG 로.
+  // 패널(기록지·재생 막대·정보창)은 넣지 않는다. 이름표는 화면에 보이는 것만, 화면 모양(글꼴·색·바탕)을 읽어 다시 그린다
+  const shot = $('nav-shot');
+  if (shot) shot.onclick = () => {
+    const R = M.renderer, src = R.domElement; R.render(M.scene, M.camera);   // 방금 그린 그림을 바로 읽는다(preserveDrawingBuffer 없이)
+    const W = src.width, Hh = src.height, k = W / src.clientWidth, base = src.getBoundingClientRect();
+    const out = document.createElement('canvas'); out.width = W; out.height = Hh; const g = out.getContext('2d');
+    g.drawImage(src, 0, 0);
+    const font = (cs) => `${cs.fontWeight} ${parseFloat(cs.fontSize) * k}px ${cs.fontFamily}`;
+    const rr = (x, y, w, h, r) => { g.beginPath(); g.roundRect ? g.roundRect(x, y, w, h, r) : g.rect(x, y, w, h); };
+    const solid = (c) => { const m = c.match(/[\d.]+/g); return m && (m[3] === undefined || +m[3] > 0.05); };
+    for (const el of document.querySelectorAll('#labels .lbl')) {
+      if (el.classList.contains('off') || getComputedStyle(el).display === 'none') continue;
+      const cs = getComputedStyle(el), m = new DOMMatrix(cs.transform === 'none' ? undefined : cs.transform), ang = Math.atan2(m.b, m.a);
+      if (Math.abs(ang) > 0.01) {   // 기운 이름표(도로 이름): 바탕 없이 글자 + 테두리
+        g.save(); g.translate(m.e * k, m.f * k); g.rotate(ang); g.font = font(cs); g.textBaseline = 'middle';
+        const y = el.offsetHeight / 2 * k, sh = cs.textShadow !== 'none' ? (cs.textShadow.match(/rgba?\([^)]*\)/) || ['#fff'])[0] : null;
+        if (sh) { g.lineWidth = 3 * k; g.strokeStyle = sh; g.lineJoin = 'round'; g.strokeText(el.textContent, 0, y); }
+        g.fillStyle = cs.color; g.fillText(el.textContent, 0, y); g.restore(); continue;
+      }
+      // 곧은 이름표: 바탕이 있는 칸(자기 자신·안쪽 b 등)을 먼저 칠하고, 글자 조각을 화면 자리 그대로 쓴다
+      for (const e of [el, ...el.querySelectorAll('*')]) {
+        const c = getComputedStyle(e), r = e.getBoundingClientRect(); if (!solid(c.backgroundColor) || !r.width) continue;
+        if (c.boxShadow !== 'none') { g.save(); g.shadowColor = 'rgba(0,20,60,.18)'; g.shadowBlur = 4 * k; g.shadowOffsetY = 1 * k; }
+        g.fillStyle = c.backgroundColor; rr((r.left - base.left) * k, (r.top - base.top) * k, r.width * k, r.height * k, parseFloat(c.borderTopLeftRadius) * k); g.fill();
+        if (c.boxShadow !== 'none') g.restore();
+        if (parseFloat(c.borderLeftWidth) > 1) { g.fillStyle = c.borderLeftColor; g.fillRect((r.left - base.left) * k, (r.top - base.top) * k, parseFloat(c.borderLeftWidth) * k, r.height * k); }
+      }
+      const pre = getComputedStyle(el, '::before');   // 폐업 이름표 앞 빨간 점
+      if (pre.content && pre.content !== 'none' && solid(pre.backgroundColor)) { const r = el.getBoundingClientRect(), d = parseFloat(pre.width) * k;
+        g.fillStyle = pre.backgroundColor; g.beginPath(); g.arc((r.left - base.left) * k + parseFloat(cs.paddingLeft) * k + d / 2, (r.top - base.top + r.height / 2) * k, d / 2, 0, Math.PI * 2); g.fill(); }
+      const tw = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      for (let t = tw.nextNode(); t; t = tw.nextNode()) {
+        if (!t.textContent.trim()) continue; const pc = getComputedStyle(t.parentElement), range = document.createRange(); range.selectNodeContents(t); const r = range.getBoundingClientRect();
+        g.font = font(pc); g.textBaseline = 'middle';
+        if (!solid(getComputedStyle(el).backgroundColor) && pc.textShadow !== 'none') { g.lineWidth = 3 * k; g.lineJoin = 'round'; g.strokeStyle = (pc.textShadow.match(/rgba?\([^)]*\)/) || ['#fff'])[0]; g.strokeText(t.textContent, (r.left - base.left) * k, (r.top - base.top + r.height / 2) * k); }
+        g.fillStyle = pc.color; g.fillText(t.textContent, (r.left - base.left) * k, (r.top - base.top + r.height / 2) * k);
+      }
+    }
+    // 제목 줄(왼쪽 위): 무엇을 언제 본 그림인지
+    const cur = window.__street && window.__street.cur, clock = ($('sim-clock') || {}).textContent || '';
+    const title = `옥포 상권 · ${cur ? cur.ko.split(' (')[0] : '상권 전체'}${clock ? ' · ' + clock : ''}`;
+    g.font = `700 ${15 * k}px Pretendard, sans-serif`; const tw2 = g.measureText(title).width;
+    g.fillStyle = 'rgba(255,255,255,.94)'; rr(16 * k, 16 * k, tw2 + 24 * k, 34 * k, 10 * k); g.fill(); g.fillStyle = '#191f28'; g.textBaseline = 'middle'; g.fillText(title, 28 * k, 33 * k);
+    // 축척(왼쪽 아래)과 출처(오른쪽 아래)
+    if (bar && txt) { const bw = parseFloat(bar.style.width) * k || 80 * k, x0 = 16 * k, y0 = Hh - 22 * k;
+      g.fillStyle = 'rgba(255,255,255,.9)'; rr(x0 - 6 * k, y0 - 16 * k, bw + 70 * k, 26 * k, 6 * k); g.fill();
+      g.strokeStyle = '#4e5968'; g.lineWidth = 2 * k; g.beginPath(); g.moveTo(x0, y0 - 6 * k); g.lineTo(x0, y0); g.lineTo(x0 + bw, y0); g.lineTo(x0 + bw, y0 - 6 * k); g.stroke();
+      g.font = `600 ${11.5 * k}px Pretendard, sans-serif`; g.fillStyle = '#4e5968'; g.fillText(txt.textContent, x0 + bw + 8 * k, y0 - 4 * k); }
+    const credit = ($('credit') || {}).textContent || '지도 © OpenStreetMap 기여자(ODbL)';
+    g.font = `500 ${11 * k}px Pretendard, sans-serif`; const cw = g.measureText(credit).width;
+    g.fillStyle = 'rgba(255,255,255,.9)'; rr(W - cw - 28 * k, Hh - 32 * k, cw + 16 * k, 22 * k, 6 * k); g.fill(); g.fillStyle = '#4e5968'; g.fillText(credit, W - cw - 20 * k, Hh - 21 * k);
+    const d = new Date(), pad = (n) => String(n).padStart(2, '0');
+    const name = `옥포지도_${cur ? cur.ko.split(' (')[0].replace(/\s/g, '') : '상권전체'}_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}.png`;
+    window.__lastShot = { name, w: W, h: Hh };
+    out.toBlob((b) => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }, 'image/png');
+  };
+
   // 주소 공유: index.html#빛의거리 로 열면 그 거리로, 거리를 고르면 주소 끝이 바뀐다(발표 때 링크로 바로 보여 주기)
   const short = (s) => s.ko.split(' (')[0].replace(/\s/g, '');
   const fromHash = () => { const h = decodeURIComponent(location.hash.slice(1)).replace(/\s/g, ''); if (!h) return null;
