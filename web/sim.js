@@ -33,6 +33,8 @@ const CFG0 = {
     life: { ko: '생활 서비스',  col: '#4a5568', price: 18000, seats: 3,  stay: 45,  open: 600, close: 1200 },
   },
   upperFloor: 0.7,   // 2층 이상 가게가 눈에 띄는 정도(1층 = 1). 가정
+  // 가게 앞을 지나는 사람(β): 가게 고르기 무게 × (가게 앞 하루 통과 인원 ÷ 가게들 평균)^β. 0 이면 위치 장점 없음(예전과 같음). 가정. ?passby= 로 바꿈
+  passby: 0.5,
   // 가격 민감도: 업종 기준가보다 비싸면 (기준가/가격)^탄력 만큼 덜 고른다. 가정
   priceElastic: { worker: 0.9, foreign: 1.6, resident: 1.0, tourist: 0.5, 'foreign.expat': 0.6 },   // 선주 감독관·외국 기술자는 고소득(가정)
   walk: 70,          // 걷는 속도 m/분. 가정
@@ -43,6 +45,9 @@ const SCALE = new URLSearchParams(location.search).has('noscale') ? 1 : ((CFG.sc
 for (const g in CFG.groups) { CFG.groups[g].wd = Math.round((CFG.groups[g].wd || 0) * SCALE); CFG.groups[g].we = Math.round((CFG.groups[g].we || 0) * SCALE); }
 function deepMerge(a, b) { const o = Array.isArray(a) ? a.slice() : { ...a }; for (const k in b) o[k] = (b[k] && typeof b[k] === 'object' && !Array.isArray(b[k]) && a[k]) ? deepMerge(a[k], b[k]) : b[k]; return o; }
 const CATS = Object.keys(CFG.cats), GROUPS = Object.keys(CFG.groups);
+// 가게 앞을 지나는 사람 β(아래 buildPassby): '자료와 가정 보기'가 먼저 그려져서 여기서 정함
+const PASSF = [null, null]; let PASS_MEAN = [1, 1], PASSBY_MS = 0;
+const PASSBY = Q('passby') != null && isFinite(+Q('passby')) ? +Q('passby') : (CFG.passby ?? 0);
 const FD = (CFG.foreignDaily && CFG.foreignDaily.v) || 15000;
 // ── 세부 업종·대표 메뉴(window.MENU ← tools/menu_build.py) ─────────────
 // 가게 1인 지출 = Σ(메뉴 가격 × 1인 수량 × 주문 비율). 메뉴 가격 근거: 거제시 개인서비스 가격동향(옥포1·2동), 카드 건당 금액, 나머지 가정
@@ -179,7 +184,7 @@ const SHOPS = SD.shops.map((s, i) => {
   return { i, n: s.n, c: s.c, sub: sb ? s.sub : null, cs: s.cs, x: s.x, z: s.z, b: s.b, f: s.f, node: nearest(s.x, s.z), ref,
     price: Math.round(ref * (0.8 + 0.4 * h) / 500) * 500, seats: Math.max(2, Math.round((sb ? sb.seats : c.seats) * (0.6 + 0.8 * h2))),
     open: sb ? sb.open : c.open, close: sb ? sb.close : c.close, stay: sb ? sb.stay : c.stay,
-    attract: (0.6 + 0.8 * hash01(s.n + 'a')) * (s.f && s.f >= 2 ? CFG.upperFloor : 1), virtual: false };
+    attract: 1.0 * (s.f && s.f >= 2 ? CFG.upperFloor : 1), virtual: false };   // 매력도 근거 자료가 없어 실험 가게와 같은 1.0(예전엔 이름 해시로 0.6~1.4)
 });
 const BYCAT = {}; for (const c of CATS) BYCAT[c] = SHOPS.filter(s => s.c === c);
 
@@ -445,7 +450,9 @@ function populate(we, seed) {
     }
   }
 }
+let CUR_WE = 0;   // 지금 계산 중인 날(0 평일, 1 주말): 가게 앞 흐름 계수(s.pb)를 고를 때 씀
 function reset(we, seed) {
+  CUR_WE = we ? 1 : 0;
   populate(we, seed);
   SHOP_ST = SHOPS.map(() => ({ occ: [] }));
   STATS = { visits: new Float32Array(SHOPS.length), spend: new Float32Array(SHOPS.length), byHour: Array.from({ length: SHOPS.length }, () => null),
@@ -489,7 +496,7 @@ function chooseShop(a, cat, t, nodeFrom) {
     if (d2 > far2) continue;
     const cap = s.sub === 'yuheung' ? Math.max(a.wallet * 3.5, s.ref * 1.3) : a.wallet;
     if (payOf(a, s) > cap) { pricey++; continue; }
-    const w = (s.wg[g] ?? s.wg[a.g]) * Math.exp(-Math.sqrt(d2) / lam);
+    const w = (s.wg[g] ?? s.wg[a.g]) * Math.exp(-Math.sqrt(d2) / lam) * (s.pb ? s.pb[CUR_WE] : 1);
     if (w > 1e-4) { sum += w; cw[n] = sum; ci[n] = i; n++; }
   }
   if (!n) return pricey ? NO_MONEY : null;
@@ -739,6 +746,9 @@ const assumed = GROUPS.filter(g => CFG.groups[g].src === '가정' || /가정/.te
     ${li('조선소 쪽 입구', 'OSM 조선소 서쪽 경계 차단기(34.88789, 128.69100), 문별 출퇴근 인원 미확인')}
     ${li('가게', `소상공인시장진흥공단 상가정보 2026-09 영업 중 가게 ${SHOPS.length.toLocaleString('ko-KR')}곳, 소분류로 세부 업종 ${MENU.subs.length}개에 나눔`)}
     ${li('업종 고르는 비율·머무는 시간·자리 수·걷는 속도', '가정(근거 자료 없음)')}
+    ${li('가게까지 거리 감쇠 λ', '가게 고르기 무게 × e^(−거리/λ), λ = 주점 420m · 장보기 220m · 그 밖 300m — 가정(근거 자료 없음)')}
+    ${li('2층 이상 가게', '1층보다 ' + CFG.upperFloor + '배 덜 고름 — 가정(근거 자료 없음). 가게 매력도는 근거 자료가 없어 모두 1')}
+    ${li('가게 앞을 지나는 사람 β = ' + PASSBY, 'β=0 으로 하루 돌린 가상 인물이 가게 앞을 지나간 인원(평일·주말 따로)이 가게들 평균의 몇 배인지를 β 제곱해 가게 고르기 무게에 곱함(0.2~5배로 자름). 손님 총수는 바꾸지 않고 어느 가게로 가는지만 바뀜. 0 이면 위치 장점 없음 — 가정')}
     ${li('영업시간', '세부 업종마다 하나씩 정한 가정 값(상가정보에 영업시간 항목이 없음). 시간 정하기에서 업종·가게마다 바꿀 수 있음')}
   </ul><p>근거: docs/okpo-persona-sources.md</p>`;
 }
@@ -968,6 +978,24 @@ function tick(now) {
   }
   if (playing || drawDirty) { const n = draw(simT); points.visible = n > 0; drawDirty = false; need(); }
 }
+// ── 가게 앞을 지나는 사람(β) ─────────────────────────────
+// β=0 상태로 평일·주말 하루씩 돌려 길 노드마다 '지나간' 인원(출발·도착 노드 빼고)을 센다. 이 흐름은 고정(β 로 바뀐 흐름이 다시 계수를 바꾸는 순환 없음)
+// 계수 = ((가게 앞 통과 + 1) ÷ (실제 가게들 평균 + 1))^β, 0.2~5 로 자름. β=0 이면 계수가 없어(s.pb = null) 예전 계산과 똑같다
+function passbyOf(n) { if (!(PASSBY > 0) || !PASSF[0]) return null; return [0, 1].map(k => Math.min(5, Math.max(0.2, Math.pow((PASSF[k][n] + 1) / (PASS_MEAN[k] + 1), PASSBY)))); }
+function buildPassby() {
+  const t0 = performance.now();
+  for (const s of SHOPS) s.pb = null;
+  if (!(PASSBY > 0)) return;
+  for (const k of [0, 1]) {
+    const F = new Float32Array(NN), live = swapState(blank(false)); reset(k === 1, 0);
+    for (let t = T0; t <= T1; t++) { step(t, true); for (let i = 0; i < ACTIVE.length; i++) { const a = ACTIVE[i]; if (a.st === 1 && a.t0 === t && a.path) { const p = a.path; for (let j = 1; j < p.length - 1; j++) F[p[j]] += W; } } }
+    swapState(live); PASSF[k] = F;
+    const real = SHOPS.filter(s => !s.virtual); PASS_MEAN[k] = real.reduce((a, s) => a + F[s.node], 0) / (real.length || 1);
+  }
+  for (const s of SHOPS) s.pb = passbyOf(s.node);
+  PASSBY_MS = Math.round(performance.now() - t0);
+}
+buildPassby();
 seek(Q('simt') ? parseT(Q('simt')) : 14 * 60);   // 첫 화면은 낮 14시(빈 층 주황이 또렷하게). 밤은 '하루 돌려 보기'로 넘어가며 보임
 function Q(k) { return new URLSearchParams(location.search).get(k); }
 function parseT(s) { const [h, m] = s.split(':').map(Number); return Math.max(TS.p0, Math.min(TS.p1, h * 60 + (m || 0) + (h < 5 ? 1440 : 0))); }
@@ -985,7 +1013,7 @@ function addVirtual(bi, floor, sub, price, seats, hrs) {
   const b = MP.buildings[bi]; let cx = 0, cz = 0; for (const p of b.p) { cx += p[0]; cz += p[1]; } cx /= b.p.length; cz /= b.p.length;
   const s = { i: SHOPS.length, n: '새 가게(실험)', c: cat, sub, cs: '', x: cx, z: cz, b: bi, f: floor, node: nearest(cx, cz), ref: sb.basket,
     price, seats, open: H[0], close: H[1], stay: sb.stay, attract: 1.0 * (floor >= 2 ? CFG.upperFloor : 1), virtual: true };
-  staticWeights(s); SHOPS.push(s); BYCAT[cat].push(s); SHOPNODE = null;
+  staticWeights(s); s.pb = passbyOf(s.node); SHOPS.push(s); BYCAT[cat].push(s); SHOPNODE = null;
   catWindows();   // 새 세부 업종이면 그 업종 보통 영업시간만큼 수요 시간이 생김(내 가게 시간으로는 넓히지 않음)
   return s;
 }
@@ -1211,11 +1239,12 @@ function nodeFlowAsync(we) {
 // 빈 자리에 가게를 열었을 때 손님·매출만(비교 없이, 자리 순위용)
 function trySlot(bi, floor, sub, price, seats, runs = 3, hrs) {
   const s = addVirtual(bi, floor, sub, price, seats, hrs);
-  const r = { wd: 0, we: 0, wdWon: 0, weWon: 0 };
+  const r = { wd: 0, we: 0, wdWon: 0, weWon: 0, wdRuns: [], weRuns: [] };   // *Runs: 시드별 하루 손님(범위·'비슷함' 묶기용)
   for (const sc of ['wd', 'we']) for (let k = 0; k < runs; k++) {
     const st = runDay(sc === 'we', k);
-    r[sc] += st.visits[s.i] / runs; r[sc + 'Won'] += st.spend[s.i] / runs;
+    r[sc] += st.visits[s.i] / runs; r[sc + 'Won'] += st.spend[s.i] / runs; r[sc + 'Runs'].push(st.visits[s.i]);
   }
+  r.pb = s.pb ? s.pb.slice() : null;
   removeVirtual(s);
   return r;
 }
@@ -1474,6 +1503,6 @@ uiHooks.push(() => { updOcc(false); renderLive(false); });
 $('sim-play').addEventListener('click', () => { if (!playing) { updOcc(true); renderLive(true); } });   // 멈춘 순간 값으로 맞춤(재생 중엔 0.25~0.3초마다)
 updOcc(true);
 
-window.__sim = { get playing() { return playing; }, get _fig() { return figMesh; }, get cfgVer() { return TS.ver; }, TS, applyTS, _catwin: CAT_WIN, hoursOf, fillHours, readHours, hoursTxt, _shops: () => SHOPS, _active: () => ACTIVE, _md: { MDX, MDZ, NX, NZ, NSW, NWD }, peakTxt, _ck: CK, runDay, experiment, seek, nodesNear, flowDay, trySlot, nodeFlow, nodeFlowAsync, restore: () => { drawDirty = true; need(); }, won, wonX, GROUPS, SUB, SUBS_OF, subOptions, NAT,
+window.__sim = { get passby() { return { beta: PASSBY, ms: PASSBY_MS, mean: PASS_MEAN }; }, get playing() { return playing; }, get _fig() { return figMesh; }, get cfgVer() { return TS.ver; }, TS, applyTS, _catwin: CAT_WIN, hoursOf, fillHours, readHours, hoursTxt, _shops: () => SHOPS, _active: () => ACTIVE, _md: { MDX, MDZ, NX, NZ, NSW, NWD }, peakTxt, _ck: CK, runDay, experiment, seek, nodesNear, flowDay, trySlot, nodeFlow, nodeFlowAsync, restore: () => { drawDirty = true; need(); }, won, wonX, GROUPS, SUB, SUBS_OF, subOptions, NAT,
   graph: { NX, NZ, ADJ, NN }, selectAgent, pickAt, occNow, get selAgent() { return curSel(); }, get scen() { return scen; }, get A() { return A; }, get W() { return W; }, SHOPS, CFG, nodes: NN, get t() { return simT; } };
 })();

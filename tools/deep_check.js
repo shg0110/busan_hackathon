@@ -22,6 +22,8 @@ const ok = (name, pass, detail) => { if (detail && detail.__err) pass = false; r
   const errs = []; pg.on('pageerror', e => errs.push(e.message.slice(0, 120)));
   await pg.goto(URL + '?street=&simt=18:30'); await pg.waitForFunction('window.__ready === true', null, { timeout: 60000 }); await pg.waitForTimeout(1500);
   ok('열 때 오류 0', errs.length === 0, errs);
+  const pbOn = await ev(pg, () => { const S = window.__sim, SH = S._shops(); return { beta: S.passby.beta, ms: S.passby.ms, 계수있는가게: SH.filter(s => s.pb).length, 가게: SH.length }; });
+  ok('기본 β 면 가게마다 계수 있음', !(pbOn.beta > 0) || pbOn.계수있는가게 === pbOn.가게, pbOn);
 
   // 2-0) 이름표(첫 화면): 보이는 이름표는 모두 자리(transform)를 받았나(목록에 안 들어간 이름표는 왼쪽 위 0,0 에 쌓임)
   const lbl = await ev(pg, () => { const L = [...document.querySelectorAll('#labels .lbl')].filter(e => !e.classList.contains('off') && e.style.visibility !== 'hidden' && getComputedStyle(e).display !== 'none');
@@ -133,6 +135,14 @@ const ok = (name, pass, detail) => { if (detail && detail.__err) pass = false; r
   await p3.goto(URL); await p3.waitForTimeout(2000);
   const ng = await ev(p3, () => ({ 까닭: window.__glFail || null, 공실률: document.getElementById('s-general').textContent.trim() }));
   ok('3D 실패 때 기록지 채움·까닭 남김', !!ng.까닭 && ng.공실률 !== '–' && !e3.length, { ...ng, 오류: e3 });
+
+  // 가게 앞을 지나는 사람 β: β=0 이면 계수가 없고(예전 계산), 계수를 모두 1 로 채워도 하루 결과가 같아야 함. 기본값이면 계수가 있음
+  const p4 = await br.newPage({ viewport: { width: 1440, height: 900 } }); const e4 = []; p4.on('pageerror', e => e4.push(e.message.slice(0, 120)));
+  await p4.goto(URL + '?street=&passby=0'); await p4.waitForFunction('window.__ready === true', null, { timeout: 60000 });
+  const pb0 = await ev(p4, () => { const S = window.__sim, SH = S._shops(), tot = (st) => { let v = 0, w = 0; for (let i = 0; i < st.visits.length; i++) { v += st.visits[i]; w += st.spend[i]; } return Math.round(v) + '/' + Math.round(w); };
+    const a = tot(S.runDay(false, 0)); SH.forEach(s => { s.pb = [1, 1]; }); const b = tot(S.runDay(false, 0)); SH.forEach(s => { s.pb = null; });
+    return { beta: S.passby.beta, 계수있는가게: SH.filter(s => s.pb).length, 없음: a, 계수1: b }; });
+  ok('β=0 이면 예전 계산과 같음(계수 1 로 채워도 같음)', pb0.beta === 0 && pb0.없음 === pb0.계수1 && !e4.length, { ...pb0, 오류: e4 });
   await br.close();
 
   const fail = res.filter(r => !r.pass);

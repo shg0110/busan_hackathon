@@ -283,13 +283,19 @@ function rank(s) {
     if (i >= slots.length) {
       SIM.restore(); btn.disabled = false;
       res.sort((a, b) => (b.r.wd + b.r.we) - (a.r.wd + a.r.we));
-      out.innerHTML = `<table class="exp-cmp rk"><tr><th>순위</th><th>자리</th><th>평일<br><small class="th-u">하루</small></th><th>주말<br><small class="th-u">하루</small></th><th>평일 매출<br><small class="th-u">하루</small></th></tr>${res.map((x, k) => `<tr data-b="${x.b}"><td>${k + 1}</td><td>${x.floor}층 · ${x.side === 'L' ? '왼쪽' : '오른쪽'} ${Math.round(x.s)}m${x.area ? ` · <span class="nw">${Math.round(x.area)}㎡</span>` : ''}</td><td>${Math.round(x.r.wd)}명</td><td>${Math.round(x.r.we)}명</td><td>${SIM.won(x.r.wdWon)}</td></tr>`).join('')}</table>
-        <p class="exp-foot">${esc(document.getElementById('rk-cat').selectedOptions[0].textContent)} · 영업 ${SIM.hoursTxt(hrs)} · 1인 ${SIM.wonX(cfg.basket)}(대표 메뉴 기준) · 건물마다 가장 낮은 빈 층, 평일·주말 2번씩 평균(사람 1:1), 2층 이상은 눈에 덜 띄는 것(가정)을 반영 · 계산 ${((performance.now() - t0) / 1000).toFixed(1)}초. 행을 누르면 그 건물로 가서 자세히 실험할 수 있습니다. 가상 인물로 자리끼리 비교한 값입니다.</p>`;
+      // 시드별 (평일+주말) 범위가 묶음 첫 자리의 범위와 겹치면 같은 순위로 묶는다('비슷함') — 돌릴 때마다 생기는 차이 안이면 순서를 매기지 않음
+      const tot = (x) => x.r.wdRuns.map((v, k) => v + x.r.weRuns[k]);
+      let lead = null, grp = 0;
+      res.forEach((x, k) => { const t = tot(x); x.lo = Math.min(...t); x.hi = Math.max(...t);
+        if (!lead || x.hi < lead.lo) { lead = x; grp = k + 1; lead.n = 0; } x.grp = grp; lead.n++; x.lead = lead; });
+      const rng = (a) => `<br><small class="th-u">${Math.round(Math.min(...a))}~${Math.round(Math.max(...a))}</small>`;
+      out.innerHTML = `<table class="exp-cmp rk"><tr><th>순위</th><th>자리</th><th>평일<br><small class="th-u">하루</small></th><th>주말<br><small class="th-u">하루</small></th><th>평일 매출<br><small class="th-u">하루</small></th></tr>${res.map((x, k) => `<tr data-b="${x.b}"><td>${x.grp}${x.lead.n > 1 ? '<br><small class="th-u">비슷함</small>' : ''}</td><td>${x.floor}층 · ${x.side === 'L' ? '왼쪽' : '오른쪽'} ${Math.round(x.s)}m${x.area ? ` · <span class="nw">${Math.round(x.area)}㎡</span>` : ''}</td><td>${Math.round(x.r.wd)}명${rng(x.r.wdRuns)}</td><td>${Math.round(x.r.we)}명${rng(x.r.weRuns)}</td><td>${SIM.won(x.r.wdWon)}</td></tr>`).join('')}</table>
+        <p class="exp-foot">${esc(document.getElementById('rk-cat').selectedOptions[0].textContent)} · 영업 ${SIM.hoursTxt(hrs)} · 1인 ${SIM.wonX(cfg.basket)}(대표 메뉴 기준) · 건물마다 가장 낮은 빈 층, 평일·주말 3번씩 평균과 범위(사람 1:1), 범위가 겹치면 같은 순위('비슷함'), 2층 이상은 덜 고르고 앞을 지나는 사람이 많을수록 더 고르는 것(가정 β=${SIM.passby.beta})을 반영 · 계산 ${((performance.now() - t0) / 1000).toFixed(1)}초. 행을 누르면 그 건물로 가서 자세히 실험할 수 있습니다. 가상 인물로 자리끼리 비교한 값입니다.</p>`;
       out.querySelectorAll('tr[data-b]').forEach(tr => tr.onclick = () => flyBuilding(+tr.dataset.b));
       need(); return;
     }
     const x = slots[i++];
-    res.push({ ...x, r: SIM.trySlot(x.b, x.floor, sub, cfg.basket, cfg.seats, 2, hrs) });
+    res.push({ ...x, r: SIM.trySlot(x.b, x.floor, sub, cfg.basket, cfg.seats, 3, hrs) });
     out.querySelector('.prog i').style.width = (100 * i / slots.length) + '%'; document.getElementById('rk-p').textContent = `${i} / ${slots.length}`;
     setTimeout(next, 0);
   }
