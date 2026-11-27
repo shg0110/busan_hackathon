@@ -674,6 +674,7 @@ if (D.parking && D.parking.length) {
     for (let yy = 0; yy < 4; yy++) for (let xx = 0; xx < 4; xx++) { g.beginPath(); g.arc(xx * 16 + 8, yy * 16 + 8, 4, 0, Math.PI * 2); g.fill(); }
   }, 0.3);
   flat(tac, '#ffffff', 8.9, null, 'tactile', dots);
+  TEX.dots = dots;   // 정류장 점자블록도 같은 질감
   stats.crosswalks = CW.length; stats.tactile = CW.filter(c => c.tactile).length;
 }
 
@@ -827,6 +828,31 @@ if (M.greens) for (const k of ['wood', 'green', 'pitch']) { const g = M.greens[k
 if (M.water && M.water.material) M.water.material.color.set(G.water);
 
 // 버스 정류장 노면 상자·가로수 보호판은 규칙으로 놓은 것이라 지웠다(11-27 "실제 자료가 아닌 거는 없애자")
+
+// ── 정류장 점자블록(실제 자료: OSM 정류장 tactile_paving=yes, seohogyun-20 이 load 뒤 window.__decor.spots.busTactile = [{ x, z, ri }]) ──
+// 점자블록이 '있다'는 것만 자료다. 크기·모양은 일반형(정류장 쪽 연석 바로 뒤 인도에 길 방향 2m × 0.6m 점형 블록)으로 그린다
+function busTactile() {
+  const B = (window.__decor && window.__decor.spots && window.__decor.spots.busTactile) || [];
+  if (!B.length || !TEX.dots) return;
+  const pos = []; let n = 0;
+  for (const b of B) {
+    let best = null;
+    const look = (i, r) => { for (let k = 0; k < r.p.length - 1; k++) { const d = segDist(b.x, b.z, r.p[k], r.p[k + 1]); if (!best || d < best.d) best = { d, a: r.p[k], c: r.p[k + 1], r }; } };
+    if (b.ri != null && D.roads[b.ri]) look(b.ri, D.roads[b.ri]); else D.roads.forEach((r, i) => { if (vehicle[i] && r.p.length > 1) look(i, r); });
+    if (!best || best.d > best.r.w / 2 + 8) continue;
+    const dx = best.c[0] - best.a[0], dz = best.c[1] - best.a[1], L = Math.hypot(dx, dz) || 1, ux = dx / L, uz = dz / L;
+    const t = Math.max(0, Math.min(L, (b.x - best.a[0]) * ux + (b.z - best.a[1]) * uz)), px = best.a[0] + ux * t, pz = best.a[1] + uz * t;
+    let nx = -uz, nz = ux; if ((b.x - px) * nx + (b.z - pz) * nz < 0) { nx = -nx; nz = -nz; }   // 정류장 쪽
+    const off = best.r.w / 2 + 0.5, cx = px + nx * off, cz = pz + nz * off, y = 0.028;
+    const P = (u, v) => [cx + ux * u + nx * v, cz + uz * u + nz * v], A = P(-1, -0.3), B2 = P(1, -0.3), C = P(1, 0.3), E = P(-1, 0.3);
+    pos.push(A[0], y, A[1], B2[0], y, B2[1], C[0], y, C[1], A[0], y, A[1], C[0], y, C[1], E[0], y, E[1]); n++;
+  }
+  const m = flat(pos, '#ffffff', 8.9, null, 'bus-tactile', TEX.dots);
+  if (m && M.groundPhotoOn && M.groundPhotoOn()) m.visible = false;   // 사진 바닥이면 숨김(사진에 이미 있음)
+  if (window.__ground) window.__ground.busTactile = n;
+  M.need && M.need();
+}
+if (document.readyState === 'complete') setTimeout(busTactile, 0); else addEventListener('load', () => setTimeout(busTactile, 0));   // decor.js 의 load 처리 다음
 
 // ── 사진 바닥(정사영상, seohogyun-20 이 만드는 data/okpo_ortho.js → window.ORTHO = { img, src, year }): ?ground=photo 또는 __map.setGroundPhoto(true) ──
 // 지형 면 그림을 사진으로 바꾸고, 사진에 이미 있는 길·인도·연석·노면 표시·물거품은 숨긴다(사진과 OSM 선이 어긋나 겹쳐 보이지 않게). 건물·이름표·흐름 띠는 그대로.
