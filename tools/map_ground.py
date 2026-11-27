@@ -1,6 +1,7 @@
 """바닥층(web/ground.js) 전용 자료: OSM 에서 지도 자료(okpo_map.js)에 없는 것을 뽑아 web/data/<지역>_ground.js 로 쓴다.
 지금 뽑는 것
-  - 초등학교·유치원 경계(amenity=school 중 이름에 '초등학교', amenity=kindergarten): 어린이보호구역 노면 표시 자리를 고르는 데 쓴다.
+  - 초등학교·유치원 경계(amenity=school 중 이름에 '초등학교', amenity=kindergarten). 어린이보호구역 노면 표시에 썼으나
+    11-27 "실제 자료가 아닌 거는 없애자"로 그 표시를 지워 지금은 화면에서 쓰지 않는다(지정 범위 실자료를 받으면 다시 씀).
   - 토지 이용(녹지·물·주차장은 okpo_map.js 에 있으므로 뺌): 주거·상업·시장·공업·조선소·공사장·농지·묘지·학교 부지·주유소.
     지도 범위(meta.half)로 잘라서 넣는다. 빈 땅을 구분하는 바닥색에만 쓴다.
 좌표: web/data/<지역>_map.js 의 meta(lat0·lon0·kx·kz)로 [x, z] m 로 바꾼다(tools/map_build.py xz 와 같은 식).
