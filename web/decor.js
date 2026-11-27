@@ -467,17 +467,17 @@ function nearVehicleRoad(x, z, maxD) {
 function realSignals() {
   const F = window.FACILITIES;
   const S = Array.isArray(F && F.signals) ? F.signals.slice() : [];
-  // 보행 신호등: 전국횡단보도표준데이터에서 '보행자신호등 있음'인 횡단보도의 양 끝(가장 가까운 차도의 법선 방향, 횡단보도 길이 절반 + 0.6m).
-  // 신호등 표준데이터에 4m 안 실제 보행 신호등이 있으면 그 끝은 건너뛴다
+  // 보행 신호등: 전국횡단보도표준데이터에서 '보행자신호등 있음'(ped)인 횡단보도의 양 끝. 31의 자료는 횡단보도를 차도 중심선에 맞춘 자리(x, z)와
+  // 길 방향(dx, dz), 그려진 차도 폭(span)을 준다. 기둥은 점자블록(span/2 + 0.35~0.95m) 바로 뒤 span/2 + 1.3m 에, 등은 건너편을 본다.
+  // 신호등 표준데이터에 4m 안 실제 보행 신호등이 있으면 그 끝은 건너뛴다(지금 옥포는 신호등 표준데이터에 0건)
   let fromCross = 0;
   for (const c of (F && Array.isArray(F.crosswalks) ? F.crosswalks : [])) {
-    if (!c.ped || !inside(c.x, c.z, 2)) continue;
-    const nr = nearVehicleRoad(c.x, c.z, 15); if (!nr) continue;
-    const half = (c.len > 0 ? c.len : nr.r.w) / 2 + 0.6, nx = -nr.dz, nz = nr.dx;
+    if (!c.ped || !inside(c.x, c.z, 2) || !(c.dx || c.dz)) continue;
+    const half = (c.span > 0 ? c.span : 8) / 2 + 1.3, nx = -c.dz, nz = c.dx;
     for (const sg of [1, -1]) {
-      const x = nr.px + nx * half * sg, z = nr.pz + nz * half * sg;
+      const x = c.x + nx * half * sg, z = c.z + nz * half * sg;
       if (S.some(s => s.kind === 'ped' && Math.hypot(s.x - x, s.z - z) < 4)) continue;
-      S.push({ x, z, kind: 'ped', from: 'crosswalk' }); fromCross++;
+      S.push({ x, z, kind: 'ped', cx: c.x, cz: c.z }); fromCross++;
     }
   }
   if (!S.length) return { car: 0, ped: 0, poles: 0, fromCross: 0 };
@@ -494,7 +494,9 @@ function realSignals() {
     const hasCar = g.items.some(s => s.kind === 'car'), hasPed = g.items.some(s => s.kind === 'ped');
     // 지역 축: +z 가 길 쪽(가장 가까운 차도 중심선을 향함). 차도가 없으면 돌리지 않음
     let rot = 0, toRoad = 0;
-    if (nr) { const ax = nr.px - g.x, az = nr.pz - g.z, L = Math.hypot(ax, az) || 1; rot = Math.atan2(ax / L, az / L); toRoad = Math.min(L, 6.5); }
+    const cw = g.items.find(s => s.cx !== undefined);   // 횡단보도에서 온 기둥은 그 횡단보도 가운데(건너편)를 보게
+    if (cw) { const ax = cw.cx - g.x, az = cw.cz - g.z, L = Math.hypot(ax, az) || 1; rot = Math.atan2(ax / L, az / L); toRoad = Math.min(L, 6.5); }
+    else if (nr) { const ax = nr.px - g.x, az = nr.pz - g.z, L = Math.hypot(ax, az) || 1; rot = Math.atan2(ax / L, az / L); toRoad = Math.min(L, 6.5); }
     const lit = (k++ % 2 === 0);   // 기둥마다 번갈아(차량 초록·보행 빨강 / 차량 빨강·보행 초록)
     const B = (w, h, d, x, y, z, col, arr = body) => { const geo = new THREE.BoxGeometry(w, h, d); geo.translate(x, y, z); geo.rotateY(rot); geo.translate(g.x, 0, g.z);
       const c = new THREE.Color(col), n = geo.attributes.position.count, cols = new Float32Array(n * 3); for (let i = 0; i < n; i++) cols.set([c.r, c.g, c.b], i * 3);
@@ -530,6 +532,19 @@ function realSignals() {
 
 // ── 지도 밖 큰 곳 방향 이름표(한화오션 옥포조선소 등, OSM 지명): 가운데에서 그쪽으로 그은 선이 지도 가장자리(안쪽 45m)와 만나는 곳에 '…방향'.
 // 가상 손님의 큰 몫이 조선소 통근자라 어디서 오는지 보이게 한다. 이름과 방향은 OSM 자료 그대로다
+// 어린이보호구역 시설 이름표: 전국어린이보호구역표준데이터의 시설 위치(FACILITIES.schoolZones). 지정 범위 자료가 없어 바닥·울타리·표지판은 그리지 않는다
+function schoolLabels() {
+  const Z = window.FACILITIES && window.FACILITIES.schoolZones, box = document.getElementById('labels');
+  if (!Array.isArray(Z) || !Z.length || !M.labels || !box) return 0;
+  let n = 0;
+  for (const z of Z) {
+    if (!inside(z.x, z.z, 2)) continue;
+    const el = document.createElement('div'); el.className = 'lbl place kid';
+    el.innerHTML = '<b>어린이보호구역</b>' + (M.esc ? M.esc(z.name) : String(z.name).replace(/[<&>"]/g, ''));
+    box.appendChild(el); M.labels.push({ el, x: z.x, y: 2, z: z.z, pri: 2, kind: 'place', w: 0, h: 0 }); n++;   // pri 2: 첫 화면(멀리)에선 숨고 가까이 볼 때만(빈 층 표시와 다투지 않게)
+  }
+  return n;
+}
 function edgeLabels() {
   if (!M.labels) return 0;
   const box = document.getElementById('labels'); if (!box) return 0;
@@ -547,8 +562,8 @@ function edgeLabels() {
 function afterLoad() {
   busStops();
   try { stats.signals = realSignals(); } catch (e) { console.warn('decor 신호등', e); }
-  try { stats.areaLabels = edgeLabels(); } catch (e) { console.warn('decor 이름표', e); }
-  if (window.__decor) { window.__decor.areaLabels = stats.areaLabels || 0; window.__decor.signals = stats.signals || null; }
+  try { stats.areaLabels = edgeLabels(); stats.schoolLabels = schoolLabels(); } catch (e) { console.warn('decor 이름표', e); }
+  if (window.__decor) { window.__decor.areaLabels = stats.areaLabels || 0; window.__decor.signals = stats.signals || null; window.__decor.schoolLabels = stats.schoolLabels || 0; }
   if (M.renderer) M.renderer.shadowMap.needsUpdate = true;
   M.need && M.need();
 }
