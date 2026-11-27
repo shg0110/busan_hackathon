@@ -35,6 +35,61 @@ function smooth(p) {
     r.push([ax * 0.75 + bx * 0.25, az * 0.75 + bz * 0.25], [ax * 0.25 + bx * 0.75, az * 0.25 + bz * 0.75]); } r.push(q[q.length - 1]); q = r; }
   return q;
 }
+// 거리 선을 실제 도로에 붙인다: 가게 위치로 만든 중심선은 도로와 조금 어긋나고 휘므로,
+// 4m 간격 점마다 18m 안에서 방향이 비슷한(±30°) 차도 선분 위 가장 가까운 점으로 옮긴다(주차장 통로·보행로 제외). 못 찾으면 원래 점
+const ROADSEG = (() => {
+  const out = [], RD = (window.MAP_DATA && window.MAP_DATA.roads) || [];
+  for (const r of RD) { if (r.ped || r.k === 'service' || r.k === 'footway' || r.k === 'path' || r.k === 'steps') continue;
+    for (let i = 0; i < r.p.length - 1; i++) out.push([r.p[i][0], r.p[i][1], r.p[i + 1][0], r.p[i + 1][1], r.w || 6, r.n || '']); }
+  return out;
+})();
+// 가장 가까운 선분 위 점(방향 ±30° 안, 거리 maxD 안). name 을 주면 그 이름 도로만
+function nearestOnRoad(x, z, dx, dz, maxD, name) {
+  let best = null, bd = maxD;
+  for (const [x0, z0, x1, z1, w, n] of ROADSEG) {
+    if (name && n !== name) continue;
+    const sx = x1 - x0, sz = z1 - z0, L = Math.hypot(sx, sz); if (L < 0.5) continue;
+    if (Math.abs((sx * dx + sz * dz) / L) < 0.866) continue;   // 방향이 30° 넘게 다르면 다른 길
+    const t = Math.max(0, Math.min(1, ((x - x0) * sx + (z - z0) * sz) / (L * L))), px = x0 + sx * t, pz = z0 + sz * t, d = Math.hypot(x - px, z - pz);
+    if (d < bd) { bd = d; best = [px, pz, w]; }
+  }
+  return best;
+}
+function resample(q, step) {
+  const out = [q[0].slice()]; let carry = 0;
+  for (let i = 0; i < q.length - 1; i++) {
+    const [ax, az] = q[i], [bx, bz] = q[i + 1], L = Math.hypot(bx - ax, bz - az); let d = step - carry;
+    while (d <= L) { const t = d / L; out.push([ax + (bx - ax) * t, az + (bz - az) * t]); d += step; }
+    carry = L - (d - step);
+  }
+  out.push(q[q.length - 1].slice()); return out;
+}
+// 1순위: 거리 이름과 같은 이름의 도로(40m 안) — 가게 몇 곳이 길에서 떨어져 있어 중심선이 휘어도 실제 도로로 돌아온다
+// 2순위: 이름 없는 차도(18m 안). 둘 다 없으면 원래 점
+function snapToRoad(q, name) {
+  const P = resample(q, 4), res = [], widths = [];
+  for (let i = 0; i < P.length; i++) {
+    const a = P[Math.max(0, i - 2)], b = P[Math.min(P.length - 1, i + 2)], dl = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, dx = (b[0] - a[0]) / dl, dz = (b[1] - a[1]) / dl;
+    const best = nearestOnRoad(P[i][0], P[i][1], dx, dz, 40, name) || nearestOnRoad(P[i][0], P[i][1], dx, dz, 18, null);
+    if (best) { res.push([best[0], best[1]]); widths.push(best[2]); } else res.push(null);
+  }
+  // 도로에 못 붙은 점: 대부분이 붙었으면 빼서(앞뒤 붙은 점끼리 곧게 이어짐) 도로 밖으로 꺾이지 않게, 거의 못 붙었으면 원래 점
+  const hitR = widths.length / P.length;
+  for (let i = 0; i < res.length; i++) if (!res[i] && hitR < 0.5) res[i] = P[i];
+  for (let i = res.length - 1; i >= 0; i--) if (!res[i]) res.splice(i, 1);
+  // 교차로에서 옆 도로로 튀었다 돌아오며 뒤로 가는 점은 뺀다(가장자리선이 꼬이지 않게): 바로 앞 진행 방향과 반대(내적<0)이거나 1.5m 안
+  const fw = [res[0]];
+  for (let i = 1; i < res.length; i++) {
+    const p = res[i], a = fw[fw.length - 1], b = fw.length > 1 ? fw[fw.length - 2] : null, vx = p[0] - a[0], vz = p[1] - a[1];
+    if (Math.hypot(vx, vz) < 1.5) continue;
+    if (b && vx * (a[0] - b[0]) + vz * (a[1] - b[1]) < 0) continue;
+    fw.push(p);
+  }
+  // 도로 꺾임을 살리되 들쭉날쭉한 것만 가볍게(이동평균 5점)
+  const sm = fw.map((_, i) => { let x = 0, z = 0, n = 0; for (let k = -2; k <= 2; k++) { const r = fw[i + k]; if (r) { x += r[0]; z += r[1]; n++; } } return [x / n, z / n]; });
+  widths.sort((a, b) => a - b);
+  return { q: sm, w: widths.length ? widths[Math.floor(widths.length / 2)] : 12, hit: hitR };
+}
 function laneStrip(q, half, off, y, out) {   // 선을 따라 [off-half, off+half] 너비의 띠
   for (let i = 0; i < q.length - 1; i++) {
     const [ax, az] = q[i], [bx, bz] = q[i + 1], dx = bx - ax, dz = bz - az, l = Math.hypot(dx, dz) || 1, nx = -dz / l, nz = dx / l;
@@ -61,11 +116,13 @@ function drawBand(s) {
   if (band) { scene.remove(band); band.traverse(o => o.geometry && o.geometry.dispose()); band = null; }
   clearLabels();
   if (!s) return;
-  const q = smooth(s.p);
+  const rn = (s.ko.match(/\(([^)]+)\)/) || [0, s.ko])[1].trim();   // '빛의 거리 (옥포대첩로)' → 옥포대첩로
+  const sn = snapToRoad(smooth(s.p), rn), q = sn.q, half = Math.max(4.5, Math.min(9, sn.w / 2 + 1.5));   // 도로 폭 + 양쪽 인도 조금
+  s.snapHit = sn.hit; s.pRoad = q;
   band = new THREE.Group();
   const fill = [], edge = [];
-  laneStrip(q, 6, 0, 0.07, fill);                       // 노면(길 폭 약 12m)
-  laneStrip(q, 0.35, 6.2, 0.09, edge); laneStrip(q, 0.35, -6.2, 0.09, edge);   // 양쪽 가장자리선
+  laneStrip(q, half, 0, 0.07, fill);                       // 노면(실제 도로 폭)
+  laneStrip(q, 0.35, half + 0.2, 0.09, edge); laneStrip(q, 0.35, -half - 0.2, 0.09, edge);   // 양쪽 가장자리선
   band.add(meshOf(fill, '#ffd43b', 0.42, 9.3), meshOf(edge, '#e0a800', 0.95, 9.65));
   // 시작·끝 표지: 원판 + 이름표
   const ends = [q[0], q[q.length - 1]], names = END_NAMES[s.id];
@@ -167,7 +224,7 @@ function flow(s) {
   if (!SIM) { document.getElementById('st-flow').innerHTML = ''; return; }
   const key = s.id;
   if (!flowCache[key]) {
-    const set = SIM.nodesNear(s.p, 14);
+    const set = SIM.nodesNear(s.pRoad || s.p, 14);   // 실제 도로에 붙인 선(drawBand 에서 만듦) 기준
     flowCache[key] = { wd: SIM.flowDay(false, set), we: SIM.flowDay(true, set) };
     SIM.restore();
   }

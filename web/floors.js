@@ -67,7 +67,8 @@ box.innerHTML = `<p class="fs-title">층마다 세어 보면</p>
   <p class="fs-line">상권 안 상가 층 ${S.com_floors.toLocaleString('ko-KR')}개 중 <b>${S.empty_floors.toLocaleString('ko-KR')}개</b>에 가게가 없습니다
   <span class="fs-sub">면적으로는 ${S.empty_area_pct}%입니다.</span></p>
   <p class="fs-note">사무실이나 등록 안 된 가게도 “가게 없음”으로 잡혀서 공실률보다 높게 나옵니다. 건축물대장 층별개요와 2026년 9월 상가정보를 맞춰 셌습니다.</p>
-  <button class="tour btn-sub" id="tour-btn">가게 없는 1층 둘러보기 <span id="tour-n"></span></button>`;
+  <p class="fs-key">지붕이 주황일수록 가게 없는 층이 많은 건물입니다. 지도 위 ①②③은 반경 70m 안에 가게 없는 층이 가장 많이 몰린 곳입니다.</p>
+  <button class="tour btn-sub" id="tour-btn">빈 1층에 가게 열어 보기 <span id="tour-n"></span></button>`;
 const src = document.querySelector('#card-body .src');
 src.after(box);
 if (window.__syncCard) window.__syncCard();
@@ -112,7 +113,47 @@ function flyTo(bi) {
 function nextTour() { if (!tour.length) return; tourAt = (tourAt + 1) % tour.length; flyTo(tour[tourAt]);
   document.getElementById('tour-n').textContent = `${tourAt + 1} / ${tour.length}`; }
 document.getElementById('tour-n').textContent = `${tour.length}곳`;
-document.getElementById('tour-btn').onclick = nextTour;
+// 빈 1층으로 날아간 뒤 정보창의 '이 빈 층에 가게 열어 보기'(#exp)가 보이게
+document.getElementById('tour-btn').onclick = () => { nextTour(); setTimeout(() => { const e = document.getElementById('exp'); if (e) e.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, 750); };
 need();
-window.__floors = { bands, mesh: bandMesh, rest: restMesh, stats: S, tour, nextTour };
+// ── 빈 층이 몰린 곳 한눈에 ─────────────────────────────
+// ① 지붕: 위에서 보면 지붕이 가장 넓게 보이므로, 가게 없는 층이 있는 건물 지붕을 주황으로(1층 옅게 → 3층 이상 진하게)
+// ② 몰린 곳: 반경 70m 안 '가게 없는 층' 합이 가장 큰 곳 3곳(서로 220m 이상 떨어짐)에 땅 위 고리 + 이름표. 상권(R-ONE 경계) 안 건물만
+const ORANGE = new THREE.Color(STATE.empty.col).toArray();
+const emptyN = {};   // 건물 번호 → 가게 없는 상가 층 수
+for (const key in F.b) { const b = B[+key]; if (!b) continue; const n = F.b[key].filter(f => f.state === 'empty' && f.n <= b.lv).length; if (n) emptyN[+key] = n; }
+const roofMap = new Map(Object.entries(emptyN).map(([bi, n]) => [+bi, { c: ORANGE, k: n >= 3 ? 0.82 : n === 2 ? 0.62 : 0.42 }]));
+const ctr = (b) => { let x = 0, z = 0; for (const p of b.p) { x += p[0]; z += p[1]; } return [x / b.p.length, z / b.p.length]; };
+const pts = Object.entries(emptyN).filter(([bi]) => B[+bi].i).map(([bi, n]) => { const [x, z] = ctr(B[+bi]); return { x, z, n }; });
+const RAD = 70, hot = [];
+const score = pts.map(p => { let s = 0, sx = 0, sz = 0; for (const q of pts) { if (Math.hypot(q.x - p.x, q.z - p.z) <= RAD) { s += q.n; sx += q.x * q.n; sz += q.z * q.n; } } return { s, x: sx / s, z: sz / s }; })
+  .sort((a, b) => b.s - a.s);
+for (const c of score) { if (hot.length >= 3) break; if (hot.every(h => Math.hypot(h.x - c.x, h.z - c.z) >= 220)) hot.push(c); }
+for (const h of hot) { h.bld = new Set(pts.filter(q => Math.hypot(q.x - h.x, q.z - h.z) <= RAD).map(q => q)).size; }
+const hotGroup = new THREE.Group(); scene.add(hotGroup);
+hot.forEach((h, k) => {
+  const ring = new THREE.Mesh(new THREE.RingGeometry(RAD - 2.2, RAD, 72), new THREE.MeshBasicMaterial({ color: STATE.empty.col, transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide }));
+  ring.rotation.x = -Math.PI / 2; ring.position.set(h.x, 0.12, h.z); ring.renderOrder = 9.5;
+  const fill = new THREE.Mesh(new THREE.CircleGeometry(RAD - 2.2, 72), new THREE.MeshBasicMaterial({ color: STATE.empty.col, transparent: true, opacity: 0.1, depthWrite: false }));
+  fill.rotation.x = -Math.PI / 2; fill.position.set(h.x, 0.1, h.z); fill.renderOrder = 9.4;
+  hotGroup.add(ring, fill);
+  const el = document.createElement('div'); el.className = 'lbl place hot'; el.innerHTML = `<b>${k + 1}</b>가게 없는 층 ${h.s}개`;
+  document.getElementById('labels').appendChild(el);
+  h.L = { el, x: h.x, y: 30, z: h.z, pri: 10, kind: 'place', w: 0, h: 0 }; M.labels.unshift(h.L);
+});
+hotGroup.children.forEach(m => { m.frustumCulled = false; });
+let roofsOn = true;
+function syncHot() {
+  const on = document.getElementById('L-floors').checked, street = document.body.classList.contains('street-mode');
+  if (on !== roofsOn) { roofsOn = on; M.setRoofs(on ? roofMap : null); }
+  hotGroup.visible = on && !street;
+  for (const h of hot) h.L.el.style.display = hotGroup.visible ? '' : 'none';
+  need();
+}
+M.setRoofs(roofMap);
+document.getElementById('L-floors').addEventListener('change', syncHot);
+new MutationObserver(syncHot).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+syncHot();
+
+window.__floors = { hot, emptyN, bands, mesh: bandMesh, rest: restMesh, stats: S, tour, nextTour };
 })();

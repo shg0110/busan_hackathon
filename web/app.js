@@ -234,6 +234,7 @@ const ROOF_HOUSE = pal(['#8db59f', '#97bca9', '#86ae98', '#c9cdd2', '#9fc1ae', '
 function wallOf(b) { const L = WALL_BY[b.k]; return L ? L[b.c % L.length] : wallCols[b.c % wallCols.length]; }
 function roofOf(b) { if (b.k === 'house') return ROOF_HOUSE[(b.c * 7 + b.lv) % ROOF_HOUSE.length]; return b.k === 'apartments' ? roofApt : roofCols[b.c % roofCols.length]; }
 const bRange = [];   // 건물별 [시작 꼭짓점, 끝 꼭짓점]
+const roofRange = [];   // 건물별 지붕 꼭짓점 [시작, 끝] — 지붕만 다른 색으로 칠할 때(빈 층 많은 건물 등)
 function pushTri(a, b, c, n, col, owner) {
   bPos.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
   for (let k = 0; k < 3; k++) { bNrm.push(n[0], n[1], n[2]); bCol.push(col.r, col.g, col.b); bUv.push(ROOF_UV[0], ROOF_UV[1]); }
@@ -281,13 +282,14 @@ B.forEach((b, bi) => {
   }
   // 지붕
   const v2 = p.map(q => new THREE.Vector2(q[0], q[1]));
-  const rc = roofOf(b);
+  const rc = roofOf(b), roofStart = bPos.length / 3;
   for (const t of THREE.ShapeUtils.triangulateShape(v2, [])) {
     const a = p[t[0]], c1 = p[t[1]], c2 = p[t[2]];
     const ny = (c1[1] - a[1]) * (c2[0] - a[0]) - (c1[0] - a[0]) * (c2[1] - a[1]);
     const A = [a[0], y1, a[1]], B1 = [c1[0], y1, c1[1]], B2 = [c2[0], y1, c2[1]];
     if (ny >= 0) pushTri(A, B1, B2, [0, 1, 0], rc, bi); else pushTri(A, B2, B1, [0, 1, 0], rc, bi);
   }
+  roofRange.push([roofStart, bPos.length / 3]);
   bRange.push([start, bPos.length / 3]);
 });
 const bGeo = new THREE.BufferGeometry();
@@ -340,13 +342,17 @@ scene.add(bMesh);
 }
 
 // 거리 집중: keep(건물 번호 Set) 밖 건물은 땅 색 쪽으로 흐리게. null 이면 원래대로
-let keepSet = null, estOn = false, tintK = 0.45;
+let keepSet = null, estOn = false, tintK = 0.45, roofOver = null;
 function tint(keep, k = 0.45) { keepSet = keep; tintK = k; paintEstimated(estOn); }
+// 지붕 색 덮어쓰기: Map(건물 번호 → [r,g,b] 와 섞는 비율 k). null 이면 원래 지붕. 거리 밖 흐리게보다 먼저 칠한다
+function setRoofs(map) { roofOver = map; paintEstimated(estOn); }
 // 층수 추정 건물 강조 켜고 끄기
 function paintEstimated(on) {
   estOn = on;
   const arr = colAttr.array, est = new THREE.Color(C.est);
   arr.set(baseCol);
+  if (roofOver) for (const [bi, o] of roofOver) { const [s0, e0] = roofRange[bi];
+    for (let v = s0; v < e0; v++) for (let k = 0; k < 3; k++) arr[v * 3 + k] = arr[v * 3 + k] * (1 - o.k) + o.c[k] * o.k; }
   if (keepSet) {
     const g = [0.9, 0.91, 0.925];   // 거리 밖 건물: 옅은 회색 쪽으로 조금만(하얗게 날리지 않게)
     B.forEach((b, bi) => { if (keepSet.has(bi)) return; const [s0, e0] = bRange[bi];
@@ -586,7 +592,7 @@ requestAnimationFrame(() => requestAnimationFrame(() => {
 }));
 
 // 점검용(자동 시험이 읽음)
-window.__map = { select, buildings: B, signedArea, camera, controls, HOME, labels, need, orbit, scene, renderer, R, esc, tint,
+window.__map = { select, buildings: B, signedArea, camera, controls, HOME, labels, need, orbit, scene, renderer, R, esc, tint, setRoofs,
   get selected() { return selIdx; }, infoExtra: null };
 document.dispatchEvent(new Event('map-ready'));
 })();
