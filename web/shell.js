@@ -37,4 +37,10 @@ if (hint) {
   if (cv) for (const ev of ['wheel', 'touchstart', 'pointerdown']) cv.addEventListener(ev, gone, { once: true, passive: true });
   setTimeout(gone, 15000);
 }
+
+// 거리 보기에서 잠긴 층 스위치(가게 없는 층·영업 중인 층): 겉모양만 잠겨 있고 키보드(스페이스)로는 바뀌던 것을 실제로 잠근다
+const lockFloors = () => { const on = document.body.classList.contains('street-mode');
+  for (const id of ['L-floors', 'L-open']) { const i = $(id); if (i) i.disabled = on; } };
+new MutationObserver(lockFloors).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+lockFloors();
 })();
