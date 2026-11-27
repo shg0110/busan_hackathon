@@ -358,6 +358,8 @@ function listLabels(L) {
   L.slice(0, 10).reverse().forEach((c, j) => { const k = Math.min(10, L.length) - j; rankLabel({ b: c.b, grp: k, floor: c.floor, r: null, tag: `${k}`, tip: `${c.floor}층 · ${c.name}` }); });
   need();
 }
+// 숫자 이름에 마우스를 올리면 뜨는 도움말(단위·범위)
+const TIP_FLOW = '평일 하루, 가상 시민이 이 건물 앞 길(40m 안 가장 붐비는 곳)을 지나간 횟수. 실제 유동인구가 아닙니다.';
 function listTable() {
   const L = listNow(), sub = document.getElementById('rk-cat').value, subKo = SIM.SUB[sub] ? SIM.SUB[sub].ko : '';
   const firstN = candidates().filter(c => c.first).length;
@@ -368,7 +370,7 @@ function listTable() {
     <span class="ls-k">${k + 1}</span>
     <span class="ls-main"><span class="ls-name"><b>${esc(c.name)}</b>${c.st ? `<em>${esc(c.st.ko.split(' (')[0])}</em>` : ''}</span>
       <span class="ls-sub">${c.floor}층${c.area ? ` · ${Math.round(c.area)}㎡ <small>(${Math.round(c.area / 3.3058)}평)</small>` : ''}</span>
-      <span class="ls-meta"><span>앞을 지나는 사람 <b>${c.flow != null ? Math.round(c.flow).toLocaleString('ko-KR') + '명' : '-'}</b></span><span>근처 ${esc(subKo)} <b>${c.same != null ? c.same + '곳' : '-'}</b></span></span></span>
+      <span class="ls-meta"><span><abbr class="ls-tip" title="${TIP_FLOW}">앞을 지나는 사람</abbr> <b>${c.flow != null ? Math.round(c.flow).toLocaleString('ko-KR') + '명' : '-'}</b></span><span><abbr class="ls-tip" title="${esc(`근처 같은 업종(${subKo}) 기존 가게 수, 250m 안. 경쟁 가게 수이며 빈 곳 수가 아닙니다.`)}">근처 ${esc(subKo)}</abbr> <b>${c.same != null ? c.same + '곳' : '-'}</b></span></span></span>
   </button></li>`).join('');
   document.getElementById('ls-t').querySelectorAll('.ls-row').forEach(el => el.onclick = () => flyBuilding(+el.dataset.b));
   const more = document.getElementById('ls-more'); more.hidden = L.length <= LS.n; more.textContent = `더 보기 (${L.length - LS.n}곳 더)`;
