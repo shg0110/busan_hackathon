@@ -49,3 +49,14 @@ body:not(:has(#rail)) .st-how p, body:not(:has(#rail)) .st-from { font-size: 11.
 #sim-speed .spd-in { display: inline-flex; align-items: baseline; gap: 3px; padding: 0 4px; }
 #sim-speed .spd-in input { width: 54px; height: 40px; box-sizing: border-box; border: 1px solid #dee2e6; border-radius: 9px; background: #fff; font: inherit; font-size: 16px; font-weight: 700; text-align: center; color: #212529; }
 #sim-speed .spd-in span { font-size: 13px; color: #495057; white-space: nowrap; }
+
+/* 건물 마우스 올림 말풍선(app.js) */
+.map-tip { position: fixed; left: 0; top: 0; z-index: 30; pointer-events: none; background: rgba(33,37,41,.92); color: #fff; border-radius: 10px; padding: 8px 11px; font-size: 13px; line-height: 1.45; display: grid; gap: 1px; max-width: 280px; box-shadow: 0 4px 14px rgba(0,0,0,.25); }
+.map-tip strong { font-size: 14px; font-weight: 700; }
+.map-tip span { color: #dee2e6; } .map-tip b.emp { color: #ffb37a; font-weight: 700; } .map-tip b { font-weight: 600; }
+.map-tip em { font-style: normal; font-size: 12px; color: #adb5bd; }
+/* 층 단면 이름표(floors.js) */
+.lbl.flr { font-size: 12.5px; font-weight: 600; color: #212529; background: #fff; border-radius: 7px; padding: 2px 8px 2px 4px; box-shadow: 0 1px 4px rgba(0,0,0,.18); text-shadow: none; white-space: nowrap; border-left: 5px solid #ced4da; }
+.lbl.flr b { font-weight: 800; margin-right: 3px; }
+.lbl.flr.fl-open { border-left-color: #4fa679; } .lbl.flr.fl-empty { border-left-color: #f0783a; } .lbl.flr.fl-unknown { border-left-color: #8d959e; }
+.lbl.flr.fl-home { border-left-color: #c3d3e4; } .lbl.flr.fl-other { border-left-color: #e3d7c1; }

@@ -158,5 +158,55 @@ document.getElementById('L-floors').addEventListener('change', syncHot);
 new MutationObserver(syncHot).observe(document.body, { attributes: true, attributeFilter: ['class'] });
 syncHot();
 
+// ── 고른 건물 층 단면 ─────────────────────────────────
+// 건물을 고르면 그 건물 벽을 잠시 치우고, 층마다 블록(층고의 78%)을 쌓아 층 상태 색으로 칠하고 층 이름표를 단다.
+// 색: 영업 초록·가게 없음 주황·확인 불가 회색·주거 옅은 파랑·기타 베이지·자료 없음 흰색 반투명. 상태는 건축물대장 층별개요 × 상가정보(2026-09)
+const CUT_COL = { open: '#4fa679', empty: '#f0783a', unknown: '#8d959e', home: '#c3d3e4', other: '#e3d7c1', nodata: '#ffffff' };
+let cutGroup = null, cutLabels = [];
+function clearCut() {
+  if (cutGroup) { scene.remove(cutGroup); cutGroup.traverse(o => { if (o.geometry) o.geometry.dispose(); }); cutGroup = null; }
+  for (const L of cutLabels) { L.el.remove(); const i = M.labels.indexOf(L); if (i >= 0) M.labels.splice(i, 1); } cutLabels = [];
+  M.hideBuilding(-1);
+}
+function floorText(f) {
+  if (!f) return '층별 자료 없음';
+  if (f.state === 'open') { const st = f.stores || []; return st.length ? `${st[0].n}${st.length > 1 ? ` 외 ${st.length - 1}곳` : ''}` : '영업 중(위·아래층 가게가 함께 씀)'; }
+  if (f.state === 'empty') return `가게 없음${f.area ? ` · ${Math.round(f.area)}㎡` : ''}`;
+  if (f.state === 'unknown') return `확인 불가(${(f.uses && f.uses[0] || '').replace(/^제\d종/, '')})`;
+  if (f.state === 'home') return '주거';
+  return (f.uses && f.uses[0]) || '기타';
+}
+document.addEventListener('building-select', (e) => {
+  clearCut();
+  const bi = e.detail.bi, b = B[bi], fl = bi >= 0 && F.b[String(bi)];
+  if (!b || !fl || b.k === 'roof' || b.lv < 1) return;
+  M.hideBuilding(bi);
+  if (M.selMesh) { M.selMesh.material.opacity = 0.12; M.selMesh.material.color.set('#ffffff'); }
+  const p = b.p.slice(); if (signedArea(p) > 0) p.reverse();
+  const shape = new THREE.Shape(p.map(q => new THREE.Vector2(q[0], -q[1])));
+  const fh = (b.h - 0.6) / b.lv, y00 = b.b || 0, byN = {}; for (const f of fl) byN[f.n] = f;
+  cutGroup = new THREE.Group();
+  // 이름표 자리: 건물 가운데에서 카메라 왼쪽으로 건물 반지름 + 3m(오른쪽엔 정보창이 열려 있음)
+  let cx = 0, cz = 0, rad = 0; for (const q of p) { cx += q[0]; cz += q[1]; } cx /= p.length; cz /= p.length; for (const q of p) rad = Math.max(rad, Math.hypot(q[0] - cx, q[1] - cz));
+  const right = new THREE.Vector3().setFromMatrixColumn(M.camera.matrixWorld, 0); right.y = 0; right.normalize();
+  const off = rad * 0.7 + 2, lx = cx - right.x * off, lz = cz - right.z * off;   // 건물 왼쪽 가장자리 바로 옆
+  // 같은 내용이 이어지는 층은 이름표 하나로(예: '4~15층 주거') — 층마다 달면 높은 건물에서 이름표끼리 겹쳐 다 숨는다
+  const runs = [];
+  for (let n = 1; n <= b.lv; n++) { const f = byN[n], st = f ? (CUT_COL[f.state] ? f.state : 'other') : 'nodata', tx = floorText(f), last = runs[runs.length - 1];
+    if (last && last.st === st && last.tx === tx && st !== 'open' && st !== 'empty') last.n1 = n; else runs.push({ n0: n, n1: n, st, tx }); }
+  for (const r of runs) {
+    const el = document.createElement('div'); el.className = 'lbl place flr fl-' + r.st; el.innerHTML = `<b>${r.n0 === r.n1 ? r.n0 : r.n0 + '~' + r.n1}층</b> ${esc(r.tx)}`;
+    document.getElementById('labels').appendChild(el);
+    const L = { el, x: lx, y: y00 + ((r.n0 + r.n1) / 2 - 0.5) * fh, z: lz, pri: 13, kind: 'place', w: 0, h: 0, nudge: true }; M.labels.unshift(L); cutLabels.push(L);
+  }
+  for (let n = 1; n <= b.lv; n++) {
+    const f = byN[n], st = f ? (CUT_COL[f.state] ? f.state : 'other') : 'nodata';
+    const g = new THREE.ExtrudeGeometry(shape, { depth: fh * 0.78, bevelEnabled: false }); g.rotateX(-Math.PI / 2);
+    const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: CUT_COL[st], transparent: st === 'nodata', opacity: st === 'nodata' ? 0.5 : 1 }));
+    m.position.y = y00 + (n - 1) * fh + fh * 0.11; m.castShadow = false; m.receiveShadow = true; m.renderOrder = 12; cutGroup.add(m);
+  }
+  cutGroup.children.forEach(o => { o.frustumCulled = false; }); scene.add(cutGroup); need();
+});
+
 window.__floors = { hot, emptyN, bands, mesh: bandMesh, rest: restMesh, stats: S, tour, nextTour };
 })();

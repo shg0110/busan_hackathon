@@ -494,12 +494,20 @@ function paintEstimated(on) {
   colAttr.needsUpdate = true; need();
 }
 
+// 층 단면을 볼 때 그 건물 벽을 잠시 치운다(꼭짓점을 땅 밑으로). -1 이면 되돌림
+let hiddenB = -1, hiddenPos = null;
+function hideBuilding(bi) {
+  const pa = bGeo.attributes.position;
+  if (hiddenB >= 0) { const [s0] = bRange[hiddenB]; pa.array.set(hiddenPos, s0 * 3); hiddenB = -1; hiddenPos = null; pa.needsUpdate = true; }
+  if (bi >= 0) { const [s0, e0] = bRange[bi]; hiddenPos = pa.array.slice(s0 * 3, e0 * 3); for (let v = s0; v < e0; v++) pa.array[v * 3 + 1] = -500; hiddenB = bi; pa.needsUpdate = true; }
+  need();
+}
 // 고른 건물: 같은 모양을 강조색으로 덧그림
 let selMesh = null, selIdx = -1;
 function select(bi) {
   if (selMesh) { scene.remove(selMesh); selMesh.geometry.dispose(); selMesh.children.forEach(c => c.geometry.dispose()); selMesh = null; }
   selIdx = bi;
-  if (bi < 0) { info.hidden = true; need(); return; }
+  if (bi < 0) { info.hidden = true; hideBuilding(-1); document.dispatchEvent(new CustomEvent('building-select', { detail: { bi: -1 } })); need(); return; }
   const [s, e] = bRange[bi];
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(bPos.slice(s * 3, e * 3), 3));
@@ -511,6 +519,8 @@ function select(bi) {
   edges.renderOrder = 14; selMesh.add(edges);
   scene.add(selMesh);
   showInfo(B[bi]); need();
+  document.dispatchEvent(new CustomEvent('building-select', { detail: { bi } }));   // 층 단면(floors.js) 등이 따라 그리게
+  if (typeof setHover === 'function') setHover(-1);   // 누른 뒤엔 말풍선을 닫는다(벽이 치워져 뒤 건물 말풍선이 뜨지 않게)
   requestAnimationFrame(() => keepVisible(bi));   // 정보창이 열린 뒤 그 폭을 재서
 }
 // 고른 건물이 정보창(오른쪽 패널·폰 아래 시트)에 가려지거나 화면 밖이면, 보이는 영역 가운데로 부드럽게 옮긴다
@@ -570,6 +580,41 @@ canvas.addEventListener('pointerup', (e) => {
   const hit = ray.intersectObject(bMesh, false)[0];
   select(hit ? triOwner[hit.faceIndex] : -1);
 });
+
+// 마우스를 올린 건물: 흰 윤곽 + 말풍선(이름 · 상가 층 · 가게 없는 층). 0.06초에 한 번만 찾음, 끄는 중에는 안 함
+const tip = document.createElement('div'); tip.className = 'map-tip'; tip.hidden = true; document.body.appendChild(tip);
+let hovB = -1, hovLine = null, hovPend = false, hovEv = null, dragging = false;
+canvas.addEventListener('pointerdown', () => { dragging = true; tip.hidden = true; });
+window.addEventListener('pointerup', () => { dragging = false; });
+canvas.addEventListener('pointerleave', () => setHover(-1));
+canvas.addEventListener('pointermove', (e) => {
+  hovEv = e; if (dragging || e.pointerType === 'touch' || hovPend) return; hovPend = true;
+  setTimeout(() => { hovPend = false; const ev = hovEv; const r = canvas.getBoundingClientRect();
+    ndc.set((ev.clientX - r.left) / r.width * 2 - 1, -(ev.clientY - r.top) / r.height * 2 + 1); ray.setFromCamera(ndc, camera);
+    const hit = ray.intersectObject(bMesh, false)[0]; setHover(hit ? triOwner[hit.faceIndex] : -1, ev); }, 60);
+});
+function floorSummary(bi) {
+  const fl = FL && FL[String(bi)]; if (!fl) return '층별 자료 없음';
+  const com = fl.filter(f => f.com).length, emp = fl.filter(f => f.state === 'empty').length;
+  return com ? `상가 층 ${com}개 · <b class="${emp ? 'emp' : ''}">가게 없는 층 ${emp}개</b>` : '상가 층 없음';
+}
+function setHover(bi, ev) {
+  if (bi !== hovB) {
+    if (hovLine) { scene.remove(hovLine); hovLine.geometry.dispose(); hovLine = null; }
+    hovB = bi;
+    if (bi >= 0 && bi !== selIdx) {
+      const [s0, e0] = bRange[bi], g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(bPos.slice(s0 * 3, e0 * 3), 3));
+      hovLine = new THREE.LineSegments(new THREE.EdgesGeometry(g, 30), new THREE.LineBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.95, depthTest: false }));
+      hovLine.renderOrder = 15; g.dispose(); scene.add(hovLine);
+    }
+    canvas.style.cursor = bi >= 0 ? 'pointer' : '';
+    need();
+  }
+  if (bi < 0 || !ev) { tip.hidden = true; return; }
+  const b = B[bi], nm = b.n || (b.jibun ? b.jibun.replace('거제시 ', '') : b.ko);
+  tip.innerHTML = `<strong>${esc(nm)}</strong><span>${floorSummary(bi)}</span><em>${bi === selIdx ? '층별로 보는 중' : '누르면 층별로 보기'}</em>`;
+  tip.style.transform = `translate(${Math.round(ev.clientX + 14)}px, ${Math.round(ev.clientY + 16)}px)`; tip.hidden = false;
+}
 
 // ── 지도 위 글자 ───────────────────────────────────────
 const labelBox = document.getElementById('labels');
@@ -631,8 +676,12 @@ function placeLabels() {
     const x = (_v.x + 1) / 2 * W - L.w / 2, y = (1 - _v.y) / 2 * H - L.h / 2;
     const box = [x - 4, y - 2, x + L.w + 4, y + L.h + 2];
     if (box[0] < 0 || box[1] < 0 || box[2] > W || box[3] > H) { L.el.classList.add('off'); continue; }   // 화면 끝에 걸려 잘리는 이름표
-    if (taken.some(t => box[0] < t[2] && box[2] > t[0] && box[1] < t[3] && box[3] > t[1])) { L.el.classList.add('off'); continue; }
-    taken.push(box);
+    const hits = (bx) => taken.some(t => bx[0] < t[2] && bx[2] > t[0] && bx[1] < t[3] && bx[3] > t[1]);
+    // nudge 이름표(층 단면 등)는 겹치면 숨기지 않고 아래로 한 칸씩 내려 자리를 찾는다(최대 6번)
+    let dy = 0; if (L.nudge) { for (let k = 0; k < 6 && hits([box[0], box[1] + dy, box[2], box[3] + dy]); k++) dy += L.h + 3; }
+    const bx2 = [box[0], box[1] + dy, box[2], box[3] + dy];
+    if (hits(bx2)) { L.el.classList.add('off'); continue; }
+    taken.push(bx2);
     L.el.classList.remove('off');
     let rot = 0;
     if (L.kind === 'road') {   // 길 방향을 화면에 투영해 글자를 그 방향으로(거꾸로 서지 않게 ±90° 안으로)
@@ -640,7 +689,7 @@ function placeLabels() {
       rot = Math.atan2(-(_w.y - _v.y) * H, (_w.x - _v.x) * W) * 180 / Math.PI;
       if (rot > 90) rot -= 180; else if (rot < -90) rot += 180;
     }
-    L.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)` + (rot ? ` rotate(${rot.toFixed(1)}deg)` : '');
+    L.el.style.transform = `translate(${x.toFixed(1)}px, ${(y + dy).toFixed(1)}px)` + (rot ? ` rotate(${rot.toFixed(1)}deg)` : '');
   }
 }
 
@@ -797,7 +846,7 @@ requestAnimationFrame(() => requestAnimationFrame(() => {
 }));
 
 // 점검용(자동 시험이 읽음)
-window.__map = { select, buildings: B, signedArea, camera, controls, HOME, labels, need, orbit, scene, renderer, R, esc, tint, setRoofs,
+window.__map = { select, hideBuilding, get selMesh() { return selMesh; }, buildings: B, signedArea, camera, controls, HOME, labels, need, orbit, scene, renderer, R, esc, tint, setRoofs,
   roads: roadMeshes, ground, greens: greenMeshes, water: waterMesh, xz, meta: D.meta, dayLight, edgeFade, get night() { return Math.max(0, nightNow); },
   get selected() { return selIdx; }, infoExtra: null };
 function syncFog() { if (!scene.fog) return; const h = camera.position.y, k = 1 + Math.max(0, Math.min(1, (420 - h) / 380)) * 0.9; scene.fog.near = R * 1.15 * k; scene.fog.far = R * 2.6 * k; }
