@@ -251,9 +251,25 @@
 
 ## 데모 / 저장소 링크
 
-- 데모: (정해지면 채우기)
-  <!-- 지금은 저장소를 받아 web/index.html 을 크롬으로 열면 된다. 공개 주소가 생기면 여기에 넣는다. -->
+- 데모: https://busan-hackathon-five.vercel.app
+  <!-- 인터넷이 없으면 저장소를 받아 web/index.html 을 크롬으로 열어도 같은 화면이 뜬다. -->
 - GitHub: https://github.com/shg0110/busan_hackathon
+
+### Vercel 배포
+
+`web/` 폴더만 정적 사이트로 올립니다. 빌드 과정은 없습니다.
+루트에서 올리면 `.env`와 큰 `data/`(수백 MB)까지 올라가므로 꼭 `web/` 안에서 실행합니다.
+
+```bash
+cd web
+vercel link --yes --project busan-hackathon   # 처음 한 번만. web/.vercel, web/.env.local 이 생김(둘 다 .gitignore)
+vercel deploy --prod                          # 프로덕션 주소로 배포
+vercel deploy                                 # 미리보기 주소로만 배포
+```
+
+- 프로젝트: Vercel `busan-hackathon`, 주소 `busan-hackathon-five.vercel.app`
+- GitHub 자동 배포는 아직 연결되지 않았습니다. main에 push해도 다시 배포되지 않으니, 화면을 바꾼 뒤에는 위 명령을 직접 실행합니다.
+  자동으로 하려면 저장소 관리자가 Vercel 대시보드에서 GitHub 저장소를 연결하고 Root Directory를 `web`으로 정합니다.
 
 ---
 
