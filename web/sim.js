@@ -327,10 +327,12 @@ function runDay(we, seed) { const live = swapState(blank(true)); reset(we, seed)
 const geo = new THREE.BufferGeometry();
 const pos = new Float32Array(AGENTS_MAX * 3), col = new Float32Array(AGENTS_MAX * 3);
 geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+// 점 무늬: 가운데는 흰색(부류 색이 그대로), 둘레는 진한 회색(부류 색이 진하게 곱해져 테두리처럼) — 밝은 바닥·밤 모두에서 또렷하게
 const dot = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
-  g.fillStyle = '#fff'; g.beginPath(); g.arc(32, 32, 26, 0, Math.PI * 2); g.fill(); g.lineWidth = 6; g.strokeStyle = 'rgba(255,255,255,.95)'; g.stroke();
+  g.fillStyle = '#3a3a3a'; g.beginPath(); g.arc(32, 32, 30, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#fff'; g.beginPath(); g.arc(32, 32, 21, 0, Math.PI * 2); g.fill();
   const t = new THREE.CanvasTexture(c); return t; })();
-const ptsMat = new THREE.PointsMaterial({ size: 5.5 * MP.renderer.getPixelRatio(), sizeAttenuation: false, vertexColors: true, map: dot, alphaTest: 0.5, transparent: false, depthTest: true });
+const ptsMat = new THREE.PointsMaterial({ size: 8 * MP.renderer.getPixelRatio(), sizeAttenuation: false, vertexColors: true, map: dot, alphaTest: 0.5, transparent: false, depthTest: true });
 const points = new THREE.Points(geo, ptsMat); points.renderOrder = 20; points.frustumCulled = false; scene.add(points);
 const GCOL = {}; for (const g of GROUPS) GCOL[g] = new THREE.Color(CFG.groups[g].col);
 function placeOnPath(a, t) {

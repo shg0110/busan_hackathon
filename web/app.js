@@ -176,7 +176,7 @@ function ribbonMesh(list, y, color, order) {
 }
 
 // ── 땅·바다·녹지·도로 ─────────────────────────────────────
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(R * 8, R * 8), new THREE.MeshLambertMaterial({ color: C.ground, depthWrite: false }));
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(R * 9.6, R * 9.6), new THREE.MeshLambertMaterial({ color: C.ground, depthWrite: false }));
 ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; ground.renderOrder = 0; scene.add(ground);
 // 녹지 바닥 3가지(숲·공원·운동장). 바닥층(ground.js)이 색을 맞추도록 __map.greens 로 내보냄
 const greenMeshes = { wood: flatMesh(D.greens.filter(g => g.k === 'wood' || g.k === 'forest' || g.k === 'scrub').map(g => g.p), 0, C.wood, 1),
@@ -456,6 +456,26 @@ function select(bi) {
   edges.renderOrder = 14; selMesh.add(edges);
   scene.add(selMesh);
   showInfo(B[bi]); need();
+  requestAnimationFrame(() => keepVisible(bi));   // 정보창이 열린 뒤 그 폭을 재서
+}
+// 고른 건물이 정보창(오른쪽 패널·폰 아래 시트)에 가려지거나 화면 밖이면, 보이는 영역 가운데로 부드럽게 옮긴다
+const _kp = new THREE.Vector3(), _kr = new THREE.Vector3(), _ku = new THREE.Vector3();
+function keepVisible(bi) {
+  const b = B[bi]; if (!b) return;
+  let cx = 0, cz = 0; for (const p of b.p) { cx += p[0]; cz += p[1]; } cx /= b.p.length; cz /= b.p.length;
+  const cr = canvas.getBoundingClientRect(), ir = info.hidden ? null : info.getBoundingClientRect();
+  let L = cr.left, Rt = cr.right, T = cr.top, Bt = cr.bottom;
+  if (ir && ir.width) { if (ir.left > cr.left + cr.width * 0.4) Rt = Math.min(Rt, ir.left); else if (ir.top > cr.top + cr.height * 0.3) Bt = Math.min(Bt, ir.top); }
+  _kp.set(cx, (b.b || 0) + b.h * 0.5, cz).project(camera);
+  const sx = cr.left + (_kp.x + 1) / 2 * cr.width, sy = cr.top + (1 - _kp.y) / 2 * cr.height, pad = 60;
+  if (sx > L + pad && sx < Rt - pad && sy > T + pad && sy < Bt - pad) return;
+  const dx = sx - (L + Rt) / 2, dy = sy - (T + Bt) / 2, dist = camera.position.distanceTo(controls.target);
+  const wpp = 2 * dist * Math.tan(camera.fov * Math.PI / 360) / cr.height;   // 화면 1px 당 m(대략)
+  camera.matrixWorld.extractBasis(_kr, _ku, _kp); _kr.y = 0; _kr.normalize(); _ku.set(-_kp.x, 0, -_kp.z).normalize();   // 땅 위 오른쪽·앞쪽
+  const move = _kr.multiplyScalar(dx * wpp).add(_ku.multiplyScalar(-dy * wpp * 1.4));
+  const t0 = performance.now(), fC = camera.position.clone(), fT = controls.target.clone();
+  (function f(now) { const k = Math.min(1, (now - t0) / 600), e = 1 - Math.pow(1 - k, 3);
+    camera.position.copy(fC).addScaledVector(move, e); controls.target.copy(fT).addScaledVector(move, e); controls.update(); need(); if (k < 1) requestAnimationFrame(f); })(t0);
 }
 
 // ── 건물 정보 ─────────────────────────────────────────
@@ -647,17 +667,30 @@ const bench = BENCH ? { t0: 0, frames: [] } : null;
 let last = performance.now();
 // ── 하루 빛: 재생 시각(sim-time)에 맞춰 해·하늘·안개 색과 밤 창 불빛을 바꾼다 ─────────────
 // 일출 07:10·일몰 17:15, 시민박명 06:43~17:42(옥포 2026-11-27, 계산값). 해 방향은 고정(그림자를 다시 계산하면 멈칫해서)
-const LK = (o) => ({ bg: o.bg && new THREE.Color(o.bg), sky: new THREE.Color(o.sky), gnd: new THREE.Color(o.gnd), hI: o.hI, sunC: new THREE.Color(o.sunC), sunI: o.sunI, lit: o.lit });
-const DAY = LK({ bg: null, sky: '#ffffff', gnd: '#a3adba', hI: 0.64, sunC: '#fff3e3', sunI: 0.56, lit: 0 });
+// 하늘: 카메라를 따라다니는 큰 공 안쪽에 위(천정)→지평선 그라데이션. 지평선 색 = 안개·배경색이라 땅과 이음새가 없다
+const skyU = { top: { value: new THREE.Color('#c9dcf0') }, hor: { value: new THREE.Color('#f1efea') } };
+const sky = new THREE.Mesh(new THREE.SphereGeometry(R * 5, 32, 16), new THREE.ShaderMaterial({
+  uniforms: skyU, side: THREE.BackSide, depthWrite: false, depthTest: false, fog: false,
+  vertexShader: 'varying vec3 vD; void main(){ vD = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+  fragmentShader: 'uniform vec3 top; uniform vec3 hor; varying vec3 vD; void main(){ float h = clamp(vD.y, 0.0, 1.0); gl_FragColor = linearToOutputTexel(vec4(mix(hor, top, pow(smoothstep(0.0, 0.42, h), 0.75)), 1.0)); }' }));   // 다른 재질처럼 화면 색 공간으로 바꿔야 지평선 이음새가 없다
+sky.renderOrder = -10; sky.frustumCulled = false; sky.onBeforeRender = () => sky.position.copy(camera.position); scene.add(sky);
+// 밤하늘 별(위쪽 반구, 밤 정도만큼 보임)
+const stars = (() => { const n = 700, p = new Float32Array(n * 3); let seed = 7; const r = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < n; i++) { const u = r() * Math.PI * 2, y = 0.08 + r() * 0.92, k = Math.sqrt(1 - y * y); p.set([Math.cos(u) * k * R * 4.8, y * R * 4.8, Math.sin(u) * k * R * 4.8], i * 3); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(p, 3));
+  const m = new THREE.Points(g, new THREE.PointsMaterial({ color: '#dfe7ff', size: 1.6 * renderer.getPixelRatio(), sizeAttenuation: false, transparent: true, opacity: 0, depthWrite: false, depthTest: false, fog: false }));
+  m.renderOrder = -9; m.frustumCulled = false; m.onBeforeRender = () => m.position.copy(camera.position); scene.add(m); return m; })();
+const LK = (o) => ({ zen: new THREE.Color(o.zen || '#c9dcf0'), bg: o.bg && new THREE.Color(o.bg), sky: new THREE.Color(o.sky), gnd: new THREE.Color(o.gnd), hI: o.hI, sunC: new THREE.Color(o.sunC), sunI: o.sunI, lit: o.lit });
+const DAY = LK({ zen: '#9cc0e8', bg: null, sky: '#ffffff', gnd: '#a3adba', hI: 0.64, sunC: '#fff3e3', sunI: 0.56, lit: 0 });
 const LKEY = [
-  [300, LK({ bg: '#1e2433', sky: '#5d6f96', gnd: '#262b38', hI: 0.4, sunC: '#a9bde3', sunI: 0.1, lit: 1 })],    // 05:00 밤
-  [403, LK({ bg: '#2b3146', sky: '#6b789c', gnd: '#2c3140', hI: 0.42, sunC: '#b7c3e0', sunI: 0.12, lit: 0.9 })], // 06:43 새벽빛 시작
-  [430, LK({ bg: '#cfc4cf', sky: '#e3dbe8', gnd: '#8a8698', hI: 0.52, sunC: '#ffc79a', sunI: 0.34, lit: 0.25 })], // 07:10 해 뜸
+  [300, LK({ zen: '#0b1020', bg: '#1e2433', sky: '#5d6f96', gnd: '#262b38', hI: 0.4, sunC: '#a9bde3', sunI: 0.1, lit: 1 })],    // 05:00 밤
+  [403, LK({ zen: '#1a2240', bg: '#2b3146', sky: '#6b789c', gnd: '#2c3140', hI: 0.42, sunC: '#b7c3e0', sunI: 0.12, lit: 0.9 })], // 06:43 새벽빛 시작
+  [430, LK({ zen: '#8f9fc8', bg: '#cfc4cf', sky: '#e3dbe8', gnd: '#8a8698', hI: 0.52, sunC: '#ffc79a', sunI: 0.34, lit: 0.25 })], // 07:10 해 뜸
   [480, DAY], [995, DAY],                                                                                         // 08:00 ~ 16:35 낮
-  [1035, LK({ bg: '#f0e5d8', sky: '#fff0dc', gnd: '#9d9590', hI: 0.58, sunC: '#ffd2a6', sunI: 0.5, lit: 0.15 })], // 17:15 해 짐(노을, 은은하게)
-  [1062, LK({ bg: '#4b4f6b', sky: '#8a8fb8', gnd: '#3d3f52', hI: 0.44, sunC: '#ff9a6b', sunI: 0.14, lit: 0.7 })], // 17:42 땅거미
-  [1100, LK({ bg: '#1e2433', sky: '#5d6f96', gnd: '#262b38', hI: 0.4, sunC: '#a9bde3', sunI: 0.1, lit: 1 })],    // 18:20 밤
-  [1560, LK({ bg: '#1e2433', sky: '#5d6f96', gnd: '#262b38', hI: 0.4, sunC: '#a9bde3', sunI: 0.1, lit: 1 })],
+  [1035, LK({ zen: '#93a6d4', bg: '#f0e5d8', sky: '#fff0dc', gnd: '#9d9590', hI: 0.58, sunC: '#ffd2a6', sunI: 0.5, lit: 0.15 })], // 17:15 해 짐(노을, 은은하게)
+  [1062, LK({ zen: '#232a4a', bg: '#4b4f6b', sky: '#8a8fb8', gnd: '#3d3f52', hI: 0.44, sunC: '#ff9a6b', sunI: 0.14, lit: 0.7 })], // 17:42 땅거미
+  [1100, LK({ zen: '#0b1020', bg: '#1e2433', sky: '#5d6f96', gnd: '#262b38', hI: 0.4, sunC: '#a9bde3', sunI: 0.1, lit: 1 })],    // 18:20 밤
+  [1560, LK({ zen: '#0b1020', bg: '#1e2433', sky: '#5d6f96', gnd: '#262b38', hI: 0.4, sunC: '#a9bde3', sunI: 0.1, lit: 1 })],
 ];
 let dayBg = null, lastBg = null, nightNow = -1;
 const _c = new THREE.Color();
@@ -670,8 +703,9 @@ function dayLight(t) {
   hemi.color.copy(A0.sky).lerp(A1.sky, e); hemi.groundColor.copy(A0.gnd).lerp(A1.gnd, e); hemi.intensity = A0.hI + (A1.hI - A0.hI) * e;
   sun.color.copy(A0.sunC).lerp(A1.sunC, e); sun.intensity = A0.sunI + (A1.sunI - A0.sunI) * e;
   _c.copy(bgA).lerp(bgB, e); scene.background.copy(_c); if (scene.fog) scene.fog.color.copy(_c); lastBg = scene.background.clone();
+  skyU.hor.value.copy(_c); skyU.top.value.copy(A0.zen).lerp(A1.zen, e);
   const lit = A0.lit + (A1.lit - A0.lit) * e;
-  bMat.emissiveIntensity = lit * 0.95; uRoofGlow.value = lit * 0.6;
+  bMat.emissiveIntensity = lit * 0.95; uRoofGlow.value = lit * 0.6; stars.material.opacity = Math.max(0, lit - 0.4) / 0.6 * 0.85;
   document.body.classList.toggle('night', lit >= 0.5);   // 이름표 등 화면 글자가 어두운 배경용 모양으로 바뀔 수 있게(app.css)
   if (Math.abs(lit - nightNow) > 0.02) { nightNow = lit; document.dispatchEvent(new CustomEvent('map-light', { detail: { night: lit } })); }   // 가로등·간판 등이 따라 켜지게
   need();
