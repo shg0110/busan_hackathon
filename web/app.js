@@ -257,16 +257,6 @@ function cellTexture(draw) {
   t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
   return t;
 }
-function floorTexture() {
-  return cellTexture((g, S) => {
-    g.fillStyle = '#ffffff'; g.fillRect(0, 0, S, S);
-    // 창: 유리처럼 위는 조금 진하고 아래로 밝게(하늘 반사), 위 틀은 진하게
-    const gr = g.createLinearGradient(0, S * 0.22, 0, S * 0.68); gr.addColorStop(0, '#c6d1dd'); gr.addColorStop(1, '#dfe6ee');
-    g.fillStyle = gr; g.fillRect(6, S * 0.22, S * 0.68, S * 0.46);   // 창(윗부분이 v 큰 쪽 → 캔버스 위쪽)
-    g.fillStyle = '#b4bfcb'; g.fillRect(6, S * 0.22, S * 0.68, 2);
-    g.fillStyle = '#f2f3f5'; g.fillRect(0, S - 4, S, 4);                     // 층 사이 슬래브(v=0 쪽)
-  });
-}
 // 건물 종류별 창 무늬(같은 칸 배치): 1 = 상가·사무·숙박·공공(큰 유리창), 2 = 아파트(넓은 창 + 발코니 난간), 3 = 상가 1층 가게 앞면(통유리)
 function glass(g, x, y, w, h, c0, c1) { const gr = g.createLinearGradient(0, y, 0, y + h); gr.addColorStop(0, c0); gr.addColorStop(1, c1); g.fillStyle = gr; g.fillRect(x, y, w, h); }
 const winTexB = cellTexture((g, S) => {   // 큰 유리창(가운데 창살)
@@ -319,7 +309,8 @@ function wallOf(b) { const L = WALL_BY[b.k]; return L ? L[b.c % L.length] : wall
 function roofOf(b) { if (b.k === 'house') return ROOF_HOUSE[(b.c * 7 + b.lv) % ROOF_HOUSE.length]; return b.k === 'apartments' ? roofApt : roofCols[b.c % roofCols.length]; }
 const bRange = [];   // 건물별 [시작 꼭짓점, 끝 꼭짓점]
 const bWst = [], bOffV = [];   // 건물별 창 종류(0 주택 기본, 1 큰 유리창, 2 아파트) + 1층 가게면 4 더함, 무늬 시작 층(offV)
-const STYLE_OF = { apartments: 2, retail: 1, hotel: 1, office: 1, public: 1, school: 1, hospital: 1 };
+const STYLE_OF = { apartments: 2, retail: 1, hotel: 1, office: 1, public: 1, school: 1, hospital: 1, warehouse: 3, garage: 3, industrial: 3, shed: 3 };
+const IND_USE = new Set(['창고시설', '자동차관련시설', '공장', '위험물저장및처리시설', '분뇨.쓰레기처리시설']);   // OSM 종류가 'yes' 여도 대장 용도가 이러면 3
 const FL = window.FLOORS && window.FLOORS.b;
 const roofRange = [];   // 건물별 지붕 꼭짓점 [시작, 끝] — 지붕만 다른 색으로 칠할 때(빈 층 많은 건물 등)
 function pushTri(a, b, c, n, col, owner) {
@@ -340,7 +331,7 @@ B.forEach((b, bi) => {
   let run = 0;
   const offU = (b.c * 3 + bi * 7) % WN, offV = (bi * 5 + b.c) % WN;
   { const fl = FL && FL[String(bi)], f1 = fl && fl.find(f => f.n === 1), com = fl && fl.some(f => f.com);
-    let st = STYLE_OF[b.k] ?? (com ? 1 : 0); if (f1 && f1.com) st += 4; bWst.push(st); bOffV.push(offV); }
+    let st = STYLE_OF[b.k] ?? (IND_USE.has(b.use) ? 3 : com ? 1 : 0); if (f1 && f1.com) st += 4; bWst.push(st); bOffV.push(offV); }
   for (let i = 0; i < p.length; i++) {
     const a = p[i], c2 = p[(i + 1) % p.length];
     const dx = c2[0] - a[0], dz = c2[1] - a[1], l = Math.hypot(dx, dz);
@@ -424,8 +415,27 @@ const emptyTex = (() => { const W = 4096, d = new Float32Array(W);
   const t = new THREE.DataTexture(d, W, 1, THREE.RedFormat, THREE.FloatType); t.minFilter = t.magFilter = THREE.NearestFilter; t.needsUpdate = true; return t; })();
 bGeo.computeBoundingSphere();
 // 창 무늬는 가까이 볼 때만(멀리서는 작은 건물이 빽빽해 무늬가 잡음처럼 보인다 → 깨끗한 덩어리로)
-const winTex = floorTexture();
-const litTex = litTexture();
+// 주택(다가구·빌라) 창: 세로 줄(칸 i)마다 네 가지 모양 — 넓은 창 · 작은 창 둘 · 좁고 긴 창 · 넓은 창 + 발코니 난간.
+// 같은 줄은 위아래로 같은 모양이라 층마다 창이 맞고, 집마다 시작 칸(offU)이 달라 건물끼리 다르게 보임(표현, 자료 아님)
+const HOUSE_WIN = [[[6 / 96, 0.22, 0.68, 0.46]], [[8 / 96, 0.26, 0.3, 0.36], [0.52, 0.26, 0.3, 0.36]], [[0.32, 0.17, 0.3, 0.56]], [[6 / 96, 0.2, 0.8, 0.38]]];
+function houseTexture() { return cellTexture((g, S, i) => {
+  const v = i % 4; g.fillStyle = '#ffffff'; g.fillRect(0, 0, S, S);
+  for (const r of HOUSE_WIN[v]) { const x = r[0] * S, y = r[1] * S, w = r[2] * S, h = r[3] * S;
+    const gr = g.createLinearGradient(0, y, 0, y + h); gr.addColorStop(0, '#c6d1dd'); gr.addColorStop(1, '#dfe6ee'); g.fillStyle = gr; g.fillRect(x, y, w, h);
+    g.fillStyle = '#b4bfcb'; g.fillRect(x, y, w, 2); }
+  if (v === 3) { g.fillStyle = '#d3d8de'; g.fillRect(3, S * 0.58, S - 6, S * 0.13); g.fillStyle = '#b9c0c8'; g.fillRect(3, S * 0.58, S - 6, 2); }   // 발코니 난간
+  g.fillStyle = '#f2f3f5'; g.fillRect(0, S - 4, S, 4); }); }
+const litTex = cellTexture((g, S, i, j) => {   // 주택 밤 불빛: 위 창 모양 자리에만
+  g.fillStyle = '#000'; g.fillRect(0, 0, S, S);
+  const cols = ['#ffd38a', '#ffe2b0', '#fff2d8', '#ffc66e', '#e9f0ff'], h = ((i * 73856093) ^ (j * 19349663)) >>> 0;
+  if ((h % 1000) / 1000 < 0.46) { g.fillStyle = cols[h % cols.length]; for (const r of HOUSE_WIN[i % 4]) g.fillRect(r[0] * S + 1, r[1] * S + 2, r[2] * S - 2, r[3] * S - 3); } });
+// 창고·차고·공장(건축물대장 창고시설·자동차관련시설·공장·위험물): 주택 창 대신 벽판 줄눈 + 위쪽 가는 띠창, 밤엔 불 없음
+const indTex = cellTexture((g, S) => {
+  g.fillStyle = '#ffffff'; g.fillRect(0, 0, S, S);
+  g.fillStyle = '#e1e4e8'; g.fillRect(S / 2 - 1, 0, 2, S); g.fillRect(0, 0, 2, S);   // 벽판 세로 줄눈
+  const gr = g.createLinearGradient(0, S * 0.12, 0, S * 0.24); gr.addColorStop(0, '#b3c0cd'); gr.addColorStop(1, '#d2dbe4'); g.fillStyle = gr; g.fillRect(4, S * 0.12, S - 8, S * 0.12);
+  g.fillStyle = '#eef0f3'; g.fillRect(0, S - 3, S, 3); });
+const winTex = houseTexture();   // HOUSE_WIN 정의 뒤에
 const litB = litTexture(0.32, [4 / 64, 0.18, 0.88, 0.58], ['#eef4ff', '#fff6e6', '#e3ecff']);   // 사무·상가: 하얀 형광등, 덜 켜짐
 const litC = litTexture(0.58, [6 / 64, 0.24, 0.8, 0.32]);                                  // 아파트: 따뜻한 전등, 많이 켜짐
 const litShop = litTexture(0.85, [3 / 64, 0.22, 0.9, 0.62], ['#fff4d6', '#ffe9b8', '#ffffff']);   // 1층 가게: 대부분 켜짐
@@ -434,21 +444,21 @@ const uRoofGlow = { value: 0 }, uOfficeK = { value: 1 }, uShopK = { value: 1 }; 
 const GL2 = renderer.capabilities.isWebGL2;
 // 건물 셰이더에 더하는 것: 밤 주황 지붕 빛남(glow), 건물 종류별 창 무늬·1층 가게 앞면(wst), 밤에 빈 층 불 끄기(bid·woff → emptyTex)
 bMat.onBeforeCompile = (sh) => {
-  Object.assign(sh.uniforms, { uRoofGlow, uOfficeK, uShopK, uWinB: { value: winTexB }, uWinC: { value: winTexC }, uShop: { value: shopTex },
+  Object.assign(sh.uniforms, { uRoofGlow, uOfficeK, uShopK, uWinB: { value: winTexB }, uWinC: { value: winTexC }, uShop: { value: shopTex }, uInd: { value: indTex },
     uLitB: { value: litB }, uLitC: { value: litC }, uLitShop: { value: litShop }, uEmpty: { value: emptyTex } });
   sh.vertexShader = 'attribute float glow, wst, bid, woff;\nvarying float vGlow, vWst, vBid, vWoff;\nvarying vec2 vRaw;\n' +
     sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vGlow = glow; vWst = wst; vBid = bid; vWoff = woff; vRaw = uv;');
-  const pick = (a, b, c, d) => `(isShop ? ${d} : (st < 0.5 ? ${a} : (st < 1.5 ? ${b} : ${c})))`;
-  const head = 'uniform float uRoofGlow, uOfficeK, uShopK;\nuniform sampler2D uWinB, uWinC, uShop, uLitB, uLitC, uLitShop, uEmpty;\nvarying float vGlow, vWst, vBid, vWoff;\nvarying vec2 vRaw;\n';
+  const pick = (a, b, c, d, e) => `(isShop ? ${d} : (st < 0.5 ? ${a} : (st < 1.5 ? ${b} : (st < 2.5 ? ${c} : ${e}))))`;
+  const head = 'uniform float uRoofGlow, uOfficeK, uShopK;\nuniform sampler2D uWinB, uWinC, uShop, uInd, uLitB, uLitC, uLitShop, uEmpty;\nvarying float vGlow, vWst, vBid, vWoff;\nvarying vec2 vRaw;\n';
   const pre = `float st = mod(vWst, 4.0); float flf = floor(vRaw.y - vWoff); bool isShop = vWst > 3.5 && flf < 0.5 && flf > -0.5;`;
   sh.fragmentShader = head + sh.fragmentShader
     .replace('#include <map_fragment>', `${pre}
 #ifdef USE_MAP
-  vec4 sampledDiffuseColor = ${pick('texture2D(map, vUv)', 'texture2D(uWinB, vUv)', 'texture2D(uWinC, vUv)', 'texture2D(uShop, vUv)')};
+  vec4 sampledDiffuseColor = ${pick('texture2D(map, vUv)', 'texture2D(uWinB, vUv)', 'texture2D(uWinC, vUv)', 'texture2D(uShop, vUv)', 'texture2D(uInd, vUv)')};
   diffuseColor *= sampledDiffuseColor;
 #endif`)
     .replace('#include <emissivemap_fragment>', `#ifdef USE_EMISSIVEMAP
-  vec4 emissiveColor = ${pick('texture2D(emissiveMap, vUv)', 'texture2D(uLitB, vUv)', 'texture2D(uLitC, vUv)', 'texture2D(uLitShop, vUv)')};
+  vec4 emissiveColor = ${pick('texture2D(emissiveMap, vUv)', 'texture2D(uLitB, vUv)', 'texture2D(uLitC, vUv)', 'texture2D(uLitShop, vUv)', 'vec4(0.0)')};
   ${GL2 ? `int fi = int(flf); int msk = int(texelFetch(uEmpty, ivec2(int(vBid + 0.5), 0), 0).r + 0.5);
   if (fi >= 0 && fi < 24 && ((msk >> fi) & 1) == 1) emissiveColor.rgb *= 0.0;` : ''}
   emissiveColor.rgb *= isShop ? uShopK : (st > 0.5 && st < 1.5 ? uOfficeK : 1.0);
