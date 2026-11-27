@@ -533,7 +533,7 @@ function draw(t) {
     // 자리 기다리는 사람: 가게 쪽 인도(길 노드에서 가게 방향으로 길 가장자리 + 1.2m)
     if (a.st === 1) placeOnPath(a, t); else { const s = SHOPS[a.shop], n = s.node, vx = s.x - NX[n], vz = s.z - NZ[n], vl = Math.hypot(vx, vz) || 1, o = sideOff(NWD[n]);
       a.x = NX[n] + vx / vl * o + j * 0.4; a.z = NZ[n] + vz / vl * o + (hash01('w' + j) - 0.5) * 1.2; }
-    pos[n * 3] = a.x + j * 0.25; pos[n * 3 + 1] = 1.2; pos[n * 3 + 2] = a.z - j * 0.15;   // 같은 쪽 인도 안에서 사람끼리 조금씩 어긋나게
+    pos[n * 3] = a.x + j * 0.25; pos[n * 3 + 1] = 1.2 + MP.hAt(a.x, a.z); pos[n * 3 + 2] = a.z - j * 0.15;   // 같은 쪽 인도 안에서 사람끼리 조금씩 어긋나게
     const c = GCOL[a.g]; col[n * 3] = c.r; col[n * 3 + 1] = c.g; col[n * 3 + 2] = c.b; n++;
   }
   geo.setDrawRange(0, n); geo.attributes.position.needsUpdate = true; geo.attributes.color.needsUpdate = true;
@@ -553,7 +553,7 @@ function drawFigures(n) {
   const tx = MP.controls.target.x, tz = MP.controls.target.z; let k = 0;
   for (let i = 0; i < n && k < FIG_MAX; i++) {
     const x = pos[i * 3], z = pos[i * 3 + 2]; if (Math.abs(x - tx) > FIG_R || Math.abs(z - tz) > FIG_R) continue;
-    _fm.makeTranslation(x, 0, z); figMesh.setMatrixAt(k, _fm); figMesh.setColorAt(k, _fc.setRGB(col[i * 3], col[i * 3 + 1], col[i * 3 + 2])); k++;
+    _fm.makeTranslation(x, pos[i * 3 + 1] - 1.2, z); figMesh.setMatrixAt(k, _fm); figMesh.setColorAt(k, _fc.setRGB(col[i * 3], col[i * 3 + 1], col[i * 3 + 2])); k++;
   }
   figMesh.count = k; figMesh.instanceMatrix.needsUpdate = true; if (figMesh.instanceColor) figMesh.instanceColor.needsUpdate = true;
 }

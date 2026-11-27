@@ -212,6 +212,7 @@ function drawBoundary(k) {
       if (carry >= (on ? DASH : GAP) - 1e-6) { carry = 0; on = !on; }
     }
   }
+  if (TON) for (let i = 0; i < pos.length; i += 3) pos[i + 1] += hAt(pos[i], pos[i + 2]);
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   bndMesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: '#3d434a', depthWrite: false, side: THREE.DoubleSide, transparent: true, opacity: 0.75 }));
   bndMesh.renderOrder = 8.8; bndMesh.frustumCulled = false; scene.add(bndMesh); need && need();
@@ -221,6 +222,10 @@ function boundaryK() { const d = camera.position.distanceTo(controls.target); re
 // ── 건물 ───────────────────────────────────────────────
 // 모든 건물을 한 덩어리로 합친다. triOwner[삼각형 번호] = 건물 번호 → 누른 건물 찾기.
 const B = D.buildings;
+// 지형(seohogyun-31 terrain.js, 기본 꺼짐·?terrain=1): 건물 바닥을 발자국 아래 가장 낮은 땅 높이로 올린다(b.b0 = 원래 값).
+// b.b 를 쓰는 층 띠·층 단면·거리 층 띠·간판은 따로 고치지 않아도 따라온다. 땅에 붙는 선·이름표·사람은 hAt 을 더한다
+const TON = !!window.TERRAIN_ON, hAt = TON && window.heightAt ? window.heightAt : () => 0;
+for (const b of B) { b.b0 = b.b || 0; if (TON && window.heightRange) b.b = b.b0 + window.heightRange(b.p).min; }
 const bPos = [], bNrm = [], bCol = [], bUv = [], triOwner = [];
 const ROOF_UV = [0.95, 0.15];   // 무늬의 흰 칸(지붕은 무늬 없이)
 // 창 무늬는 창 8칸 × 층 8칸 묶음 한 장(repeat 1/8). 낮 무늬와 밤 불빛 무늬가 같은 칸 배치를 써야 창 위치가 맞는다
@@ -445,13 +450,14 @@ scene.add(bMesh);
 {
   const pos = [], col = [], W0 = 0.3, OUT = 3.6;
   for (const b of B) {
-    if (b.k === 'roof' || (b.b || 0) > 0) continue;
+    if (b.k === 'roof' || (b.b0 || 0) > 0) continue;   // 원래 공중에 뜬 구조물만 뺌(지형으로 올린 건물은 그늘 그림)
     let p = b.p.slice(); if (signedArea(p) > 0) p.reverse();
     for (let i = 0; i < p.length; i++) {
       const a = p[i], c = p[(i + 1) % p.length], dx = c[0] - a[0], dz = c[1] - a[1], l = Math.hypot(dx, dz); if (l < 0.3) continue;
       const nx = -dz / l * OUT, nz = dx / l * OUT, y = 0.04;
-      // 안쪽(벽 밑) 알파 W0 → 바깥 0
-      pos.push(a[0], y, a[1], c[0], y, c[1], c[0] + nx, y, c[1] + nz, a[0], y, a[1], c[0] + nx, y, c[1] + nz, a[0] + nx, y, a[1] + nz);
+      // 안쪽(벽 밑) 알파 W0 → 바깥 0. 지형이 켜져 있으면 꼭짓점마다 땅 높이
+      const ya = y + hAt(a[0], a[1]), yc = y + hAt(c[0], c[1]), yc2 = y + hAt(c[0] + nx, c[1] + nz), ya2 = y + hAt(a[0] + nx, a[1] + nz);
+      pos.push(a[0], ya, a[1], c[0], yc, c[1], c[0] + nx, yc2, c[1] + nz, a[0], ya, a[1], c[0] + nx, yc2, c[1] + nz, a[0] + nx, ya2, a[1] + nz);
       for (const al of [W0, W0, 0, W0, 0, 0]) col.push(0.12, 0.14, 0.18, al);
     }
   }
@@ -675,7 +681,7 @@ function placeLabels() {
   for (const L of labels) {
     const far = L.kind === 'road' ? (L.pri < 4 ? R * 0.9 : R * 3) : (L.pri <= 2 ? R * 0.5 : L.pri < 5 ? R * 0.9 : R * 3);
     if (!show[L.kind] || dist > far) { L.el.classList.add('off'); continue; }
-    _v.set(L.x, L.y, L.z).project(camera);
+    _v.set(L.x, L.y + (L.abs ? 0 : hAt(L.x, L.z)), L.z).project(camera);   // 땅 기준 이름표는 지형 높이를 더함(abs 는 이미 절대 높이)
     if (_v.z > 1 || _v.x < -1.1 || _v.x > 1.1 || _v.y < -1.1 || _v.y > 1.1) { L.el.classList.add('off'); continue; }
     if (!L.w) { L.el.classList.remove('off'); L.w = L.el.offsetWidth; L.h = L.el.offsetHeight; }
     const x = (_v.x + 1) / 2 * W - L.w / 2, y = (1 - _v.y) / 2 * H - L.h / 2;
@@ -836,6 +842,7 @@ function frame(now) {
     }
   }
   last = now;
+  if (TON) { const h = hAt(controls.target.x, controls.target.z), d = h - controls.target.y; if (Math.abs(d) > 0.05) { controls.target.y += d * 0.15; camera.position.y += d * 0.15; dirty = true; } }
   if (controls.update()) dirty = true;
   if (!dirty) return;
   dirty = false;
@@ -852,7 +859,7 @@ requestAnimationFrame(() => requestAnimationFrame(() => {
 
 // 점검용(자동 시험이 읽음)
 window.__map = { select, hideBuilding, get selMesh() { return selMesh; }, buildings: B, signedArea, camera, controls, HOME, labels, need, orbit, scene, renderer, R, esc, tint, setRoofs,
-  roads: roadMeshes, ground, greens: greenMeshes, water: waterMesh, xz, meta: D.meta, dayLight, edgeFade, get night() { return Math.max(0, nightNow); },
+  roads: roadMeshes, ground, greens: greenMeshes, water: waterMesh, xz, meta: D.meta, dayLight, edgeFade, hAt, TON, get night() { return Math.max(0, nightNow); },
   get selected() { return selIdx; }, infoExtra: null };
 function syncFog() { if (!scene.fog) return; const h = camera.position.y, k = 1 + Math.max(0, Math.min(1, (420 - h) / 380)) * 0.9; scene.fog.near = R * 1.15 * k; scene.fog.far = R * 2.6 * k; }
 controls.addEventListener('change', syncFog); syncFog();
