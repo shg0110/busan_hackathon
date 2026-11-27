@@ -610,10 +610,15 @@ function setHover(bi, ev) {
     canvas.style.cursor = bi >= 0 ? 'pointer' : '';
     need();
   }
-  if (bi < 0 || !ev) { tip.hidden = true; return; }
+  if (bi < 0 || !ev || bi === selIdx) { tip.hidden = true; return; }   // 이미 고른 건물은 정보창이 열려 있으니 말풍선 없음
   const b = B[bi], nm = b.n || (b.jibun ? b.jibun.replace('거제시 ', '') : b.ko);
-  tip.innerHTML = `<strong>${esc(nm)}</strong><span>${floorSummary(bi)}</span><em>${bi === selIdx ? '층별로 보는 중' : '누르면 층별로 보기'}</em>`;
-  tip.style.transform = `translate(${Math.round(ev.clientX + 14)}px, ${Math.round(ev.clientY + 16)}px)`; tip.hidden = false;
+  tip.innerHTML = `<strong>${esc(nm)}</strong><span>${floorSummary(bi)}</span><em>누르면 층별로 보기</em>`;
+  tip.hidden = false;
+  // 오른쪽 정보창(#info)이나 화면 끝에 걸리면 커서 왼쪽으로 뒤집어 띄움
+  const tw = tip.offsetWidth, th = tip.offsetHeight, ir = info.hidden ? null : info.getBoundingClientRect();
+  const limit = ir && ir.width && ir.left > innerWidth * 0.4 ? ir.left - 8 : innerWidth - 8;
+  let tx = ev.clientX + 14, ty = ev.clientY + 16; if (tx + tw > limit) tx = ev.clientX - tw - 14; if (ty + th > innerHeight - 8) ty = ev.clientY - th - 12;
+  tip.style.transform = `translate(${Math.round(tx)}px, ${Math.round(ty)}px)`;
 }
 
 // ── 지도 위 글자 ───────────────────────────────────────
