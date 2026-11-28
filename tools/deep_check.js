@@ -87,8 +87,19 @@ const ok = (name, pass, detail) => { if (detail && detail.__err) pass = false; r
 
   // 7) 실험 가게의 내 영업시간이 업종 수요를 만들지 않음(낮에 여는 호프에 점심 손님이 몰리면 실패)
   const ex = await ev(pg, (bi) => { const S = window.__sim, sb = S.SUB.hof, fl = window.FLOORS.b[String(bi)].find(f => f.state === 'empty').n;
-    const a = S.experiment(bi, fl, 'hof', sb.basket, sb.seats), b = S.experiment(bi, fl, 'hof', sb.basket, sb.seats, [660, 1440]); S.restore(); return { 보통: Math.round(a.wd.v), 낮부터: Math.round(b.wd.v) }; }, bi);
-  ok('내 영업시간이 업종 수요를 만들지 않음(낮부터 ≤ 보통×2+10)', ex.낮부터 <= ex.보통 * 2 + 10, ex);
+    // 1년 결과(trySlot: 계절 가운데 달 × 평일·쉬는 날 8일). 예전 하루 기준 '+10명'은 1년이면 3,650명
+    const a = S.trySlot(bi, fl, 'hof', sb.basket, sb.seats, 0), b = S.trySlot(bi, fl, 'hof', sb.basket, sb.seats, 0, [660, 1440]); S.restore(); return { 보통: Math.round(a.v), 낮부터: Math.round(b.v) }; }, bi);
+  ok('내 영업시간이 업종 수요를 만들지 않음(1년, 낮부터 ≤ 보통×2+3650)', ex.낮부터 <= ex.보통 * 2 + 3650, ex);
+
+  // 7-1) 1년: 달력 365일, 달 배율이 사람 수를 바꿈(2월 < 보통 날 < 8월), 실험 가게 1년 결과에 월별 12개·손익
+  const yr = await ev(pg, async (bi) => { const S = window.__sim, Y = S.YEAR, sb = S.SUB.hof, fl = window.FLOORS.b[String(bi)].find(f => f.state === 'empty').n;
+    const sum = (st) => Array.from(st.visits).reduce((x, y) => x + y, 0);
+    const d0 = sum(S.runDay(false, 0)), d2 = sum(S.runDay(false, 0, 2)), d8 = sum(S.runDay(false, 0, 8));
+    const r = await S.experiment(bi, fl, 'hof', sb.basket, sb.seats); S.restore();
+    const mon = r.monV.reduce((a, b) => a + b, 0);
+    return { 날: Y ? Y.days : 0, 보통: Math.round(d0), 이월: Math.round(d2), 팔월: Math.round(d8), 손님: Math.round(r.v), 달합: Math.round(mon), 달: r.monWon.length, 범위: [Math.round(r.lo), Math.round(r.hi)],
+      임대료: S.rentOf(bi, fl, 100).month, 가게수: S._shops().length }; }, bi);
+  ok('1년: 365일·달 배율(2월 < 보통 < 8월)·월별 12개 합 = 1년·범위 안·임대료 > 0', yr.날 === 365 && yr.이월 < yr.보통 && yr.보통 < yr.팔월 && yr.달 === 12 && Math.abs(yr.달합 - yr.손님) <= 1 && yr.범위[0] <= yr.손님 && yr.손님 <= yr.범위[1] && yr.임대료 > 0, yr);
 
   // 8) 시간 정하기: 바꾸면 결과가 바뀌고, 기본값으로 되돌리면 처음과 같음
   const ts = await ev(pg, () => { const S = window.__sim, day = () => { const st = S.runDay(false, 0); let v = 0, w = 0; for (let i = 0; i < st.visits.length; i++) { v += st.visits[i]; w += st.spend[i]; } return Math.round(v) + '/' + Math.round(w); };

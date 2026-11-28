@@ -296,6 +296,29 @@ table.floors .use { font-size: 14px; color: var(--g700); margin-bottom: 4px; }
 .exp-nb { margin: 6px 0 8px; font-size: 13px; line-height: 1.5; color: var(--g700); }
 .exp-nb, .exp-tip, .exp-foot { margin: 6px 0 0; font-size: 13.5px; color: var(--g700); line-height: 1.6; }
 .exp-foot { color: var(--g600); font-size: 12.5px; margin-top: 12px; }
+/* 1년 손익(sim.js renderExp) */
+.yr-kpi { margin-top: 14px; padding: 14px 16px; border-radius: 12px; background: var(--primary-soft); display: flex; flex-direction: column; gap: 2px; }
+.yr-kpi span { font-size: 13.5px; color: var(--g700); font-weight: 600; }
+.yr-kpi b { font-size: 26px; font-weight: 800; letter-spacing: -.02em; color: var(--primary-ink); font-variant-numeric: tabular-nums; }
+.yr-kpi small { font-size: 12.5px; color: var(--g600); }
+.yr-kpi.neg { background: #fff1f0; }
+.yr-kpi.neg b { color: #c92a2a; }
+.yr-res th { width: 104px; white-space: nowrap; }
+.yr-res td { font-variant-numeric: tabular-nums; }
+.exp-cmp td.neg { color: #c92a2a; }
+.yr-bars { display: grid; grid-template-columns: repeat(12, 1fr); gap: 3px; margin-top: 4px; }
+.yr-m { display: flex; flex-direction: column; align-items: stretch; padding: 0; border: 0; background: none; cursor: pointer; min-height: 44px; border-radius: 6px; }
+.yr-m:hover { background: var(--g100); }
+.yr-m:focus-visible { outline: 2px solid var(--primary); }
+.yr-m .up, .yr-m .dn { display: flex; justify-content: center; }
+.yr-m .up { align-items: flex-end; }
+.yr-m .dn { border-top: 1px solid var(--g300); }
+.yr-m .dn { align-items: flex-start; }
+.yr-m i { width: 70%; min-height: 1px; background: var(--primary); border-radius: 2px 2px 0 0; }
+.yr-m.neg i { background: #e03131; border-radius: 0 0 2px 2px; }
+.yr-m em { font-style: normal; font-size: 12px; color: var(--g600); text-align: center; }
+.sim-mon select { min-height: 36px; border: 0; border-radius: 10px; background: var(--g100); color: var(--g900); font: inherit; font-size: 14px; padding: 0 8px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* ── 가상 손님 하루(sim.js 가 만드는 #sim): 지도 아래 가운데 ── */
 #sim { position: fixed; left: calc(var(--side) + (100% - var(--side)) / 2); bottom: 16px; transform: translateX(-50%);
