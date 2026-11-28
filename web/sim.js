@@ -813,10 +813,10 @@ const assumed = GROUPS.filter(g => CFG.groups[g].src === '가정' || /가정/.te
   const WK_KO = { 'foreign.vn': '베트남', 'foreign.halal': '할랄 음식 국적', 'foreign.etc': '그 밖 근로자·가족', 'foreign.expat': '선주 감독관·외국 기술자와 가족' };
   $('sim-src').innerHTML = `<ul>
     ${PD ? li(`가상 시민 ${PD.n.toLocaleString('ko-KR')}명(1:1, v${PD.version})`, GROUPS.map(g => `${CFG.groups[g].ko} ${(pdG[g] || 0).toLocaleString('ko-KR')}명`).join(' · ') + ' — data/processed/personas (tools/build_personas.py). 쉬는 날(토·일·공휴일) 인원은 구분별 주말 배율로, 달마다 인원은 달 배율로 늘고 줄어듦')
-      : GROUPS.map(g => li(CFG.groups[g].ko + ` (평일 ${CFG.groups[g].wd.toLocaleString('ko-KR')}명·주말 ${CFG.groups[g].we.toLocaleString('ko-KR')}명)`, CFG.groups[g].src)).join('')}
+      : GROUPS.map(g => li(CFG.groups[g].ko + ` (평일 ${CFG.groups[g].wd.toLocaleString('ko-KR')}명·쉬는 날 ${CFG.groups[g].we.toLocaleString('ko-KR')}명)`, CFG.groups[g].src)).join('')}
     ${CFG.scale ? li('규모 맞춤(모든 부류 × ' + CFG.scale.v + ')', CFG.scale.src) : '<li><b>규모 비교(가상 ↔ 실제 카드)</b> <span id="scale-cmp">이 칸을 열 때 계산합니다.</span></li>'}
     ${li('교대 시간', `출근 ${sh(CFG.shift.in[0])}~${sh(CFG.shift.in[1])}, 퇴근 ${sh(CFG.shift.out[0])}~${sh(CFG.shift.out[1])} — ${CFG.shift_src || CFG.shift.src || '가정'}`)}
-    ${CFG.foreignDaily ? li('외국인 하루 쓸 돈', CFG.foreignDaily.src) : ''}
+    ${CFG.foreignDaily ? li('외국인 한 사람이 날마다 쓸 돈', CFG.foreignDaily.src) : ''}
     ${li('세부 업종별 1인 지출(대표 메뉴 × 인분 × 주문 비율)', MENU.subs.map(x => `${x.ko} ${x.basket.toLocaleString('ko-KR')}원(근거 ${x.confirmed[0]}/${x.confirmed[1]})`).join(' · '))}
     ${li('메뉴 가격 근거', '① 옥포: 거제시 「개인서비스품목 가격동향」 2026-11-26 옥포1·2동 업소 가격(동마다 1곳, 두 동 평균)과 옥포 업체 공개 가격(당근 동네업체 페이지, 2026-11-27 확인) ② 옥포에 없으면 거제 다른 동·옆 동(아주동) 값 ③ 편의점은 전국 정가, 세탁은 경남 평균 ④ 유흥주점·식료품·미용·사우나는 옥포1·2동 카드 결제 건당 금액(2025-02)으로 계산 ⑤ 그 밖은 가정. 커피·햄버거는 업소마다 종류가 달라(4,700 vs 1,800, 3,800 vs 18,000) 평균을 쓰지 않음. 표: data/processed/okpo_menu_prices.csv')}
     ${li('업종 기준가(세부 업종이 비싼지 견주는 값)', CATS.map(c => `${CFG.cats[c].ko} ${CFG.cats[c].price.toLocaleString('ko-KR')}원`).join(' · ') + (ps.meal ? ' — ' + ps.meal : ''))}
@@ -828,7 +828,7 @@ const assumed = GROUPS.filter(g => CFG.groups[g].src === '가정' || /가정/.te
     ${li('업종 고르는 비율·머무는 시간·자리 수·걷는 속도', '가정(근거 자료 없음)')}
     ${li('가게까지 거리 감쇠 λ', '가게 고르기 무게 × e^(−거리/λ), λ = 주점 420m · 장보기 220m · 그 밖 300m — 가정(근거 자료 없음)')}
     ${li('2층 이상 가게', '1층보다 ' + CFG.upperFloor + '배 덜 고름 — 가정(근거 자료 없음). 가게 매력도는 근거 자료가 없어 모두 1')}
-    ${li('가게 앞을 지나는 사람 β = ' + PASSBY, 'β=0 으로 하루 돌린 가상 인물이 가게 앞을 지나간 인원(평일·주말 따로)이 가게들 평균의 몇 배인지를 β 제곱해 가게 고르기 무게에 곱함(0.2~5배로 자름). 가게 앞 = 가게에서 가장 가까운 길 노드 거리 + 20m(최대 40m) 안에서 가장 많이 지나간 노드. 어느 가게로 가는지만 바꾸지만 길목 가게가 차서 하루 결제가 약 0.4% 줄어듦(평일 36,113 → 36,061건). 0 이면 위치 장점 없음 — 가정')}
+    ${li('가게 앞을 지나는 사람 β = ' + PASSBY, 'β=0 으로 평일·쉬는 날을 한 번씩 돌려 가상 인물이 가게 앞을 지나간 인원(평일·쉬는 날 따로)이 가게들 평균의 몇 배인지를 β 제곱해 가게 고르기 무게에 곱함(0.2~5배로 자름). 가게 앞 = 가게에서 가장 가까운 길 노드 거리 + 20m(최대 40m) 안에서 가장 많이 지나간 노드. 어느 가게로 가는지만 바꾸지만 길목 가게가 차서 하루 결제가 약 0.4% 줄어듦(평일 36,113 → 36,061건). 0 이면 위치 장점 없음 — 가정')}
     ${li('영업시간', '세부 업종마다 하나씩 정한 가정 값(상가정보에 영업시간 항목이 없음). 시간 정하기에서 업종·가게마다 바꿀 수 있음')}
     ${YD ? li('1년 달력', YD.src_cal + ` — 평일 ${YM.reduce((a, x) => a + x.wd, 0)}일 · 쉬는 날 ${YM.reduce((a, x) => a + x.we, 0)}일`) : ''}
     ${YD ? li('달마다 나오는 사람 수', YD.src_f + ' — ' + YM.map(x => `${x.m}월 ${x.f.toFixed(2)}`).join(' · ')) : ''}
@@ -965,8 +965,8 @@ function tsRender() {
   dlg.innerHTML = `<form method="dialog" class="ts">
     <header class="ts-hd"><h2>시간 정하기</h2><button type="button" class="ts-x" id="ts-close" aria-label="닫기">×</button></header>
     <div class="ts-body">
-    <section><h3>하루 재생 범위</h3>
-      <p class="ts-note">재생 막대가 이 사이만 움직입니다. 계산은 늘 05:00부터라 범위 앞에 나온 사람도 그대로 있습니다. 하루 합계는 05:00~다음 날 05:00, 24시간 전체입니다.</p>
+    <section><h3>재생 범위</h3>
+      <p class="ts-note">재생 막대가 이 사이만 움직입니다. 계산은 늘 05:00부터라 범위 앞에 나온 사람도 그대로 있습니다. 합계는 늘 05:00~다음 날 05:00, 24시간 전체입니다.</p>
       <div class="ts-row"><label>시작 <select id="ts-p0">${tOpts(T0, 1200, D.p0)}</select></label><span class="ts-dash">~</span><label>끝 <select id="ts-p1">${tOpts(720, T1, D.p1)}</select></label></div></section>
     <section><h3>업종별 영업시간</h3>
       <p class="ts-note">기본값은 업종마다 흔한 영업시간을 가정한 값입니다(상가정보에 영업시간 자료가 없음). 바꾸면 그 업종 가게 전부에 적용됩니다.</p>
@@ -1358,7 +1358,7 @@ function renderExp(r, sub, price, ms, bi, floor, menus, hrs) {
     <p class="exp-sub">주변 가게 영향</p><p class="exp-nb">${nbTxt}</p>
     ${cmp}
     <p class="exp-sub">1인 지출 ${wonX(price)}</p><p class="exp-nb">${bk}</p>
-    <p class="exp-foot">${esc(k)} · ${floor}층 · 영업 ${hoursTxt(hrs)} · 계산 ${(ms / 1000).toFixed(1)}초. ${YD ? YD.year : ''}년 달력(평일 ${YM.reduce((a, x) => a + x.wd, 0)}일 · 토·일·공휴일 ${YM.reduce((a, x) => a + x.we, 0)}일)대로 달마다 하루씩 돌려 날 수를 곱했습니다. 달마다 나오는 사람 수는 ${esc(YD ? YD.src_f : '')}를 따릅니다. 임대료: ${esc(YD ? YD.src_rent : '')}. 재료·인건비 등: ${esc(YD ? YD.src_other : '')}. 보증금·권리금·세금·사장 인건비는 넣지 않았습니다. 가상 인물로 조건끼리 비교한 값이며 실제 매출 예측이 아닙니다.</p>`;
+    <p class="exp-foot">${esc(k)} · ${floor}층 · 영업 ${hoursTxt(hrs)} · 계산 ${(ms / 1000).toFixed(1)}초. ${YD ? YD.year : ''}년 달력(평일 ${YM.reduce((a, x) => a + x.wd, 0)}일 · 토·일·공휴일 ${YM.reduce((a, x) => a + x.we, 0)}일)대로 달마다 평일·쉬는 날을 한 번씩 돌려 그 달의 날 수를 곱했습니다. 달마다 나오는 사람 수는 ${esc(YD ? YD.src_f : '')}를 따릅니다. 임대료: ${esc(YD ? YD.src_rent : '')}. 재료·인건비 등: ${esc(YD ? YD.src_other : '')}. 보증금·권리금·세금·사장 인건비는 넣지 않았습니다. 가상 인물로 조건끼리 비교한 값이며 실제 매출 예측이 아닙니다.</p>`;
   need();
 }
 document.addEventListener('click', (e) => { const b = e.target.closest && e.target.closest('.yr-m'); if (b) setMonth(+b.dataset.m, 'wd'); });
