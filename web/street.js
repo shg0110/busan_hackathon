@@ -120,7 +120,7 @@ function addLabel(text, cls, x, y, z) {
 function clearRank() { for (const L of rankLabels) { L.el.remove(); const i = M.labels.indexOf(L); if (i >= 0) M.labels.splice(i, 1); } rankLabels = []; }
 // 순위 번호를 건물 지붕 위에(표의 순위와 같은 숫자, '비슷함'이면 같은 번호). 누르면 그 건물로
 function rankLabel(x) { const b = B[x.b]; if (!b) return; let cx = 0, cz = 0; for (const q of b.p) { cx += q[0]; cz += q[1]; } cx /= b.p.length; cz /= b.p.length;
-  const el = document.createElement('div'); el.className = 'lbl place rk-n'; el.textContent = x.tag || x.grp + '위'; el.title = x.tip || `${x.floor}층 · 평일 하루 ${Math.round(x.r.wd)}명`; el.onclick = () => flyBuilding(x.b);
+  const el = document.createElement('div'); el.className = 'lbl place rk-n'; el.textContent = x.tag || x.grp + '위'; el.title = x.tip || `${x.floor}층 · 1년 손님 ${Math.round(x.r.v).toLocaleString('ko-KR')}명 · 1년 남는 돈 ${wonS(x.r.profit)}`; el.onclick = () => flyBuilding(x.b);
   document.getElementById('labels').appendChild(el);
   const L = { el, x: cx, y: (b.b || 0) + b.h + 4, z: cz, pri: 14, kind: 'place', w: 0, h: 0, abs: true, nudge: true }; M.labels.unshift(L); rankLabels.push(L); }   // nudge: 붙은 건물끼리 번호가 겹치면 숨기지 않고 아래로 비킴
 // 순위 건물이 모두 화면에 들어오게 카메라를 맞춤(가운데 = 건물들 평균, 거리 = 가장 먼 건물까지에 비례, flyBuilding 과 같은 방향)
@@ -261,6 +261,16 @@ function render(s) {
   if (!w.empty) document.getElementById('rk-run').disabled = true;
   setTimeout(() => flow(s), 60);
 }
+// 하루 값 → 1년: 달마다 (평일 수 × 계절 배율 f × 평일 하루) + (쉬는 날 수 × f × 쉬는 날 하루)를 더함. YEAR 가 없으면 null
+function yearFlow(wd, we) {
+  const Y = (SIM && SIM.YEAR) || window.YEAR_DATA; if (!Y || !Y.months) return null;
+  const o = { wd: 0, we: 0, nWd: 0, nWe: 0 };
+  for (const m of Y.months) { const f = m.f == null ? 1 : m.f; o.wd += m.wd * f * wd; o.we += m.we * f * we; o.nWd += m.wd; o.nWe += m.we; }
+  return o;
+}
+// 손익은 음수(적자)가 많은데 SIM.won 은 음수를 '-9,120,000원'처럼 냄 → 부호를 따로 붙임
+const wonS = (v) => v < 0 ? '−' + SIM.won(-v) : SIM.won(v);
+const fmtN = (n) => `${Math.round(n).toLocaleString('ko-KR')}명`;
 function flow(s) {
   if (!SIM) { document.getElementById('st-flow').innerHTML = ''; return; }
   const key = s.id + ':' + SIM.cfgVer;   // 시간 정하기를 바꾸면 다시 계산
@@ -272,15 +282,17 @@ function flow(s) {
   if (cur !== s) return;
   const f = flowCache[key], G = SIM.GROUPS, cfg = SIM.CFG.groups;
   const mx = Math.max(1, ...f.wd.hour, ...f.we.hour);
-  const bars = (h, col) => h.map((v, i) => `<i style="height:${Math.round(100 * v / mx)}%;background:${col}" title="${i}시 ${Math.round(v)}명"></i>`).join('');
+  // 막대는 시간대별 비율(%)이라 '하루 몇 명'이 아님 — 높이는 두 종류 중 큰 값 기준
+  const bars = (h, tot, col) => h.map((v, i) => `<i style="height:${Math.round(100 * v / mx)}%;background:${col}" title="${i}시 ${(100 * v / (tot || 1)).toFixed(1)}%"></i>`).join('');
   const mix = (o, tot) => G.filter(g => o[g] > 0.5).map(g => `<span><i style="background:${cfg[g].col}"></i>${cfg[g].ko} ${Math.round(100 * o[g] / (tot || 1))}%</span>`).join('');
-  document.getElementById('fl-lg').innerHTML = '<i style="background:#1c64f2"></i>평일 <i style="background:#7048e8"></i>주말';
+  const yr = yearFlow(f.wd.tot, f.we.tot);
+  document.getElementById('fl-lg').innerHTML = '<i style="background:#1c64f2"></i>평일 <i style="background:#7048e8"></i>쉬는 날';
   document.getElementById('st-flow').innerHTML = `
-    <div class="st-kpi two"><div><b>${Math.round(f.wd.tot).toLocaleString('ko-KR')}명</b><span>평일 하루</span></div><div><b>${Math.round(f.we.tot).toLocaleString('ko-KR')}명</b><span>주말 하루</span></div></div>
-    <div class="exp-hours"><div>${bars(f.wd.hour, '#1c64f2')}</div><div>${bars(f.we.hour, '#7048e8')}</div><div class="ax"><span>0시</span><span>6시</span><span>12시</span><span>18시</span><span>23시</span></div></div>
-    <p class="exp-nb">${SIM.peakTxt ? SIM.peakTxt(f.wd.hour, '평일') + ' · ' + SIM.peakTxt(f.we.hour, '주말') : ''}</p>
-    <div class="exp-mix"><b>평일</b> ${mix(f.wd.grp, f.wd.tot)}</div><div class="exp-mix"><b>주말</b> ${mix(f.we.grp, f.we.tot)}</div>
-    <p class="st-tip">가상 인물이 이 길(중심선 14m 안)을 지나간 횟수입니다. 실제 유동인구가 아닙니다. 사람 수·교대 시간은 '자료와 가정 보기'(재생 막대를 펼치면 보입니다)를 따릅니다.</p>`;
+    <div class="st-kpi two"><div><b>${yr ? fmtN(yr.wd) : '-'}</b><span>1년 평일 ${yr ? yr.nWd + '일' : ''}</span></div><div><b>${yr ? fmtN(yr.we) : '-'}</b><span>1년 쉬는 날 ${yr ? yr.nWe + '일' : ''}</span></div></div>
+    <div class="exp-hours"><div>${bars(f.wd.hour, f.wd.tot, '#1c64f2')}</div><div>${bars(f.we.hour, f.we.tot, '#7048e8')}</div><div class="ax"><span>0시</span><span>6시</span><span>12시</span><span>18시</span><span>23시</span></div></div>
+    <p class="exp-nb">${SIM.peakTxt ? SIM.peakTxt(f.wd.hour, '평일') + ' · ' + SIM.peakTxt(f.we.hour, '쉬는 날') : ''}</p>
+    <div class="exp-mix"><b>평일</b> ${mix(f.wd.grp, f.wd.tot)}</div><div class="exp-mix"><b>쉬는 날</b> ${mix(f.we.grp, f.we.tot)}</div>
+    <p class="st-tip">가상 인물이 이 길(중심선 14m 안)을 1년 동안 지나간 횟수입니다. 쉬는 날은 토·일·공휴일이고, 달마다 평일·쉬는 날 수와 계절 사람 수 배율을 곱해 더했습니다. 막대는 시간대별 비율입니다. 실제 유동인구가 아닙니다. 사람 수·교대 시간은 '자료와 가정 보기'(재생 막대를 펼치면 보입니다)를 따릅니다.</p>`;
 }
 // 자리 순위: owner = 이 계산을 시작한 화면(거리 또는 빈 1층 목록 LIST). 다른 화면으로 바뀌면(cur !== owner) 멈춘다.
 // slots = [{ b, floor, area, where?(자리 설명, 없으면 거리 왼쪽·오른쪽 위치), side, s }], pick = 각주에 쓸 '어느 자리를 골랐나'
@@ -290,29 +302,31 @@ function rank(s, slots, pick) {
   if (SIM.carryPlan) SIM.carryPlan({ sub, hrs, floors: new Map(slots.map(x => [x.b, x.floor])) });   // 순위 건물을 열면 같은 업종·시간·층으로 채움
   const out = document.getElementById('rk-out'), btn = document.getElementById('rk-run');
   btn.disabled = true; const res = []; let i = 0; const t0 = performance.now(); clearRank(); need();
-  out.innerHTML = `<p class="exp-wait">빈 층이 있는 ${slots.length}채에 차례로 가게를 열어 하루씩 돌려 보는 중입니다(평일·주말 3번씩).</p><div class="prog"><i style="width:0%"></i></div><p class="exp-wait" id="rk-p">0 / ${slots.length}</p>`;
+  out.innerHTML = `<p class="exp-wait">빈 층이 있는 ${slots.length}채에 차례로 가게를 열어 1년씩 돌려 보는 중입니다(계절마다 평일·쉬는 날).</p><div class="prog"><i style="width:0%"></i></div><p class="exp-wait" id="rk-p">0 / ${slots.length}</p>`;
   out.scrollIntoView({ behavior: 'smooth', block: 'start' });   // 결과 자리가 기록지 아래 화면 밖이라 누른 사람이 진행을 못 봤음
   function next() {
     if (cur !== s) return;
     if (i >= slots.length) {
       SIM.restore(); btn.disabled = false;
-      res.sort((a, b) => (b.r.wd + b.r.we) - (a.r.wd + a.r.we));
-      // 시드별 (평일+주말) 범위가 묶음 첫 자리의 범위와 겹치면 같은 순위로 묶는다('비슷함') — 돌릴 때마다 생기는 차이 안이면 순서를 매기지 않음
-      const tot = (x) => x.r.wdRuns.map((v, k) => v + x.r.weRuns[k]);
+      res.sort((a, b) => b.r.profit - a.r.profit);   // 1년 남는 돈 많은 순
+      // 남는 돈 범위(pLo~pHi, 난수 흔들림)가 묶음 첫 자리의 범위와 겹치면 같은 순위로 묶는다('비슷함') — 돌릴 때마다 생기는 차이 안이면 순서를 매기지 않음
       let lead = null, grp = 0;
-      res.forEach((x, k) => { const t = tot(x); x.lo = Math.min(...t); x.hi = Math.max(...t);
-        if (!lead || x.hi < lead.lo) { lead = x; grp = k + 1; lead.n = 0; } x.grp = grp; lead.n++; x.lead = lead; });
-      const rng = (a) => `<br><small class="th-u">${Math.round(Math.min(...a))}~${Math.round(Math.max(...a))}</small>`;
-      out.innerHTML = `<table class="exp-cmp rk"><tr><th>순위</th><th>자리</th><th>평일<br><small class="th-u">하루</small></th><th>주말<br><small class="th-u">하루</small></th><th>평일 매출<br><small class="th-u">하루</small></th></tr>${res.map((x, k) => `<tr data-b="${x.b}"><td>${x.grp}${x.lead.n > 1 ? '<br><small class="th-u">비슷함</small>' : ''}</td><td>${x.where ? esc(x.where) : `${x.floor}층 · ${x.side === 'L' ? '왼쪽' : '오른쪽'} ${Math.round(x.s)}m`}${x.area ? ` · <span class="nw">${Math.round(x.area)}㎡</span>` : ''}</td><td>${Math.round(x.r.wd)}명${rng(x.r.wdRuns)}</td><td>${Math.round(x.r.we)}명${rng(x.r.weRuns)}</td><td>${SIM.won(x.r.wdWon)}</td></tr>`).join('')}</table>
+      res.forEach((x, k) => { if (!lead || x.r.pHi < lead.r.pLo) { lead = x; grp = k + 1; lead.n = 0; } x.grp = grp; lead.n++; x.lead = lead; });
+      const man = (n) => n >= 1e4 ? `${(n / 1e4).toFixed(1)}만` : Math.round(n).toLocaleString('ko-KR');   // 표가 패널보다 넓어져 1만 명 넘으면 '만' 단위
+      const rngN = (r) => `<br><small class="th-u nw">${r.hi >= 1e4 ? `${(r.lo / 1e4).toFixed(1)}~${(r.hi / 1e4).toFixed(1)}만` : `${man(r.lo)}~${man(r.hi)}`}</small>`;   // 범위는 같은 단위로
+      const rngW = (r) => { const a = wonS(r.pLo).replace(/ 원$/, ''), b = wonS(r.pHi).replace(/ 원$/, ''), u = (a.match(/[만억]$/) || [''])[0];   // 칸이 넘쳐 범위는 '원'과 앞쪽 같은 단위를 뺌
+        return `<br><small class="th-u nw">${u && b.endsWith(u) && !/[만억]./.test(a) ? a.slice(0, -1) : a}~${b}</small>`; };
+      const def = (r) => `<br><small class="th-u">${r.deficit ? `적자 ${r.deficit}달` : '적자 없음'}</small>`;
+      out.innerHTML = `<table class="exp-cmp rk"><tr><th>순위</th><th>자리</th><th>손님<br><small class="th-u">1년</small></th><th>매출<br><small class="th-u">1년</small></th><th>남는 돈<br><small class="th-u">1년</small></th></tr>${res.map((x, k) => `<tr data-b="${x.b}"><td>${x.grp}${x.lead.n > 1 ? '<br><small class="th-u">비슷함</small>' : ''}</td><td>${x.where ? esc(x.where) : `${x.floor}층 · ${x.side === 'L' ? '왼쪽' : '오른쪽'} ${Math.round(x.s)}m`}${x.area ? `<br><small class="th-u">${Math.round(x.area)}㎡</small>` : ''}</td><td>${man(x.r.v)} 명${rngN(x.r)}</td><td>${SIM.won(x.r.won)}</td><td class="nw${x.r.profit < 0 ? ' neg' : ''}">${wonS(x.r.profit)}${rngW(x.r)}${def(x.r)}</td></tr>`).join('')}</table>
         <p class="exp-nb">${SIM.demandTxt ? SIM.demandTxt(sub, hrs) : ''} 지도 건물 위 번호가 이 순위입니다.</p>
-        <p class="exp-foot">${esc(document.getElementById('rk-cat').selectedOptions[0].textContent)} · 영업 ${SIM.hoursTxt(hrs)} · 1인 ${SIM.wonX(cfg.basket)}(대표 메뉴 기준) · ${esc(pick)}, 평일·주말 3번씩 평균과 범위(사람 1:1), 범위가 겹치면 같은 순위('비슷함'), 2층 이상은 덜 고르고 앞을 지나는 사람이 많을수록 더 고르는 것(가정 β=${SIM.passby.beta})을 반영 · 계산 ${((performance.now() - t0) / 1000).toFixed(1)}초. 행을 누르면 그 건물로 가서 자세히 실험할 수 있습니다. 가상 인물로 자리끼리 비교한 값입니다.</p>`;
+        <p class="exp-foot">${esc(document.getElementById('rk-cat').selectedOptions[0].textContent)} · 영업 ${SIM.hoursTxt(hrs)} · 1인 ${SIM.wonX(cfg.basket)}(대표 메뉴 기준) · ${esc(pick)}, 1년 합계(2·5·8·11월을 평일·쉬는 날로 돌리고 같은 계절 다른 달은 사람 수 배율로 맞춤, 사람 1:1). 남는 돈 = 매출 − 임대료(R-ONE 옥포 층별 임대료 × 면적) − 임대료 밖 비용(매출의 83.6%, 농식품부 외식업체 경영실태조사). 숫자 아래 작은 범위는 돌릴 때마다 생기는 차이이고, 남는 돈 범위가 겹치면 같은 순위('비슷함'), 2층 이상은 덜 고르고 앞을 지나는 사람이 많을수록 더 고르는 것(가정 β=${SIM.passby.beta})을 반영 · 계산 ${((performance.now() - t0) / 1000).toFixed(1)}초. 행을 누르면 그 건물로 가서 자세히 실험할 수 있습니다. 가상 인물로 자리끼리 비교한 값입니다.</p>`;
       out.querySelectorAll('tr[data-b]').forEach(tr => tr.onclick = () => flyBuilding(+tr.dataset.b));
       res.slice().reverse().forEach(rankLabel); fitRank(res);   // 거꾸로 넣어야(unshift) 1위가 먼저 자리를 잡음
       out.scrollIntoView({ behavior: 'smooth', block: 'start' });   // 끝나면 결과 맨 위로, 지도엔 순위 번호
       need(); return;
     }
     const x = slots[i++];
-    res.push({ ...x, r: SIM.trySlot(x.b, x.floor, sub, cfg.basket, cfg.seats, 3, hrs) });
+    res.push({ ...x, r: SIM.trySlot(x.b, x.floor, sub, cfg.basket, cfg.seats, 3, hrs, x.area) });
     out.querySelector('.prog i').style.width = (100 * i / slots.length) + '%'; document.getElementById('rk-p').textContent = `${i} / ${slots.length}`;
     setTimeout(next, 0);
   }
@@ -322,8 +336,8 @@ function rank(s, slots, pick) {
 // ── 빈 1층 자리 목록(상권 전체) ───────────────────────────
 // 상권 전체 카드의 '빈 1층에 가게 열어 보기'를 누르면 이 패널에 상권(R-ONE 경계) 안 가게 없는 1층 목록을 연다.
 // 예전엔 누를 때마다 넓은 순으로 한 곳씩 날아가기만 해서(1 / 271…) 후보 전체를 보거나 고를 수 없었다.
-// 정렬 값 '앞을 지나는 사람'은 sim.js 가 처음에 한 번 계산해 둔 길 흐름(frontFlow, 평일)이라 즉시 나온다.
-// 하루 시뮬은 무거우므로(271곳이면 하루 1,600번 넘게) 목록 위 10곳만 '순위 내기'로 돌린다.
+// 정렬 값 '앞을 지나는 사람'은 sim.js 가 처음에 한 번 계산해 둔 길 흐름(frontFlow, 평일·쉬는 날)을 1년으로 늘린 값이라 즉시 나온다.
+// 1년 시뮬은 무거우므로(한 자리 약 1.4초) 고른 10곳까지만 '순위 내기'로 돌린다.
 const LIST = { id: '__list' };   // cur 에 넣어 다른 화면으로 바뀌면 순위 계산이 멈추게
 const LS = { sort: 'flow', st: '', area: 0, upper: false, n: 30, sel: [] };   // sel: 열어 볼 자리로 고른 건물 번호(최대 SEL_MAX, 고른 순서)
 const SEL_MAX = 10;
@@ -342,10 +356,12 @@ function candidates() {
     let x = 0, z = 0; for (const q of b.p) { x += q[0]; z += q[1]; } x /= b.p.length; z /= b.p.length;
     const st = ON_ST.get(bi);
     out.push({ b: bi, floor: emp[0].n, area: emp[0].area || 0, x, z, first: emp[0].n === 1, nEmpty: emp.length,
-      flow: P && P.PASSF[0] ? P.frontFlow(0, x, z) : null, st, name: bNameOf(b) });
+      flow: P && P.PASSF[0] ? yearFront(P, x, z) : null, st, name: bNameOf(b) });
   }
   return (CAND = out);
 }
+// 건물 앞 1년 흐름: frontFlow(0=평일, 1=쉬는 날)를 yearFlow 로 합침. 쉬는 날 흐름이 아직 없으면 평일 값으로
+function yearFront(P, x, z) { const a = P.frontFlow(0, x, z), b = P.PASSF[1] ? P.frontFlow(1, x, z) : a, y = yearFlow(a, b); return y ? y.wd + y.we : a; }
 function sameNear(sub, x, z, R = 250) { let n = 0; for (const s of SIM._shops()) if (!s.virtual && s.sub === sub && Math.hypot(s.x - x, s.z - z) <= R) n++; return n; }
 function listNow() {
   const t = M.controls.target, sub = document.getElementById('rk-cat')?.value;
@@ -367,19 +383,19 @@ function selSync() {
   const n = LS.sel.length, subKo = (SIM.SUB[document.getElementById('rk-cat').value] || {}).ko || '';
   document.querySelectorAll('#ls-t input[data-sel]').forEach(i => { i.checked = LS.sel.includes(+i.dataset.sel); i.disabled = !i.checked && n >= SEL_MAX; });
   document.getElementById('rk-why').innerHTML = n
-    ? `고른 <b>${n}곳</b>(최대 ${SEL_MAX}곳)에 ${esc(subKo)} 가게를 열어 평일·주말 하루씩 돌려 보고, 가상 손님이 많은 순으로 매깁니다. <button type="button" class="link" id="ls-clear">고른 것 지우기</button>`
+    ? `고른 <b>${n}곳</b>(최대 ${SEL_MAX}곳)에 ${esc(subKo)} 가게를 열어 1년씩 돌려 보고, 1년 남는 돈(매출 − 임대료 − 그 밖의 비용)이 많은 순으로 매깁니다. <button type="button" class="link" id="ls-clear">고른 것 지우기</button>`
     : `목록 왼쪽 네모를 눌러 열어 볼 자리를 최대 ${SEL_MAX}곳까지 고르세요.`;
   const c = document.getElementById('ls-clear'); if (c) c.onclick = () => { LS.sel = []; listTable(); };
   const btn = document.getElementById('rk-run'); btn.disabled = !n; btn.textContent = n ? `고른 ${n}곳에 열어 손님 순위 보기` : '열어 볼 자리를 고르세요';
 }
 // 숫자 이름에 마우스를 올리면 뜨는 도움말(단위·범위)
-const TIP_FLOW = '평일 하루, 가상 시민이 이 건물 앞 길(40m 안 가장 붐비는 곳)을 지나간 횟수. 실제 유동인구가 아닙니다.';
+const TIP_FLOW = '1년(평일+쉬는 날) 동안 가상 시민이 이 건물 앞 길(40m 안 가장 붐비는 곳)을 지나간 횟수. 실제 유동인구가 아닙니다.';
 function listTable() {
   const L = listNow(), sub = document.getElementById('rk-cat').value, subKo = SIM.SUB[sub] ? SIM.SUB[sub].ko : '';
   const firstN = candidates().filter(c => c.first).length;
   panel.querySelector('h2').textContent = LS.upper ? '빈 층 자리 목록' : '빈 1층 자리 목록';
   document.getElementById('ls-n').innerHTML = `${LS.upper ? '빈 층이 있는 건물' : '가게 없는 1층'} <b>${L.length}곳</b>${L.length !== (LS.upper ? candidates().length : firstN) ? ` (조건에 맞는 곳)` : ''} · ${{ flow: '앞을 지나는 사람 많은 순', area: '넓은 순', near: '지금 보는 곳에서 가까운 순' }[LS.sort]}`;
-  // 표 머리글은 짧게, 기준(평일 하루·250m 안)은 머리글 옆 작은 '?'에 마우스를 올리면 보이게
+  // 표 머리글은 짧게, 기준(1년·250m 안)은 머리글 옆 작은 '?'에 마우스를 올리면 보이게
   const tipSame = esc(`고른 업종(${subKo})의 기존 가게가 이 건물에서 250m 안에 몇 곳 있는지. 경쟁 가게 수이며 빈 곳 수가 아닙니다.`);
   const rows = L.slice(0, LS.n).map((c, k) => `<tr data-b="${c.b}"><td><label class="ls-ck" title="열어 볼 자리로 고르기"><input type="checkbox" data-sel="${c.b}" aria-label="${k + 1}번 고르기"><span>${k + 1}</span></label></td><td>${c.floor}층 · ${esc(c.name)}${c.st ? `<br><small class="th-u">${esc(c.st.ko.split(' (')[0])}</small>` : ''}</td><td>${c.area ? `${Math.round(c.area)}㎡` : '-'}</td><td>${c.flow != null ? Math.round(c.flow).toLocaleString('ko-KR') + '명' : '-'}</td><td>${c.same != null ? c.same + '곳' : '-'}</td></tr>`).join('');
   document.getElementById('ls-t').innerHTML = `<tr><th></th><th>자리</th><th>면적</th><th><span class="ls-tip" tabindex="0" data-tip="${TIP_FLOW}">앞을 지나는 사람</span></th><th><span class="ls-tip" tabindex="0" data-tip="${tipSame}">근처 같은 업종</span></th></tr>${rows}`;
@@ -410,7 +426,7 @@ function openList() {
     <p class="st-tip" id="ls-n"></p>
     <table class="exp-cmp rk ls" id="ls-t"></table>
     <button type="button" class="btn-sub" id="ls-more" hidden></button>
-    <details class="st-how"><summary>어떻게 셌나요</summary><p>‘가게 없는 1층’은 건축물대장 층별개요의 상가 층 가운데 2026년 9월 상가정보에 그 층 가게가 없는 곳입니다. 사무실·창고로 쓰거나 등록이 늦은 가게도 들어 있을 수 있습니다. 면적은 그 층 면적입니다. ‘앞을 지나는 사람’은 가상 시민이 <b>평일 하루</b> 이 건물 앞 길(가장 가까운 길 지점에서 20m 더, 최대 40m 안의 가장 붐비는 곳)을 지나간 횟수로, 실제 유동인구가 아닙니다. ‘근처 같은 업종’은 아래에서 고른 업종의 기존 가게가 <b>250m 안</b>에 몇 곳 있는지(경쟁 가게 수)입니다. 지도 위 번호는 목록 번호입니다(고른 자리가 있으면 고른 자리만, 없으면 목록 위 10곳).</p></details>
+    <details class="st-how"><summary>어떻게 셌나요</summary><p>‘가게 없는 1층’은 건축물대장 층별개요의 상가 층 가운데 2026년 9월 상가정보에 그 층 가게가 없는 곳입니다. 사무실·창고로 쓰거나 등록이 늦은 가게도 들어 있을 수 있습니다. 면적은 그 층 면적입니다. ‘앞을 지나는 사람’은 가상 시민이 <b>1년 동안</b> 이 건물 앞 길(가장 가까운 길 지점에서 20m 더, 최대 40m 안의 가장 붐비는 곳)을 지나간 횟수로, 달마다 평일·쉬는 날(토·일·공휴일) 수와 계절 사람 수 배율을 곱해 더한 값이며, 실제 유동인구가 아닙니다. ‘근처 같은 업종’은 아래에서 고른 업종의 기존 가게가 <b>250m 안</b>에 몇 곳 있는지(경쟁 가게 수)입니다. 지도 위 번호는 목록 번호입니다(고른 자리가 있으면 고른 자리만, 없으면 목록 위 10곳).</p></details>
     <div class="st-rank">
       <select id="rk-cat" aria-label="업종">${SIM.subOptions ? SIM.subOptions('viet') : ''}</select>
       <div class="rk-hours"><label>여는 시각<select id="rk-open"></select></label><label>닫는 시각<select id="rk-close"></select></label></div>

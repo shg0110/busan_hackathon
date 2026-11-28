@@ -20,7 +20,7 @@ const CFG0 = {
     worker:   { ko: '조선소 통근자',   col: '#1c64f2', wd: 3000, we: 1800, src: '가정' },
     foreign:  { ko: '외국인 근로자',   col: '#7048e8', wd: 1500, we: 2200, src: '가정' },
     resident: { ko: '주민',           col: '#9a6236', wd: 3500, we: 3800, src: '가정' },
-    tourist:  { ko: '주말 방문객',     col: '#d6336c', wd: 0,    we: 600,  src: '가정' },
+    tourist:  { ko: '관광객',          col: '#d6336c', wd: 0,    we: 600,  src: '가정' },
   },
   shift: { in: [390, 460], out: [1020, 1110], src: '가정(근거 미확인)' },   // 출근 06:30~07:40, 퇴근 17:00~18:30
   // 업종: 가격(1인 원)·자리·머무는 시간(분)·영업시간(분, 1440 넘으면 다음 날)
@@ -380,7 +380,7 @@ function makeDay(g, we, r) {
 
 // ── 하루 계산 (시간 버킷 + 활동 에이전트 분리로 페르소나 전원 1:1 실시간 구동) ─────────
 // 상태: 0 집/밖(안 보임) 1 걷는 중 2 가게 안 3 자리 기다림
-let A = [], ACTIVE = [], BUCKETS = null, SHOP_ST = null, STATS = null, W = 1, TOTAL_POP = 0, TOTAL_SPENT = 0, scen = 'wd', seedNow = 0;
+let A = [], ACTIVE = [], BUCKETS = null, SHOP_ST = null, STATS = null, W = 1, TOTAL_POP = 0, TOTAL_SPENT = 0, scen = 'wd', scenM = 0, seedNow = 0;
 let FULL = false;   // true 면 가게 실험·자리 순위 고속 계산 모드
 function pushBucket(a, t) {
   const bt = Math.max(T0, Math.min(T1, Math.round(t)));
@@ -405,7 +405,11 @@ function populate(we, seed) {
     for (let i = 0; i < list.length; i++) {
       const rec = list[i];
       let copies = 1;
-      if (we) {
+      if (CUR_M) {
+        // 달 배율(web/data/okpo_year.js): 주말 배율 × 그 달 배율을 기대 인원으로 보고 정수 + 확률로 나눈다
+        const e = (we ? rec[10] / 100 : 1) * (PD.groups[rec[0]] === 'tourist' ? MON.ft : MON.f);
+        copies = Math.floor(e) + (r() < e % 1 ? 1 : 0);
+      } else if (we) {
         const ws = rec[10];
         copies = Math.floor(ws / 100) + (r() * 100 < (ws % 100) ? 1 : 0);
       }
@@ -451,8 +455,12 @@ function populate(we, seed) {
   }
 }
 let CUR_WE = 0;   // 지금 계산 중인 날(0 평일, 1 주말): 가게 앞 흐름 계수(s.pb)를 고를 때 씀
-function reset(we, seed) {
+// 1년: 지금 계산 중인 달(0 = 달 구분 없는 보통 날, 1~12 = 그 달). 달마다 나오는 사람 수에 배율을 곱한다
+const YD = window.YEAR_DATA || null;
+let CUR_M = 0, MON = null;
+function reset(we, seed, m) {
   CUR_WE = we ? 1 : 0;
+  CUR_M = YD && m ? m : 0; MON = CUR_M ? YD.months[CUR_M - 1] : null;
   populate(we, seed);
   SHOP_ST = SHOPS.map(() => ({ occ: [] }));
   STATS = { visits: new Float32Array(SHOPS.length), spend: new Float32Array(SHOPS.length), byHour: Array.from({ length: SHOPS.length }, () => null),
@@ -594,7 +602,55 @@ function swapState(st) {
   return cur;
 }
 const blank = (full) => ({ A: [], ACTIVE: [], BUCKETS: null, SHOP_ST: null, STATS: null, W: 1, FULL: full, TOTAL_POP: 0, TOTAL_SPENT: 0 });
-function runDay(we, seed) { const live = swapState(blank(true)); reset(we, seed); for (let t = T0; t <= T1; t++) step(t, false); const st = STATS; swapState(live); return st; }
+function runDay(we, seed, m) { const live = swapState(blank(true)); reset(we, seed, m); for (let t = T0; t <= T1; t++) step(t, false); const st = STATS; swapState(live); return st; }
+
+// ── 1년 ─────────────────────────────────────────────────────
+// 1년 = 2026년 달력(web/data/okpo_year.js): 달마다 평일 수·쉬는 날(토·일·공휴일) 수 × 그 달 하루.
+// 달마다 사람 수 배율(상권 카드 결제 건수, 방문객은 기념공원 입장객)을 곱해 하루를 돌린다.
+// full: 12달 × 평일·쉬는 날 = 24일. 빠른 계산(자리 순위): 계절 가운데 달(2·5·8·11월) × 2 = 8일, 같은 계절 다른 달은 사람 수 배율 비로 늘리고 줄인다
+const YM = YD ? YD.months : Array.from({ length: 12 }, (_, i) => ({ m: i + 1, wd: 21, we: 9, f: 1, ft: 1, hol: [] }));
+const REP = [2, 2, 2, 5, 5, 5, 8, 8, 8, 11, 11, 11];
+function yearPlan(full) { const L = []; for (const we of [0, 1]) for (const m of (full ? [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] : [2, 5, 8, 11])) L.push({ we, m }); return L; }
+// 표본 하루(samples[k] = 계획 k 의 값) → 달마다 합. 각 표본이 몇 날 몫을 맡는지(cover)도 돌려준다(흔들림 범위 계산용)
+function yearFold(plan, vals) {
+  const full = plan.length >= 24, mon = new Float64Array(12), cover = new Float64Array(plan.length);
+  plan.forEach((p, k) => {
+    for (let mi = 0; mi < 12; mi++) {
+      const mm = mi + 1; if (full ? mm !== p.m : REP[mi] !== p.m) continue;
+      const days = p.we ? YM[mi].we : YM[mi].wd, sc = full ? 1 : YM[mi].f / YM[p.m - 1].f, w = days * sc;
+      mon[mi] += w * vals[k]; cover[k] += w;
+    }
+  });
+  return { mon: Array.from(mon), tot: mon.reduce((a, b) => a + b, 0), cover };
+}
+// 난수 흔들림: 표본 하루 값을 그 달 배율로 나눈 값의 변동계수(평일·쉬는 날 따로)로, 1년 합의 ±2 표준오차 범위
+function yearBand(plan, vals, fold) {
+  let v2 = 0;
+  for (const we of [0, 1]) {
+    const ks = plan.map((p, k) => k).filter(k => plan[k].we === we), y = ks.map(k => vals[k] / YM[plan[k].m - 1].f);
+    const mean = y.reduce((a, b) => a + b, 0) / (y.length || 1); if (!(mean > 0)) continue;
+    const cv = Math.sqrt(y.reduce((a, b) => a + (b - mean) ** 2, 0) / Math.max(1, y.length - 1)) / mean;
+    for (const k of ks) v2 += (fold.cover[k] * vals[k] * cv) ** 2;
+  }
+  const se = Math.sqrt(v2); return [Math.max(0, fold.tot - 2 * se), fold.tot + 2 * se];
+}
+// 임대료: R-ONE 층별임대료(옥포, 없는 층은 경남) × 빌리는 면적. 2층 이하·층 면적 합 330㎡ 이하 건물은 소규모 상가 값
+function rentOf(bi, floor, area) {
+  if (!YD || !YD.rent) return { month: 0, perM2: 0, kind: '', src: '' };
+  const fl = (window.FLOORS && window.FLOORS.b[String(bi)]) || [];
+  const top = fl.reduce((a, f) => Math.max(a, f.n), 0), sum = fl.reduce((a, f) => a + (f.n > 0 ? f.area || 0 : 0), 0);
+  const kind = top <= 2 && sum > 0 && sum <= 330 ? '소규모' : '중대형';
+  const key = floor < 0 ? '-1' : floor >= 6 ? '6' : String(floor);
+  const t = YD.rent[kind][key] || YD.rent['중대형'][key] || YD.rent['중대형']['1'];
+  return { month: Math.round(t.won * (area || 0)), perM2: t.won, kind, src: t.src };
+}
+const OTHER = YD ? YD.other : 0.836;
+// 달마다 손익: 매출 − 임대료 밖 비용(매출 × OTHER) − 월 임대료
+function money(monWon, rentM) {
+  const months = monWon.map((w, i) => ({ m: i + 1, won: w, profit: w * (1 - OTHER) - rentM }));
+  const won = monWon.reduce((a, b) => a + b, 0);
+  return { months, won, rent: rentM * 12, cost: won * OTHER, profit: won * (1 - OTHER) - rentM * 12, deficit: months.filter(x => x.profit < 0).length };
+}
 
 // ── 그리기: 사람 = 화면 크기 고정 점 ─────────────────────────
 const geo = new THREE.BufferGeometry();
@@ -697,18 +753,19 @@ function drawFigures(n) {
 // ── 화면: 하루 재생 패널 ─────────────────────────────────────
 const hm = (t) => { const d = t >= 1440, m = Math.floor(t) % 1440; return (d ? '다음 날 ' : '') + String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
 const wonX = (v) => Math.round(v).toLocaleString('ko-KR') + '원';   // 메뉴·1인 지출은 원 단위 그대로
-function won(v) { if (v >= 1e8) return (v / 1e8).toFixed(v >= 1e9 ? 1 : 2) + '억 원'; if (v >= 1e4) return Math.round(v / 1e4).toLocaleString('ko-KR') + '만 원'; return Math.round(v).toLocaleString('ko-KR') + '원'; }
+function won(v) { if (v < 0) return '−' + won(-v); if (v >= 1e8) return (v / 1e8).toFixed(v >= 1e9 ? 1 : 2) + '억 원'; if (v >= 1e4) return Math.round(v / 1e4).toLocaleString('ko-KR') + '만 원'; return Math.round(v).toLocaleString('ko-KR') + '원'; }
 // 재생 속도: 배속을 직접 정함. 1배 = 1초에 15분(하루 약 1분 24초). 0.25배 ~ 10배, −·+ 단추는 자주 쓰는 배속으로 한 단계씩
 const BASE_MIN = 15, MULT_MIN = 0.25, MULT_MAX = 10, MULT_STEPS = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 6, 8, 10];
 const fmtMult = (m) => (Math.round(m * 100) / 100).toString();
-const panel = document.createElement('section'); panel.id = 'sim'; panel.setAttribute('aria-label', '가상 손님 하루');
+const panel = document.createElement('section'); panel.id = 'sim'; panel.setAttribute('aria-label', '가상 손님 재생');
 panel.innerHTML = `
   <div class="sim-head">
-    <button id="sim-play" class="sim-play"><span class="ico">▶</span> 하루 돌려 보기</button>
+    <button id="sim-play" class="sim-play"><span class="ico">▶</span> 재생</button>
     <div class="sim-time"><b id="sim-clock">05:00</b><span id="sim-sub">1초에 15분</span></div>
     <div class="seg" id="sim-day" role="group" aria-label="요일">
-      <button data-s="wd" class="on">평일</button><button data-s="we">주말</button>
+      <button data-s="wd" class="on">평일</button><button data-s="we">쉬는 날</button>
     </div>
+    <label class="sim-mon"><span class="sr">재생할 달</span><select id="sim-month" aria-label="재생할 달"><option value="0">보통 날</option>${YM.map(x => `<option value="${x.m}">${x.m}월</option>`).join('')}</select></label>
     <div class="spd" id="sim-speed" role="group" aria-label="재생 속도(배속)">
       <button type="button" class="spd-btn" data-d="-1" aria-label="더 느리게">−</button>
       <label class="spd-in"><input id="sim-mult" type="number" inputmode="decimal" min="${MULT_MIN}" max="${MULT_MAX}" step="0.25" value="1" aria-label="배속"><span>배속</span></label>
@@ -741,7 +798,7 @@ const assumed = GROUPS.filter(g => CFG.groups[g].src === '가정' || /가정/.te
   const pdG = pdCount(r => PD.groups[r[0]]), pdW = pdCount(r => PD.wkeys[r[13]]);
   const WK_KO = { 'foreign.vn': '베트남', 'foreign.halal': '할랄 음식 국적', 'foreign.etc': '그 밖 근로자·가족', 'foreign.expat': '선주 감독관·외국 기술자와 가족' };
   $('sim-src').innerHTML = `<ul>
-    ${PD ? li(`가상 시민 ${PD.n.toLocaleString('ko-KR')}명(1:1, v${PD.version})`, GROUPS.map(g => `${CFG.groups[g].ko} ${(pdG[g] || 0).toLocaleString('ko-KR')}명`).join(' · ') + ' — data/processed/personas (tools/build_personas.py). 주말 인원은 구분별 주말 배율로 늘고 줄어듦')
+    ${PD ? li(`가상 시민 ${PD.n.toLocaleString('ko-KR')}명(1:1, v${PD.version})`, GROUPS.map(g => `${CFG.groups[g].ko} ${(pdG[g] || 0).toLocaleString('ko-KR')}명`).join(' · ') + ' — data/processed/personas (tools/build_personas.py). 쉬는 날(토·일·공휴일) 인원은 구분별 주말 배율로, 달마다 인원은 달 배율로 늘고 줄어듦')
       : GROUPS.map(g => li(CFG.groups[g].ko + ` (평일 ${CFG.groups[g].wd.toLocaleString('ko-KR')}명·주말 ${CFG.groups[g].we.toLocaleString('ko-KR')}명)`, CFG.groups[g].src)).join('')}
     ${CFG.scale ? li('규모 맞춤(모든 부류 × ' + CFG.scale.v + ')', CFG.scale.src) : '<li><b>규모 비교(가상 ↔ 실제 카드)</b> <span id="scale-cmp">이 칸을 열 때 계산합니다.</span></li>'}
     ${li('교대 시간', `출근 ${sh(CFG.shift.in[0])}~${sh(CFG.shift.in[1])}, 퇴근 ${sh(CFG.shift.out[0])}~${sh(CFG.shift.out[1])} — ${CFG.shift_src || CFG.shift.src || '가정'}`)}
@@ -759,6 +816,10 @@ const assumed = GROUPS.filter(g => CFG.groups[g].src === '가정' || /가정/.te
     ${li('2층 이상 가게', '1층보다 ' + CFG.upperFloor + '배 덜 고름 — 가정(근거 자료 없음). 가게 매력도는 근거 자료가 없어 모두 1')}
     ${li('가게 앞을 지나는 사람 β = ' + PASSBY, 'β=0 으로 하루 돌린 가상 인물이 가게 앞을 지나간 인원(평일·주말 따로)이 가게들 평균의 몇 배인지를 β 제곱해 가게 고르기 무게에 곱함(0.2~5배로 자름). 가게 앞 = 가게에서 가장 가까운 길 노드 거리 + 20m(최대 40m) 안에서 가장 많이 지나간 노드. 어느 가게로 가는지만 바꾸지만 길목 가게가 차서 하루 결제가 약 0.4% 줄어듦(평일 36,113 → 36,061건). 0 이면 위치 장점 없음 — 가정')}
     ${li('영업시간', '세부 업종마다 하나씩 정한 가정 값(상가정보에 영업시간 항목이 없음). 시간 정하기에서 업종·가게마다 바꿀 수 있음')}
+    ${YD ? li('1년 달력', YD.src_cal + ` — 평일 ${YM.reduce((a, x) => a + x.wd, 0)}일 · 쉬는 날 ${YM.reduce((a, x) => a + x.we, 0)}일`) : ''}
+    ${YD ? li('달마다 나오는 사람 수', YD.src_f + ' — ' + YM.map(x => `${x.m}월 ${x.f.toFixed(2)}`).join(' · ')) : ''}
+    ${YD ? li('임대료', YD.src_rent + '. ' + YD.small) : ''}
+    ${YD ? li('재료·인건비 등', YD.src_other) : ''}
   </ul><p>근거: docs/okpo-persona-sources.md</p>`;
 }
 $('sim-note').textContent = `가상 인물 ${' '}점 1개 = 사람 약 ${'{W}'}명. ` + (assumed ? '사람 수·교대 시간은 아직 근거 확인 전 가정 값입니다.' : '');
@@ -791,13 +852,13 @@ function copyKeys(o) { const c = {}; for (const k in o) c[k] = o[k].slice(); ret
 // 2시간마다 저장(사람 2만 명이라 저장점 1개가 약 6MB — 1시간마다면 60MB)
 function keep(s) { if (s % 120 === 0 && CK.key === liveKey && !CK.m.has(s) && SHOP_ST.length === SHOPS.length) CK.m.set(s, snap(s)); }
 function seek(t) {
-  const key = scen + ':' + TS.ver;   // 시간 설정이 바뀌면 저장점을 새로
+  const key = scen + ':' + scenM + ':' + TS.ver;   // 요일·달·시간 설정이 바뀌면 저장점을 새로
   if (CK.key !== key) { CK.key = key; CK.m.clear(); }
   let from;
   if (liveKey === key && A.length && t >= simT) from = Math.floor(simT);
   else {
     let best = -1; for (const m of CK.m.keys()) if (m <= t && m > best) best = m;
-    if (best >= 0) { restoreSnap(CK.m.get(best)); from = best; } else { reset(scen === 'we', 0); from = T0 - 1; }
+    if (best >= 0) { restoreSnap(CK.m.get(best)); from = best; } else { reset(scen === 'we', 0, scenM); from = T0 - 1; }
     liveKey = key;
   }
   for (let s = from + 1; s <= t; s++) { step(s, true); keep(s); }
@@ -817,16 +878,23 @@ function ui() {
     <div><b>${won(TOTAL_SPENT)}</b><span>지금까지 쓴 돈</span></div>`;
   if (PD) {
     $('sim-sub').textContent = perSec(speed);   // 시각 아래는 재생 속도(배속 칸과 맞춤). 인원은 아래 sim-note 에
-    $('sim-note').textContent = `점 1개 = 가상 시민 1명 (하루 유동 ${TOTAL_POP.toLocaleString('ko-KR')}명 전원 · 상권 이동 ${A.length.toLocaleString('ko-KR')}명).`;
+    $('sim-note').textContent = `${scenM ? scenM + '월 ' : ''}${scen === 'we' ? '쉬는 날' : '평일'} · 점 1개 = 가상 시민 1명 (이날 유동 ${TOTAL_POP.toLocaleString('ko-KR')}명 전원 · 상권 이동 ${A.length.toLocaleString('ko-KR')}명).`;
   } else {
     $('sim-note').textContent = `점 1개 = 가상 인물 약 ${W.toFixed(1)}명. ` + (assumed ? '사람 수·교대 시간·업종 고르는 비율은 근거 확인 전 가정 값입니다.' : '');
   }
   for (const f of uiHooks) f();
   need();
 }
-function playBtn() { syncDot(); document.dispatchEvent(new CustomEvent('sim-play', { detail: { playing } })); $('sim-play').innerHTML = playing ? '<span class="ico">❚❚</span> 멈추기' : '<span class="ico">▶</span> 하루 돌려 보기'; $('sim-play').classList.toggle('on', playing); }
+function playBtn() { syncDot(); document.dispatchEvent(new CustomEvent('sim-play', { detail: { playing } })); $('sim-play').innerHTML = playing ? '<span class="ico">❚❚</span> 멈추기' : '<span class="ico">▶</span> 재생'; $('sim-play').classList.toggle('on', playing); }
 $('sim-play').onclick = () => { playing = !playing; playBtn(); if (playing && (simT >= TS.p1 || simT < TS.p0)) seek(TS.p0); };
 $('sim-range').oninput = (e) => seek(+e.target.value);
+// 재생할 날: 평일·쉬는 날 × 달(0 = 달 구분 없는 보통 날). 1년 결과의 달 막대를 누르면 그 달로 온다
+function setMonth(m, sc) {
+  scenM = YD ? (+m || 0) : 0; if (sc) { scen = sc; $('sim-day').querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.s === sc)); }
+  $('sim-month').value = String(scenM); seek(simT);
+  if (panel.classList.contains('folded')) $('sim-fold').click();   // 접혀 있으면 펴서 그 달 재생이 보이게
+}
+$('sim-month').onchange = () => setMonth($('sim-month').value);
 $('sim-day').querySelectorAll('button').forEach(b => b.onclick = () => {
   $('sim-day').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); scen = b.dataset.s; seek(simT);
 });
@@ -962,18 +1030,16 @@ function applyTS(D) {
 }
 document.addEventListener('click', (e) => { if (e.target.id === 'ts-chip-reset') applyTS(tsDefault()); });
 
-// 규모 비교: 가상 하루(평일·주말, 지금 시간 설정 기준)와 옥포1동 카드 매출(경남빅데이터허브 주요상권, NH카드 점유율 보정 추정, 2026-09)
+// 규모 비교: 가상 9월 한 달(평일·쉬는 날 하루씩 돌려 날 수를 곱함, 지금 시간 설정 기준)과 옥포1·2동 카드 매출 2026-09(경남빅데이터허브 주요상권, NH카드 점유율 보정 추정)
 $('sim-src-d').addEventListener('toggle', () => {
   const el = $('scale-cmp'); if (!$('sim-src-d').open || !el) return;
-  const day = (we) => { const st = runDay(we, 0); let v = 0, w = 0; for (let i = 0; i < st.visits.length; i++) { v += st.visits[i]; w += st.spend[i]; } return [v, w]; };
+  const M = 9, mo = YM[M - 1], day = (we) => { const st = runDay(we, 0, YD ? M : 0); let v = 0, w = 0; for (let i = 0; i < st.visits.length; i++) { v += st.visits[i]; w += st.spend[i]; } return [v, w]; };
   const [wv, ww] = day(false), [ev, ew] = day(true); drawDirty = true; need();
-  const man = (x) => Math.round(x / 1e4).toLocaleString('ko-KR') + '만 원';
-  const per = wv / SHOPS.filter(x => !x.virtual).length;
-  el.innerHTML = `가상: 하루 가게 방문 평일 ${Math.round(wv).toLocaleString('ko-KR')}명·${man(ww)}, 주말 ${Math.round(ev).toLocaleString('ko-KR')}명·${man(ew)}. 지도 안 가게 ${SHOPS.filter(x => !x.virtual).length.toLocaleString('ko-KR')}곳이라 가게당 평일 약 ${per.toFixed(1)}명. ` +
-    `실제(경남빅데이터허브 소비동향, 카드 점유율 보정 추정, 2026-09): 옥포1동 52.66억·옥포2동 67.24억 원, 옥포1동은 약 17.7만 건(건당 약 3만 원). 하루로 나누면 두 동 약 4억 원, 건당 3만 원이면 약 1.3만 건. ` +
-    `가상 매출은 그 약 ${Math.round(100 * ww / 4e8)}%입니다. 두 동 상가정보 1,714곳 중 가상으로 돌리는 가게가 ${SHOPS.filter(x => !x.virtual).length.toLocaleString('ko-KR')}곳(${Math.round(100 * SHOPS.filter(x => !x.virtual).length / 1714)}%)이라 실제를 그만큼 줄여 견줘도 약 ${Math.round(100 * ww / (4e8 * SHOPS.filter(x => !x.virtual).length / 1714))}%입니다. ` +
-    `카드 1건은 여럿이 낸 값일 수 있고 현금은 빠졌지만, 가상 손님 수나 1인 지출이 실제보다 작게 잡혀 있을 가능성이 큽니다. ` +
-    `그래서 '가게 열어 보기'는 손님 수 자체보다 같은 업종 기존 가게들 가운데 순위로 보세요.`;
+  const nShop = SHOPS.filter(x => !x.virtual).length, monV = wv * mo.wd + ev * mo.we, monW = ww * mo.wd + ew * mo.we, real = (52.66 + 67.24) * 1e8, realS = real * nShop / 1714;
+  el.innerHTML = `가상 9월(평일 ${mo.wd}일 · 쉬는 날 ${mo.we}일): 가게 방문 ${Math.round(monV).toLocaleString('ko-KR')}명 · 매출 ${won(monW)}(가게 ${nShop.toLocaleString('ko-KR')}곳). ` +
+    `실제 9월(경남빅데이터허브 소비동향, 카드 점유율 보정 추정, 2026-09): 옥포1동 52.66억·옥포2동 67.24억, 두 동 ${won(real)}(상가정보 1,714곳). ` +
+    `가게 수 비율(${Math.round(100 * nShop / 1714)}%)로 줄이면 ${won(realS)}이고 가상 매출은 그 ${Math.round(100 * monW / realS)}%입니다. ` +
+    `카드 1건은 여럿이 낸 값일 수 있고 현금은 빠졌습니다. 1년 손익의 매출은 이 규모를 따릅니다.`;
 });
 
 function tick(now) {
@@ -1016,8 +1082,9 @@ function parseT(s) { const [h, m] = s.split(':').map(Number); return Math.max(TS
 requestAnimationFrame(tick);
 
 // ── 빈 층에 가게 열어 보기 ───────────────────────────────────
-// 가게를 하나 더하고(또는 끄고) 하루를 평일·주말 × 다섯 번(다른 난수) 돌려 평균을 낸다.
-const RUNS = 5;
+// 가게를 하나 더해 1년(12달 × 평일·쉬는 날 = 24일)을 돌린다. 주변 가게 영향은 계절 가운데 달(2·5·8·11월) 8일만 가게를 끈 날과 견준다.
+const RUNS = 5;   // (예전 하루 실험 횟수, 지금은 쓰지 않음)
+const NB_M = new Set([2, 5, 8, 11]);
 // 실험 업종 목록: 큰 업종(기획 비교 순서: 다국적 → 주점 → 식사 → 카페 → 장보기 → 생활) 아래 세부 업종
 const EXP_ORDER = ['intl', 'pub', 'meal', 'cafe', 'mart', 'life'].filter(c => SUBS_OF[c] && SUBS_OF[c].length);
 const subOptions = (sel) => EXP_ORDER.map(c => `<optgroup label="${esc(CFG.cats[c].ko)}">${SUBS_OF[c].map(x => `<option value="${x.id}"${x.id === sel ? ' selected' : ''}>${esc(x.ko)}${SD.counts && SD.counts.by_sub && !SD.counts.by_sub[x.id] ? ' (옥포에 없음)' : ''}</option>`).join('')}</optgroup>`).join('');
@@ -1033,35 +1100,44 @@ function addVirtual(bi, floor, sub, price, seats, hrs) {
 }
 function removeVirtual(s) { SHOPS.pop(); BYCAT[s.c].splice(BYCAT[s.c].indexOf(s), 1); SHOPNODE = null; catWindows(); }
 function neighbors(s, R) { return SHOPS.filter(o => !o.virtual && o.c === s.c && Math.hypot(o.x - s.x, o.z - s.z) <= R).map(o => o.i); }
-function experiment(bi, floor, sub, price, seats, hrs) {
-  const s = addVirtual(bi, floor, sub, price, seats, hrs);
-  const nb = neighbors(s, 250);
-  const same = SHOPS.filter(o => !o.virtual && o.sub === sub).map(o => o.i);   // 같은 세부 업종 기존 가게(견줄 기준)
-  const res = {};
-  for (const sc of ['wd', 'we']) {
-    const runs = [], sameV = new Float64Array(same.length);
-    for (let k = 0; k < RUNS; k++) {
-      s.off = true; const base = runDay(sc === 'we', k); const nbBase = nb.reduce((a, i) => a + base.visits[i], 0);
-      s.off = false; const st = runDay(sc === 'we', k); const nbNew = nb.reduce((a, i) => a + st.visits[i], 0);
-      same.forEach((i, j) => { sameV[j] += st.visits[i] / RUNS; });
-      runs.push({ v: st.visits[s.i], won: st.spend[s.i], lost: st.lost[s.i], hour: st.byHour[s.i] ? Array.from(st.byHour[s.i]) : new Array(24).fill(0),
-        grp: { ...(st.byGroup[s.i] || {}) }, nb: nbNew - nbBase });
-    }
-    const avg = (f) => runs.reduce((a, r) => a + f(r), 0) / runs.length;
-    res[sc] = { v: avg(r => r.v), vMin: Math.min(...runs.map(r => r.v)), vMax: Math.max(...runs.map(r => r.v)), won: avg(r => r.won), lost: avg(r => r.lost),
-      nb: avg(r => r.nb), nbSame: runs.every(r => r.nb < 0) || runs.every(r => r.nb > 0), hour: Array.from({ length: 24 }, (_, h) => avg(r => r.hour[h])),
-      grp: Object.fromEntries(GROUPS.map(g => [g, avg(r => r.grp[g] || 0)])) };
-    // 같은 업종 기존 가게들 하루 손님(가상)의 중앙값·위 25% 와, 이 자리가 그중 몇 번째쯤인지 — 손님 수 절대값보다 '이 자리가 나은가'를 보게
-    const sv = Array.from(sameV).sort((a, b) => a - b), q = (f) => sv.length ? sv[Math.min(sv.length - 1, Math.floor(f * sv.length))] : 0;
-    res[sc].bench = { n: sv.length, med: q(0.5), p75: q(0.75), above: sv.filter(v => v > res[sc].v).length };
-  }
-  // 차이의 까닭(화면 한 줄): 기존 같은 업종 가게 중 2층 이상 수, 가게 앞을 지나는 사람(가게들 평균 대비, 평일)
+// 한 날씩 나눠 계산(하루 약 0.25초)하고 사이마다 화면에 진행을 알린다. 날마다 가상 가게를 넣었다 빼서 재생 화면 손님이 실험 가게로 가지 않게 한다
+function experiment(bi, floor, sub, price, seats, hrs, onProg) {
+  const plan = yearPlan(true), K = plan.length, rows = [];
+  let s = addVirtual(bi, floor, sub, price, seats, hrs);
+  const nb = neighbors(s, 250), same = SHOPS.filter(o => !o.virtual && o.sub === sub).map(o => o.i), si = s.i;
   const fr = (x, z) => PASSF[0] ? (frontFlow(0, x, z) + 1) / (PASS_MEAN[0] + 1) : null, sf = same.map(i => fr(SHOPS[i].x, SHOPS[i].z)).filter(v => v != null).sort((a, b) => a - b);
-  res.why = { floor, upper: same.filter(i => (SHOPS[i].f || 1) >= 2).length, n: same.length, here: fr(s.x, s.z), sameMed: sf.length ? sf[sf.length >> 1] : null };
+  const why = { floor, upper: same.filter(i => (SHOPS[i].f || 1) >= 2).length, n: same.length, here: fr(s.x, s.z), sameMed: sf.length ? sf[sf.length >> 1] : null };
+  const nbCount = nb.length, nbSub = nb.filter(i => SHOPS[i].sub === sub).length;
   removeVirtual(s);
-  res.nbCount = nb.length; res.nbSub = nb.filter(i => SHOPS[i].sub === sub).length;
-  // 재생 화면 상태는 runDay 가 비켜 뒀다 돌려놓으므로 다시 계산할 필요 없음
-  return res;
+  return new Promise((done) => {
+    let k = 0;
+    (function one() {
+      const p = plan[k], we = !!p.we;
+      s = addVirtual(bi, floor, sub, price, seats, hrs);
+      const st = runDay(we, p.m, p.m), row = { v: st.visits[si], won: st.spend[si], lost: st.lost[si], hour: st.byHour[si] ? Array.from(st.byHour[si]) : new Array(24).fill(0),
+        grp: { ...(st.byGroup[si] || {}) }, same: same.map(i => st.visits[i]), nb: null };
+      if (NB_M.has(p.m)) {
+        const nbNew = nb.reduce((a, i) => a + st.visits[i], 0);
+        s.off = true; const base = runDay(we, p.m, p.m); s.off = false;
+        row.nb = nbNew - nb.reduce((a, i) => a + base.visits[i], 0);
+      }
+      removeVirtual(s);
+      rows.push(row); k++;
+      if (onProg) onProg(k, K, p);
+      if (k < K) { setTimeout(one, 0); return; }
+      const fv = yearFold(plan, rows.map(r => r.v)), fw = yearFold(plan, rows.map(r => r.won)), band = yearBand(plan, rows.map(r => r.v), fv), cv = fv.cover;
+      const sumBy = (f) => rows.reduce((a, r, j) => a + cv[j] * f(r), 0);
+      const hourOf = (we) => Array.from({ length: 24 }, (_, h) => rows.reduce((a, r, j) => a + (plan[j].we === we ? cv[j] * r.hour[h] : 0), 0));
+      const nbRows = rows.map((r, j) => [plan[j], r.nb]).filter(x => x[1] != null), nbPlan = nbRows.map(x => x[0]);
+      const nbYear = nbRows.length ? yearFold(nbPlan, nbRows.map(x => x[1])).tot : 0;
+      const sameYear = same.map((_, j) => sumBy(r => r.same[j])).sort((a, b) => a - b), q = (f) => sameYear.length ? sameYear[Math.min(sameYear.length - 1, Math.floor(f * sameYear.length))] : 0;
+      done({ plan, v: fv.tot, lo: band[0], hi: band[1], won: fw.tot, monV: fv.mon, monWon: fw.mon, lost: sumBy(r => r.lost),
+        wdV: rows.reduce((a, r, j) => a + (plan[j].we ? 0 : cv[j] * r.v), 0), weV: rows.reduce((a, r, j) => a + (plan[j].we ? cv[j] * r.v : 0), 0),
+        hourWd: hourOf(0), hourWe: hourOf(1), grp: Object.fromEntries(GROUPS.map(g => [g, sumBy(r => r.grp[g] || 0)])),
+        nb: nbYear, nbSame: nbRows.length > 0 && (nbRows.every(x => x[1] < 0) || nbRows.every(x => x[1] > 0)),
+        bench: { n: sameYear.length, med: q(0.5), p75: q(0.75), above: sameYear.filter(v => v > fv.tot).length }, why, nbCount, nbSub });
+    })();
+  });
 }
 // 정보창: 빈 층이 있으면 '가게 열어 보기' 단추
 const prevExtra = MP.infoExtra;
@@ -1072,7 +1148,7 @@ MP.infoExtra = (b, bi) => {
   if (!empties.length) return base;
   const cf = CARRY && CARRY.floors.get(bi);   // 자리 순위에서 고른 층·업종을 이어받음
   if (cf) lastSub = CARRY.sub;
-  const opts = empties.map(f => `<option value="${f.n}"${f.n === cf ? ' selected' : ''}>${f.n}층 · ${Math.round(f.area || 0)}㎡</option>`).join('');
+  const opts = empties.map(f => `<option value="${f.n}" data-area="${Math.round(f.area || 0)}"${f.n === cf ? ' selected' : ''}>${f.n}층 · ${Math.round(f.area || 0)}㎡</option>`).join('');
   return base + `<div class="exp" id="exp">
     <p class="exp-title">이 빈 층에 가게 열어 보기</p>
     <div class="exp-grid">
@@ -1081,10 +1157,12 @@ MP.infoExtra = (b, bi) => {
       <label>자리<input id="x-seats" type="number" min="2" max="200" step="1"></label>
       <label>여는 시각<select id="x-open"></select></label>
       <label>닫는 시각<select id="x-close"></select></label>
+      <label>빌리는 면적(㎡)<input id="x-area" type="number" min="5" max="5000" step="1"></label>
+      <label>재료·인건비 등(매출의 %)<input id="x-other" type="number" min="0" max="100" step="0.1" value="${(OTHER * 100).toFixed(1)}"></label>
     </div>
     <p class="x-hours-note" id="x-hours-note"></p>
     <div class="x-menu" id="x-menu"></div>
-    <button id="x-run" class="btn-primary">이 가게 손님 세어 보기 <span>평일·주말 각 ${RUNS}번</span></button>
+    <button id="x-run" class="btn-primary">이 가게 1년 돌려 보기 <span>${YD ? YD.year + '년 ' : ''}12달 · 평일·쉬는 날</span></button>
     <div id="x-out" aria-live="polite"></div>
   </div>`;
 };
@@ -1114,6 +1192,11 @@ document.addEventListener('click', (e) => {
   } else if (e.target.closest('#x-menu .m-del')) { e.target.closest('.m-row').remove(); updateBasket(); }
 });
 document.addEventListener('change', (e) => { if (e.target.id === 'x-open' || e.target.id === 'x-close') hoursNote(); });
+// 층을 바꾸면 빌리는 면적을 그 층 면적으로. 면적·비용 비율을 바꾸면 다시 돌리지 않고 손익만 새로 셈
+document.addEventListener('change', (e) => { if (e.target.id === 'x-floor') setArea(); });
+document.addEventListener('input', (e) => { if ((e.target.id === 'x-area' || e.target.id === 'x-other') && LAST) renderExp(...LAST); });
+function setArea() { const o = $('x-floor') && $('x-floor').selectedOptions[0]; if (o && $('x-area')) $('x-area').value = o.dataset.area || ''; }
+let LAST = null;
 const obs = new MutationObserver(() => { if ($('x-cat') && !$('x-menu').childElementCount) fillDefaults(); });
 obs.observe($('i-body'), { childList: true });
 // 대표 메뉴 표: 메뉴마다 가격·인분(시키는 사람 한 명이 먹는 양)을 고칠 수 있다. 주문 비율(손님 중 시키는 비율)은 고치지 않고 표시만 하며 계산에 곱한다. 근거가 있는 가격은 '확인', 없는 것은 '가정'
@@ -1131,10 +1214,10 @@ function demandTxt(sub, h) {
   return t;
 }
 function hoursNote() { const el = $('x-hours-note'); if (!el) return; const sub = $('x-cat').value, d = hoursOf(sub, SUB[sub].cat), h = readHours($('x-open'), $('x-close'));
-  el.textContent = (h[0] === d[0] && h[1] === d[1] ? `${SUB[sub].ko} 보통 영업시간(가정)입니다. 내 가게 시간으로 바꿔 보세요.` : `${SUB[sub].ko} 보통(${hoursTxt(d)})과 다르게 ${hoursTxt(h)}로 셉니다.`) + ' 새 손님은 마감 30분 전(라스트 오더)까지 받습니다. 하루는 05:00~다음 날 05:00(24시간)을 셉니다. ' + demandTxt(sub, h); }
+  el.textContent = (h[0] === d[0] && h[1] === d[1] ? `${SUB[sub].ko} 보통 영업시간(가정)입니다. 내 가게 시간으로 바꿔 보세요.` : `${SUB[sub].ko} 보통(${hoursTxt(d)})과 다르게 ${hoursTxt(h)}로 셉니다.`) + ' 새 손님은 마감 30분 전(라스트 오더)까지 받습니다. 날마다 05:00~다음 날 05:00(24시간)을 셉니다. ' + demandTxt(sub, h); }
 function fillDefaults() {
   const sb = SUB[$('x-cat').value]; if (!sb) return;
-  $('x-seats').value = sb.seats;
+  $('x-seats').value = sb.seats; if (!$('x-area').value) setArea();
   fillHours($('x-open'), $('x-close'), $('x-cat').value);
   if (CARRY && CARRY.sub === $('x-cat').value && CARRY.floors.has(MP.selected)) { $('x-open').value = CARRY.hrs[0]; $('x-close').value = CARRY.hrs[1]; }
   hoursNote();
@@ -1168,29 +1251,35 @@ function updateBasket() {
   document.querySelectorAll('#x-menu .m-row').forEach((tr, i) => { const v = ms[i].price * ms[i].qty * ms[i].share; tot += v; tr.querySelector('.m-s').textContent = v ? wonX(Math.round(v / 100) * 100) : '—'; });
   $('x-basket').textContent = wonX(Math.round(tot / 100) * 100);
 }
+let EXP_BUSY = false;
 function runExp() {
-  const bi = MP.selected; if (bi < 0) return;
+  const bi = MP.selected; if (bi < 0 || EXP_BUSY) return;
   const sub = $('x-cat').value, sb = SUB[sub], menus = readMenus();
   const floor = +$('x-floor').value, price = Math.max(500, basketOf(menus) || sb.basket), seats = Math.max(2, +$('x-seats').value || sb.seats);
   const hrs = readHours($('x-open'), $('x-close'));
-  $('x-out').innerHTML = '<p class="exp-wait">계산 중…</p>';
-  setTimeout(() => {
-    const t0 = performance.now();
-    const r = experiment(bi, floor, sub, price, seats, hrs);
+  EXP_BUSY = true; $('x-run').disabled = true;
+  $('x-out').innerHTML = `<p class="exp-wait" id="x-wait">1년을 한 달씩 돌리는 중…</p><div class="prog"><i style="width:0%"></i></div>`;
+  const t0 = performance.now();
+  setTimeout(() => experiment(bi, floor, sub, price, seats, hrs, (k, K, p) => {
+    const w = $('x-wait'); if (!w) return;
+    w.textContent = `1년을 한 달씩 돌리는 중 · ${p.m}월 ${p.we ? '쉬는 날' : '평일'} (${k} / ${K})`;
+    $('x-out').querySelector('.prog i').style.width = (100 * k / K) + '%';
+  }).then((r) => {
+    EXP_BUSY = false; if ($('x-run')) $('x-run').disabled = false;
     const ms = performance.now() - t0;
     HIST.unshift({ bi, floor, sub, price, seats, menus, r, hrs });
     while (HIST.length > 6) HIST.pop();
-    renderExp(r, sub, price, ms, bi, floor, menus, hrs);
-  }, 30);
+    if (MP.selected === bi && $('x-out')) renderExp(r, sub, price, ms, bi, floor, menus, hrs);
+  }), 30);
 }
 // 가장 붐비는 시각(손님이 가장 많은 시간대)
-function peakTxt(hr, lab) { let m = -1, h = 0; hr.forEach((v, i) => { if (v > m) { m = v; h = i; } }); return m >= 0.5 ? `${lab}엔 ${h}시대가 가장 붐빔(${Math.round(m)}명)` : `${lab} 손님 거의 없음`; }
+function peakTxt(hr, lab) { let m = -1, h = 0; hr.forEach((v, i) => { if (v > m) { m = v; h = i; } }); return m >= 0.5 ? `${lab}엔 ${h}시대가 가장 붐빔` : `${lab} 손님 거의 없음`; }
 // 같은 세부 업종 기존 가게(가상)와 견주기: 이 자리 손님이 그중 몇 번째쯤인지
 function benchTxt(r, k) {
-  const b = r.wd.bench; if (!b || !b.n) return `옥포에 ${esc(k)} 가게가 없어 견줄 곳이 없습니다.`;
+  const b = r.bench; if (!b || !b.n) return `옥포에 ${esc(k)} 가게가 없어 견줄 곳이 없습니다.`;
   const rank = b.above + 1, top = Math.max(1, Math.round(100 * rank / (b.n + 1)));
-  return `기존 ${esc(k)} ${b.n}곳(가상, 평일): 하루 손님 중앙값 ${Math.round(b.med)}명, 위 25%는 ${Math.round(b.p75)}명 이상. ` +
-    `이 자리(${Math.round(r.wd.v)}명)는 ${b.n + 1}곳 중 위에서 ${rank}번째쯤(상위 ${top}%)입니다. 주말: ${b.n + 1}곳 중 ${r.we.bench.above + 1}번째쯤.` + whyTxt(r.why);
+  return `기존 ${esc(k)} ${b.n}곳(가상, 1년): 손님 중앙값 ${num(b.med)}명, 위 25%는 ${num(b.p75)}명 이상. ` +
+    `이 자리(${num(r.v)}명)는 ${b.n + 1}곳 중 위에서 ${rank}번째쯤(상위 ${top}%)입니다.` + whyTxt(r.why);
 }
 // 순위 차이가 가게 실력이 아니라 자리(층·앞을 지나는 사람) 때문이라는 걸 한 줄로 밝힌다(모두 가상 인물·가정 기준)
 function whyTxt(w) {
@@ -1201,36 +1290,59 @@ function whyTxt(w) {
   if (w.here != null && w.sameMed != null && PASSBY > 0) p.push(`이 자리 앞을 지나는 사람은 가게 평균의 ${w.here.toFixed(1)}배, 기존 가게 앞은 중앙값 ${w.sameMed.toFixed(1)}배입니다`);
   return p.length ? `<br><span class="why">차이의 까닭: ${p.join('. ')}.</span>` : '';
 }
+const num = (v) => Math.round(v).toLocaleString('ko-KR');
+// 손익 표기: 음수는 −, 1만 원 단위
+const wonS = (v) => (v < 0 ? '−' : '') + won(Math.abs(v));
 function renderExp(r, sub, price, ms, bi, floor, menus, hrs) {
+  LAST = [r, sub, price, ms, bi, floor, menus, hrs];
   const k = SUB[sub].ko;
-  const row = (sc, lab) => { const x = r[sc]; return `<tr><th>${lab}</th><td><b>${Math.round(x.v).toLocaleString('ko-KR')}명</b><span class="rng">${Math.round(x.vMin)}~${Math.round(x.vMax)}</span></td><td>${won(x.won)}</td></tr>`; };
-  const g = r.wd.grp, gw = r.we.grp, tot = (o) => Object.values(o).reduce((a, b) => a + b, 0) || 1;
+  const area = Math.max(0, +($('x-area') && $('x-area').value) || floorArea(bi, floor)), oth = Math.min(1, Math.max(0, (+($('x-other') && $('x-other').value) || OTHER * 100) / 100));
+  const rt = rentOf(bi, floor, area), mo = r.monWon.map((w, i) => ({ m: i + 1, v: r.monV[i], won: w, profit: w * (1 - oth) - rt.month }));
+  const yrWon = r.won, cost = yrWon * oth, rent = rt.month * 12, profit = yrWon - cost - rent, per = r.v > 0 ? r.won / r.v : price;
+  const pLo = r.lo * per * (1 - oth) - rent, pHi = r.hi * per * (1 - oth) - rent, deficit = mo.filter(x => x.profit < 0).length;
+  const g = r.grp, tot = (o) => Object.values(o).reduce((a, b) => a + b, 0) || 1;
   const mix = (o) => GROUPS.filter(x => o[x] > 0.5).map(x => `<span><i style="background:${CFG.groups[x].col}"></i>${CFG.groups[x].ko} ${Math.round(100 * o[x] / tot(o))}%</span>`).join('') || '<span>손님 없음</span>';
-  const hourMax = Math.max(1, ...r.wd.hour, ...r.we.hour);
-  const bars = (hr, colr) => hr.map((v, h) => `<i style="height:${Math.round(100 * v / hourMax)}%;background:${colr}" title="${h}시 ${Math.round(v)}명"></i>`).join('');
-  // 주변 영향: 다섯 번 모두 같은 방향이고, 크기가 새 가게 손님의 30% 이상(최소 3명)일 때만 원인으로 말한다
-  const nbBig = Math.abs(r.wd.nb) >= Math.max(3, 0.3 * r.wd.v);
+  const hourMax = Math.max(1, ...r.hourWd, ...r.hourWe);
+  const bars = (hr, colr) => hr.map((v, h) => `<i style="height:${Math.round(100 * v / hourMax)}%;background:${colr}" title="${h}시 ${num(v)}명(1년)"></i>`).join('');
+  // 달마다 남는 돈: 0 선 위(남음)·아래(모자람) 막대
+  // 남는 달만 있으면 위 칸만, 모자란 달만 있으면 아래 칸만(빈 칸을 남기지 않게). 0 선은 늘 보임
+  const pm = Math.max(1, ...mo.map(x => Math.abs(x.profit))), hasP = mo.some(x => x.profit >= 0), hasN = mo.some(x => x.profit < 0), H = hasP && hasN ? 40 : 56;
+  const mbars = mo.map(x => { const h = Math.max(1, Math.round(H * Math.abs(x.profit) / pm)), neg = x.profit < 0;
+    return `<button type="button" class="yr-m${neg ? ' neg' : ''}" data-m="${x.m}" title="${x.m}월: 손님 ${num(x.v)}명 · 매출 ${won(x.won)} · ${neg ? '모자람' : '남음'} ${wonS(x.profit)}" aria-label="${x.m}월 ${neg ? '모자람' : '남음'} ${wonS(x.profit)}, 누르면 ${x.m}월 평일 재생"><span class="up" style="height:${hasP ? H : 0}px">${neg ? '' : `<i style="height:${h}px"></i>`}</span><span class="dn" style="height:${hasN ? H : 0}px">${neg ? `<i style="height:${h}px"></i>` : ''}</span><em>${x.m}</em></button>`; }).join('');
+  const best = mo.reduce((a, x) => x.profit > a.profit ? x : a, mo[0]), worst = mo.reduce((a, x) => x.profit < a.profit ? x : a, mo[0]);
+  const nbBig = Math.abs(r.nb) >= Math.max(30, 0.3 * r.v);
   const ck = CFG.cats[SUB[sub].cat].ko, nbN = `반경 250m ${ck} 가게 ${r.nbCount}곳(그중 ${k} ${r.nbSub}곳)`;
   const nbTxt = !r.nbCount ? `반경 250m 안에 ${ck} 가게가 없습니다.` :
-    (r.wd.nbSame && nbBig) ? `${nbN}: 평일 손님 ${r.wd.nb >= 0 ? '+' : ''}${Math.round(r.wd.nb)}명 (다섯 번 모두 같은 방향)`
-    : `${nbN}: 변화가 작거나 돌릴 때마다 달라 판단하기 어렵습니다(${r.wd.nb >= 0 ? '+' : ''}${Math.round(r.wd.nb)}명).`;
+    (r.nbSame && nbBig) ? `${nbN}: 1년 손님 ${r.nb >= 0 ? '+' : '−'}${num(Math.abs(r.nb))}명 (계절 네 번 모두 같은 방향)`
+    : `${nbN}: 변화가 작거나 계절마다 방향이 달라 판단하기 어렵습니다(1년 ${r.nb >= 0 ? '+' : '−'}${num(Math.abs(r.nb))}명).`;
   const bk = menus.filter(m => m.qty > 0 && m.price > 0).map(m => `${esc(m.n)} ${wonX(m.price)} × ${fmtQ(m.qty)}인분${m.share < 1 ? `(손님 ${Math.round(m.share * 100)}%)` : ''}`).join(' + ');
   const same = HIST.filter(h => h.bi === bi && h.floor === floor);
-  const cmp = same.length > 1 ? `<table class="exp-cmp"><tr><th>업종</th><th>1인</th><th>평일<br><small class="th-u">하루</small></th><th>주말<br><small class="th-u">하루</small></th><th>평일 매출<br><small class="th-u">하루</small></th></tr>${same.map(h => `<tr><td>${esc(SUB[h.sub].ko)}${h.hrs ? `<span class="cmp-h">${hoursTxt(h.hrs)}</span>` : ''}</td><td>${wonX(h.price)}</td><td>${Math.round(h.r.wd.v)}명</td><td>${Math.round(h.r.we.v)}명</td><td>${won(h.r.wd.won)}</td></tr>`).join('')}</table>` : '<p class="exp-tip">업종이나 영업시간을 바꿔 한 번 더 돌리면 이 자리에서 비교표가 생깁니다.</p>';
+  const pOf = (h) => h.r.won * (1 - oth) - rent;
+  const cmp = same.length > 1 ? `<table class="exp-cmp"><tr><th>업종</th><th>1인</th><th>손님<br><small class="th-u">1년</small></th><th>매출<br><small class="th-u">1년</small></th><th>남는 돈<br><small class="th-u">1년</small></th></tr>${same.map(h => `<tr><td>${esc(SUB[h.sub].ko)}${h.hrs ? `<span class="cmp-h">${hoursTxt(h.hrs)}</span>` : ''}</td><td>${wonX(h.price)}</td><td>${num(h.r.v)}명</td><td>${won(h.r.won)}</td><td class="${pOf(h) < 0 ? 'neg' : ''}">${wonS(pOf(h))}</td></tr>`).join('')}</table>` : '<p class="exp-tip">업종이나 영업시간을 바꿔 한 번 더 돌리면 이 자리에서 비교표가 생깁니다.</p>';
+  const rentSrc = `${rt.kind} 상가 ${floor}층 ㎡당 월 ${wonX(rt.perM2)}${rt.src && rt.src !== '경남>거제옥포' ? '(경남 값)' : ''} × ${num(area)}㎡`;
   $('x-out').innerHTML = `
-    <table class="exp-res"><tr><th></th><th>하루 손님(평균·범위)</th><th>하루 매출</th></tr>${row('wd', '평일')}${row('we', '주말')}</table>
-    <p class="exp-sub">평일 손님 구성</p><div class="exp-mix">${mix(g)}</div>
-    <p class="exp-sub">시간대별 손님 <span class="lg"><i style="background:#2f6fed"></i>평일 <i style="background:#7048e8"></i>주말</span></p>
-    <p class="exp-nb">${peakTxt(r.wd.hour, '평일')} · ${peakTxt(r.we.hour, '주말')}</p>
-    <div class="exp-hours"><div>${bars(r.wd.hour, '#2f6fed')}</div><div>${bars(r.we.hour, '#7048e8')}</div><div class="ax"><span>0시</span><span>6시</span><span>12시</span><span>18시</span><span>23시</span></div></div>
+    <div class="yr-kpi ${profit < 0 ? 'neg' : ''}"><span>1년 남는 돈(사장 몫)</span><b>${wonS(profit)}</b><small>범위 ${wonS(pLo)} ~ ${wonS(pHi)} · ${deficit ? `모자란 달 ${deficit}달` : '모든 달 남음'}</small></div>
+    <table class="exp-res yr-res">
+      <tr><th>손님</th><td><b>${num(r.v)}명</b><span class="rng">범위 ${num(r.lo)}~${num(r.hi)} · 평일 ${num(r.wdV)} · 쉬는 날 ${num(r.weV)}</span></td></tr>
+      <tr><th>매출</th><td><b>${won(yrWon)}</b><span class="rng">손님 × 1인 지출 ${wonX(price)}</span></td></tr>
+      <tr><th>임대료</th><td>−${won(rent)}<span class="rng">월 ${won(rt.month)} · ${rentSrc}</span></td></tr>
+      <tr><th>재료·인건비 등</th><td>−${won(cost)}<span class="rng">매출의 ${(oth * 100).toFixed(1)}%</span></td></tr>
+    </table>
+    <p class="exp-sub">달마다 남는 돈 <span class="lg">막대를 누르면 그 달 평일을 재생</span></p>
+    <div class="yr-bars">${mbars}</div>
+    <p class="exp-nb">가장 나은 달 ${best.m}월(${wonS(best.profit)}), 가장 어려운 달 ${worst.m}월(${wonS(worst.profit)}). 월세 ${won(rt.month)}를 넘기려면 한 달 매출이 ${won(rt.month / Math.max(0.01, 1 - oth))} 넘어야 합니다.</p>
+    <p class="exp-sub">손님 구성(1년)</p><div class="exp-mix">${mix(g)}</div>
+    <p class="exp-sub">시간대별 손님(1년 합) <span class="lg"><i style="background:#2f6fed"></i>평일 <i style="background:#7048e8"></i>쉬는 날</span></p>
+    <p class="exp-nb">${peakTxt(r.hourWd, '평일')} · ${peakTxt(r.hourWe, '쉬는 날')}</p>
+    <div class="exp-hours"><div>${bars(r.hourWd, '#2f6fed')}</div><div>${bars(r.hourWe, '#7048e8')}</div><div class="ax"><span>0시</span><span>6시</span><span>12시</span><span>18시</span><span>23시</span></div></div>
     <p class="exp-sub">같은 업종 기존 가게와 비교</p><p class="exp-nb">${benchTxt(r, k)}</p>
     <p class="exp-sub">주변 가게 영향</p><p class="exp-nb">${nbTxt}</p>
     ${cmp}
     <p class="exp-sub">1인 지출 ${wonX(price)}</p><p class="exp-nb">${bk}</p>
-    <p class="exp-foot">${esc(k)} · ${floor}층 · 영업 ${hoursTxt(hrs)} · 계산 ${(ms / 1000).toFixed(1)}초. 하루 매출 = 손님 × 1인 지출. 가상 인물로 조건끼리 비교한 값이며 실제 매출 예측이 아닙니다.</p>`;
+    <p class="exp-foot">${esc(k)} · ${floor}층 · 영업 ${hoursTxt(hrs)} · 계산 ${(ms / 1000).toFixed(1)}초. ${YD ? YD.year : ''}년 달력(평일 ${YM.reduce((a, x) => a + x.wd, 0)}일 · 토·일·공휴일 ${YM.reduce((a, x) => a + x.we, 0)}일)대로 달마다 하루씩 돌려 날 수를 곱했습니다. 달마다 나오는 사람 수는 ${esc(YD ? YD.src_f : '')}를 따릅니다. 임대료: ${esc(YD ? YD.src_rent : '')}. 재료·인건비 등: ${esc(YD ? YD.src_other : '')}. 보증금·권리금·세금·사장 인건비는 넣지 않았습니다. 가상 인물로 조건끼리 비교한 값이며 실제 매출 예측이 아닙니다.</p>`;
   need();
 }
-
+document.addEventListener('click', (e) => { const b = e.target.closest && e.target.closest('.yr-m'); if (b) setMonth(+b.dataset.m, 'wd'); });
 // ── 거리 집중용 ─────────────────────────────────────────
 // 거리 선(polyline)에서 r m 안의 길 노드
 function nodesNear(poly, r) {
@@ -1295,18 +1407,21 @@ function nodeFlowAsync(we) {
     })();
   }));
 }
-// 빈 자리에 가게를 열었을 때 손님·매출만(비교 없이, 자리 순위용)
-function trySlot(bi, floor, sub, price, seats, runs = 3, hrs) {
-  const s = addVirtual(bi, floor, sub, price, seats, hrs);
-  const r = { wd: 0, we: 0, wdWon: 0, weWon: 0, wdRuns: [], weRuns: [] };   // *Runs: 시드별 하루 손님(범위·'비슷함' 묶기용)
-  for (const sc of ['wd', 'we']) for (let k = 0; k < runs; k++) {
-    const st = runDay(sc === 'we', k);
-    r[sc] += st.visits[s.i] / runs; r[sc + 'Won'] += st.spend[s.i] / runs; r[sc + 'Runs'].push(st.visits[s.i]);
-  }
-  r.pb = s.pb ? s.pb.slice() : null;
+// 빈 자리에 가게를 열었을 때 1년 손님·매출·손익(비교 없이, 자리 순위용). 계절 가운데 달 × 평일·쉬는 날 8일(빠른 계산)
+// _runs 는 예전 호출과 맞추려고 남긴 자리(쓰지 않음)
+function trySlot(bi, floor, sub, price, seats, _runs, hrs, area) {
+  const s = addVirtual(bi, floor, sub, price, seats, hrs), plan = yearPlan(false), v = [], w = [];
+  for (const p of plan) { const st = runDay(!!p.we, p.m, p.m); v.push(st.visits[s.i]); w.push(st.spend[s.i]); }
+  const pb = s.pb ? s.pb.slice() : null;
   removeVirtual(s);
-  return r;
+  const fv = yearFold(plan, v), fw = yearFold(plan, w), band = yearBand(plan, v, fv);
+  const ar = area != null ? area : floorArea(bi, floor), rt = rentOf(bi, floor, ar), mo = money(fw.mon, rt.month);
+  const per = fv.tot > 0 ? fw.tot / fv.tot : price;   // 손님 1명당 매출(범위를 매출·손익으로 옮길 때)
+  return { v: fv.tot, lo: band[0], hi: band[1], won: fw.tot, rent: mo.rent, cost: mo.cost, profit: mo.profit,
+    pLo: band[0] * per * (1 - OTHER) - mo.rent, pHi: band[1] * per * (1 - OTHER) - mo.rent,
+    months: mo.months.map((x, i) => ({ ...x, v: fv.mon[i] })), deficit: mo.deficit, kind: rt.kind, area: ar, pb };
 }
+function floorArea(bi, floor) { const fl = (window.FLOORS && window.FLOORS.b[String(bi)]) || []; const f = fl.find(x => x.n === floor); return f ? f.area || 0 : 0; }
 // ── 가상 시민 고르기(페르소나 보기) · 건물 안 인원 ─────────────────────
 // 점(사람)을 누르면 오른쪽 정보창에 그 사람의 페르소나·오늘 일정·지금 상태가 나온다.
 // 페르소나 속성(나이·국적·직업 등)은 web/data/okpo_persona_profiles.js(tools/persona_profiles_web.py) — 처음 누를 때만 불러온다(약 1.5MB).
@@ -1435,8 +1550,8 @@ function renderPersona() {
       row('고르는 기준', top.map(([k, v]) => `${esc(k)} ${v}%`).join(' · ')); }
   }
   if (rec) {
-    row('상권 오는 시각', `평일 ${hm(rec[2])}(외출 ${rec[8]}%) · 주말 ${hm(rec[3])}(외출 ${rec[9]}%)`);
-    row('머무는 시간', `평일 ${rec[4]}분 · 주말 ${rec[5]}분`);
+    row('상권 오는 시각', `평일 ${hm(rec[2])}(외출 ${rec[8]}%) · 쉬는 날 ${hm(rec[3])}(외출 ${rec[9]}%)`);
+    row('머무는 시간', `평일 ${rec[4]}분 · 쉬는 날 ${rec[5]}분`);
     row('한 번 예산', wonX(rec[6]) + ` <span class="pa-dim">1인 지출 ×${(rec[15] / 100).toFixed(2)}</span>`);
     row('나오면 결제', PD && PD.pay_mode === 'avg_stops' ? `평균 ${(rec[14] / (PD.pay_unit || 1000)).toFixed(2)}곳 방문` : `${Math.round(rec[14] / 10)}%` + ((rec[11] & 8) ? ' <span class="pa-dim">두 곳 들르기도 함</span>' : ''));
     row('자리 기다림', `최대 ${rec[7]}분`);
@@ -1458,7 +1573,7 @@ function renderLive(force) {
   const box = document.getElementById('pa-live'); if (!box || selPi === -2) return;
   const now = performance.now(); if (!force && now - liveAt < 250) return; liveAt = now;
   const a = curSel();
-  if (!a) { box.innerHTML = `<p class="pa-now"><b>${hm(simT)}</b> ${scen === 'we' ? '주말' : '평일'} — 오늘은 상권에 나오지 않는 날입니다.</p>`; return; }
+  if (!a) { box.innerHTML = `<p class="pa-now"><b>${hm(simT)}</b> ${scenM ? scenM + '월 ' : ''}${scen === 'we' ? '쉬는 날' : '평일'} — 오늘은 상권에 나오지 않는 날입니다.</p>`; return; }
   let st;
   if (a.st === 0) st = a.done ? '오늘 나들이를 마치고 돌아감' : a.oi === 0 ? `아직 상권에 나오기 전(${hm(a.out[0].t)} 출발)` : `상권 밖(조선소·집 등, 다음 출발 ${hm(a.out[a.oi].t)})`;
   else if (a.st === 1) st = `→ ${esc(a.shop >= 0 ? shopKo(SHOPS[a.shop]) : placeKo(a, a.goalNode))}`;
@@ -1467,7 +1582,7 @@ function renderLive(force) {
   const plan = a.out.map((o, k) => `<li class="${k === a.oi && !a.done ? 'cur' : k < a.oi || a.done ? 'past' : ''}"><b>${hm(o.t)}</b> ${esc(placeKo(a, o.from))} → ${o.stops.length ? `<span class="pa-stop">${o.stops.map(c => esc(CFG.cats[c].ko)).join('·')}</span> → ` : ''}${esc(placeKo(a, o.to))}</li>`).join('');
   const vis = a.visits.map(([si, t]) => { const s = SHOPS[si]; return `<li><b>${hm(t)}</b> ${esc(shopKo(s))} <span class="pa-dim">${esc(shopKind(s))}</span> <span class="pa-won">${wonX(payOf(a, s))}</span></li>`; }).join('');
   box.innerHTML = `<p class="pa-now"><b>${hm(simT)}</b> <span class="st st${a.st}">${STATE_KO[a.st]}</span> ${st}</p>
-    <p class="exp-sub">오늘(${scen === 'we' ? '주말' : '평일'}) 일정</p><ol class="pa-plan">${plan}</ol>
+    <p class="exp-sub">오늘(${scenM ? scenM + '월 ' : ''}${scen === 'we' ? '쉬는 날' : '평일'}) 일정</p><ol class="pa-plan">${plan}</ol>
     <p class="exp-sub">들른 가게 <span class="lg">쓴 돈 ${wonX(a.spent)}</span></p>${vis ? `<ol class="pa-plan">${vis}</ol>` : '<p class="pa-dim">아직 없음</p>'}`;
   const fb = document.getElementById('pa-follow'); if (fb) fb.setAttribute('aria-pressed', String(follow));
 }
@@ -1578,7 +1693,7 @@ function renderOcc(force) {
   const chips = ag.slice(0, MAXC).map(a => { const p = profOf(a.pi), k = A.indexOf(a);
     return `<button type="button" class="pa-chip${a.st === 3 ? ' wait' : ''}" data-ag="${k}" title="${esc(SHOPS[a.shop].n)}${a.st === 3 ? ' 앞에서 기다림' : ''}"><i style="background:${CFG.groups[a.g].col}"></i>${esc(p ? short(p, a) : (pidOf(a.pi) || CFG.groups[a.g].ko))}</button>`; }).join('');
   box.innerHTML = `<p class="occ-h"><b>${hm(simT)}</b> 지금 이 건물 가게 안 <strong>${v.pin}명</strong>${v.pwait ? ` · 자리 기다림 ${v.pwait}명` : ''} <span class="pa-dim">일행 포함 · 결제 손님 ${v.in + v.wait}명</span></p>
-    <p class="occ-sub">오늘 05시부터 지금까지 손님 ${Math.round(today).toLocaleString('ko-KR')}명 · 매출 ${won(money)} (${scen === 'we' ? '주말' : '평일'}, 가상)</p>
+    <p class="occ-sub">오늘 05시부터 지금까지 손님 ${Math.round(today).toLocaleString('ko-KR')}명 · 매출 ${won(money)} (${scenM ? scenM + '월 ' : ''}${scen === 'we' ? '쉬는 날' : '평일'}, 가상)</p>
     <table class="occ-t"><tr><th>가게</th><th>지금<small>결제/자리</small></th><th>오늘</th></tr>${rowsH}</table>
     ${chips ? `<p class="exp-sub">안에 있는 사람 <span class="lg">누르면 페르소나</span></p><div class="pa-chips">${chips}${ag.length > MAXC ? `<span class="pa-dim">외 ${ag.length - MAXC}명</span>` : ''}</div>` : ''}`;
 }
@@ -1586,6 +1701,6 @@ uiHooks.push(() => { updOcc(false); renderLive(false); });
 $('sim-play').addEventListener('click', () => { if (!playing) { updOcc(true); renderLive(true); } });   // 멈춘 순간 값으로 맞춤(재생 중엔 0.25~0.3초마다)
 updOcc(true);
 
-window.__sim = { demandTxt, carryPlan, _pass: { PASSF, nearest, passbyAt, frontFlow, get mean() { return PASS_MEAN; } }, get passby() { return { beta: PASSBY, ms: PASSBY_MS, mean: PASS_MEAN }; }, get playing() { return playing; }, get _fig() { return figMesh; }, get cfgVer() { return TS.ver; }, TS, applyTS, _catwin: CAT_WIN, hoursOf, fillHours, readHours, hoursTxt, _shops: () => SHOPS, _active: () => ACTIVE, _md: { MDX, MDZ, NX, NZ, NSW, NWD }, peakTxt, _ck: CK, runDay, experiment, seek, nodesNear, flowDay, trySlot, nodeFlow, nodeFlowAsync, restore: () => { drawDirty = true; need(); }, won, wonX, GROUPS, SUB, SUBS_OF, subOptions, NAT,
+window.__sim = { demandTxt, carryPlan, _pass: { PASSF, nearest, passbyAt, frontFlow, get mean() { return PASS_MEAN; } }, get passby() { return { beta: PASSBY, ms: PASSBY_MS, mean: PASS_MEAN }; }, get playing() { return playing; }, get _fig() { return figMesh; }, get cfgVer() { return TS.ver; }, TS, applyTS, _catwin: CAT_WIN, hoursOf, fillHours, readHours, hoursTxt, _shops: () => SHOPS, _active: () => ACTIVE, _md: { MDX, MDZ, NX, NZ, NSW, NWD }, peakTxt, _ck: CK, runDay, experiment, seek, nodesNear, flowDay, trySlot, rentOf, floorArea, yearPlan, yearFold, get YEAR() { return YD; }, nodeFlow, nodeFlowAsync, restore: () => { drawDirty = true; need(); }, won, wonX, wonS, setMonth, GROUPS, SUB, SUBS_OF, subOptions, NAT,
   graph: { NX, NZ, ADJ, NN }, selectAgent, pickAt, occNow, get selAgent() { return curSel(); }, get scen() { return scen; }, get A() { return A; }, get W() { return W; }, SHOPS, CFG, nodes: NN, get t() { return simT; } };
 })();
