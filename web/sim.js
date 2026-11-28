@@ -405,7 +405,11 @@ function populate(we, seed) {
     for (let i = 0; i < list.length; i++) {
       const rec = list[i];
       let copies = 1;
-      if (we) {
+      if (CUR_M) {
+        // 달 배율(web/data/okpo_year.js): 주말 배율 × 그 달 배율을 기대 인원으로 보고 정수 + 확률로 나눈다
+        const e = (we ? rec[10] / 100 : 1) * (PD.groups[rec[0]] === 'tourist' ? MON.ft : MON.f);
+        copies = Math.floor(e) + (r() < e % 1 ? 1 : 0);
+      } else if (we) {
         const ws = rec[10];
         copies = Math.floor(ws / 100) + (r() * 100 < (ws % 100) ? 1 : 0);
       }
@@ -451,8 +455,12 @@ function populate(we, seed) {
   }
 }
 let CUR_WE = 0;   // 지금 계산 중인 날(0 평일, 1 주말): 가게 앞 흐름 계수(s.pb)를 고를 때 씀
-function reset(we, seed) {
+// 1년: 지금 계산 중인 달(0 = 달 구분 없는 보통 날, 1~12 = 그 달). 달마다 나오는 사람 수에 배율을 곱한다
+const YD = window.YEAR_DATA || null;
+let CUR_M = 0, MON = null;
+function reset(we, seed, m) {
   CUR_WE = we ? 1 : 0;
+  CUR_M = YD && m ? m : 0; MON = CUR_M ? YD.months[CUR_M - 1] : null;
   populate(we, seed);
   SHOP_ST = SHOPS.map(() => ({ occ: [] }));
   STATS = { visits: new Float32Array(SHOPS.length), spend: new Float32Array(SHOPS.length), byHour: Array.from({ length: SHOPS.length }, () => null),
@@ -594,7 +602,55 @@ function swapState(st) {
   return cur;
 }
 const blank = (full) => ({ A: [], ACTIVE: [], BUCKETS: null, SHOP_ST: null, STATS: null, W: 1, FULL: full, TOTAL_POP: 0, TOTAL_SPENT: 0 });
-function runDay(we, seed) { const live = swapState(blank(true)); reset(we, seed); for (let t = T0; t <= T1; t++) step(t, false); const st = STATS; swapState(live); return st; }
+function runDay(we, seed, m) { const live = swapState(blank(true)); reset(we, seed, m); for (let t = T0; t <= T1; t++) step(t, false); const st = STATS; swapState(live); return st; }
+
+// ── 1년 ─────────────────────────────────────────────────────
+// 1년 = 2026년 달력(web/data/okpo_year.js): 달마다 평일 수·쉬는 날(토·일·공휴일) 수 × 그 달 하루.
+// 달마다 사람 수 배율(상권 카드 결제 건수, 방문객은 기념공원 입장객)을 곱해 하루를 돌린다.
+// full: 12달 × 평일·쉬는 날 = 24일. 빠른 계산(자리 순위): 계절 가운데 달(2·5·8·11월) × 2 = 8일, 같은 계절 다른 달은 사람 수 배율 비로 늘리고 줄인다
+const YM = YD ? YD.months : Array.from({ length: 12 }, (_, i) => ({ m: i + 1, wd: 21, we: 9, f: 1, ft: 1, hol: [] }));
+const REP = [2, 2, 2, 5, 5, 5, 8, 8, 8, 11, 11, 11];
+function yearPlan(full) { const L = []; for (const we of [0, 1]) for (const m of (full ? [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] : [2, 5, 8, 11])) L.push({ we, m }); return L; }
+// 표본 하루(samples[k] = 계획 k 의 값) → 달마다 합. 각 표본이 몇 날 몫을 맡는지(cover)도 돌려준다(흔들림 범위 계산용)
+function yearFold(plan, vals) {
+  const full = plan.length >= 24, mon = new Float64Array(12), cover = new Float64Array(plan.length);
+  plan.forEach((p, k) => {
+    for (let mi = 0; mi < 12; mi++) {
+      const mm = mi + 1; if (full ? mm !== p.m : REP[mi] !== p.m) continue;
+      const days = p.we ? YM[mi].we : YM[mi].wd, sc = full ? 1 : YM[mi].f / YM[p.m - 1].f, w = days * sc;
+      mon[mi] += w * vals[k]; cover[k] += w;
+    }
+  });
+  return { mon: Array.from(mon), tot: mon.reduce((a, b) => a + b, 0), cover };
+}
+// 난수 흔들림: 표본 하루 값을 그 달 배율로 나눈 값의 변동계수(평일·쉬는 날 따로)로, 1년 합의 ±2 표준오차 범위
+function yearBand(plan, vals, fold) {
+  let v2 = 0;
+  for (const we of [0, 1]) {
+    const ks = plan.map((p, k) => k).filter(k => plan[k].we === we), y = ks.map(k => vals[k] / YM[plan[k].m - 1].f);
+    const mean = y.reduce((a, b) => a + b, 0) / (y.length || 1); if (!(mean > 0)) continue;
+    const cv = Math.sqrt(y.reduce((a, b) => a + (b - mean) ** 2, 0) / Math.max(1, y.length - 1)) / mean;
+    for (const k of ks) v2 += (fold.cover[k] * vals[k] * cv) ** 2;
+  }
+  const se = Math.sqrt(v2); return [Math.max(0, fold.tot - 2 * se), fold.tot + 2 * se];
+}
+// 임대료: R-ONE 층별임대료(옥포, 없는 층은 경남) × 빌리는 면적. 2층 이하·층 면적 합 330㎡ 이하 건물은 소규모 상가 값
+function rentOf(bi, floor, area) {
+  if (!YD || !YD.rent) return { month: 0, perM2: 0, kind: '', src: '' };
+  const fl = (window.FLOORS && window.FLOORS.b[String(bi)]) || [];
+  const top = fl.reduce((a, f) => Math.max(a, f.n), 0), sum = fl.reduce((a, f) => a + (f.n > 0 ? f.area || 0 : 0), 0);
+  const kind = top <= 2 && sum > 0 && sum <= 330 ? '소규모' : '중대형';
+  const key = floor < 0 ? '-1' : floor >= 6 ? '6' : String(floor);
+  const t = YD.rent[kind][key] || YD.rent['중대형'][key] || YD.rent['중대형']['1'];
+  return { month: Math.round(t.won * (area || 0)), perM2: t.won, kind, src: t.src };
+}
+const OTHER = YD ? YD.other : 0.836;
+// 달마다 손익: 매출 − 임대료 밖 비용(매출 × OTHER) − 월 임대료
+function money(monWon, rentM) {
+  const months = monWon.map((w, i) => ({ m: i + 1, won: w, profit: w * (1 - OTHER) - rentM }));
+  const won = monWon.reduce((a, b) => a + b, 0);
+  return { months, won, rent: rentM * 12, cost: won * OTHER, profit: won * (1 - OTHER) - rentM * 12, deficit: months.filter(x => x.profit < 0).length };
+}
 
 // ── 그리기: 사람 = 화면 크기 고정 점 ─────────────────────────
 const geo = new THREE.BufferGeometry();
@@ -1270,18 +1326,21 @@ function nodeFlowAsync(we) {
     })();
   }));
 }
-// 빈 자리에 가게를 열었을 때 손님·매출만(비교 없이, 자리 순위용)
-function trySlot(bi, floor, sub, price, seats, runs = 3, hrs) {
-  const s = addVirtual(bi, floor, sub, price, seats, hrs);
-  const r = { wd: 0, we: 0, wdWon: 0, weWon: 0, wdRuns: [], weRuns: [] };   // *Runs: 시드별 하루 손님(범위·'비슷함' 묶기용)
-  for (const sc of ['wd', 'we']) for (let k = 0; k < runs; k++) {
-    const st = runDay(sc === 'we', k);
-    r[sc] += st.visits[s.i] / runs; r[sc + 'Won'] += st.spend[s.i] / runs; r[sc + 'Runs'].push(st.visits[s.i]);
-  }
-  r.pb = s.pb ? s.pb.slice() : null;
+// 빈 자리에 가게를 열었을 때 1년 손님·매출·손익(비교 없이, 자리 순위용). 계절 가운데 달 × 평일·쉬는 날 8일(빠른 계산)
+// _runs 는 예전 호출과 맞추려고 남긴 자리(쓰지 않음)
+function trySlot(bi, floor, sub, price, seats, _runs, hrs, area) {
+  const s = addVirtual(bi, floor, sub, price, seats, hrs), plan = yearPlan(false), v = [], w = [];
+  for (const p of plan) { const st = runDay(!!p.we, p.m, p.m); v.push(st.visits[s.i]); w.push(st.spend[s.i]); }
+  const pb = s.pb ? s.pb.slice() : null;
   removeVirtual(s);
-  return r;
+  const fv = yearFold(plan, v), fw = yearFold(plan, w), band = yearBand(plan, v, fv);
+  const ar = area != null ? area : floorArea(bi, floor), rt = rentOf(bi, floor, ar), mo = money(fw.mon, rt.month);
+  const per = fv.tot > 0 ? fw.tot / fv.tot : price;   // 손님 1명당 매출(범위를 매출·손익으로 옮길 때)
+  return { v: fv.tot, lo: band[0], hi: band[1], won: fw.tot, rent: mo.rent, cost: mo.cost, profit: mo.profit,
+    pLo: band[0] * per * (1 - OTHER) - mo.rent, pHi: band[1] * per * (1 - OTHER) - mo.rent,
+    months: mo.months.map((x, i) => ({ ...x, v: fv.mon[i] })), deficit: mo.deficit, kind: rt.kind, area: ar, pb };
 }
+function floorArea(bi, floor) { const fl = (window.FLOORS && window.FLOORS.b[String(bi)]) || []; const f = fl.find(x => x.n === floor); return f ? f.area || 0 : 0; }
 // ── 가상 시민 고르기(페르소나 보기) · 건물 안 인원 ─────────────────────
 // 점(사람)을 누르면 오른쪽 정보창에 그 사람의 페르소나·오늘 일정·지금 상태가 나온다.
 // 페르소나 속성(나이·국적·직업 등)은 web/data/okpo_persona_profiles.js(tools/persona_profiles_web.py) — 처음 누를 때만 불러온다(약 1.5MB).
@@ -1561,6 +1620,6 @@ uiHooks.push(() => { updOcc(false); renderLive(false); });
 $('sim-play').addEventListener('click', () => { if (!playing) { updOcc(true); renderLive(true); } });   // 멈춘 순간 값으로 맞춤(재생 중엔 0.25~0.3초마다)
 updOcc(true);
 
-window.__sim = { demandTxt, _pass: { PASSF, nearest, passbyAt, frontFlow, get mean() { return PASS_MEAN; } }, get passby() { return { beta: PASSBY, ms: PASSBY_MS, mean: PASS_MEAN }; }, get playing() { return playing; }, get _fig() { return figMesh; }, get cfgVer() { return TS.ver; }, TS, applyTS, _catwin: CAT_WIN, hoursOf, fillHours, readHours, hoursTxt, _shops: () => SHOPS, _active: () => ACTIVE, _md: { MDX, MDZ, NX, NZ, NSW, NWD }, peakTxt, _ck: CK, runDay, experiment, seek, nodesNear, flowDay, trySlot, nodeFlow, nodeFlowAsync, restore: () => { drawDirty = true; need(); }, won, wonX, GROUPS, SUB, SUBS_OF, subOptions, NAT,
+window.__sim = { demandTxt, _pass: { PASSF, nearest, passbyAt, frontFlow, get mean() { return PASS_MEAN; } }, get passby() { return { beta: PASSBY, ms: PASSBY_MS, mean: PASS_MEAN }; }, get playing() { return playing; }, get _fig() { return figMesh; }, get cfgVer() { return TS.ver; }, TS, applyTS, _catwin: CAT_WIN, hoursOf, fillHours, readHours, hoursTxt, _shops: () => SHOPS, _active: () => ACTIVE, _md: { MDX, MDZ, NX, NZ, NSW, NWD }, peakTxt, _ck: CK, runDay, experiment, seek, nodesNear, flowDay, trySlot, rentOf, floorArea, yearPlan, yearFold, get YEAR() { return YD; }, nodeFlow, nodeFlowAsync, restore: () => { drawDirty = true; need(); }, won, wonX, GROUPS, SUB, SUBS_OF, subOptions, NAT,
   graph: { NX, NZ, ADJ, NN }, selectAgent, pickAt, occNow, get selAgent() { return curSel(); }, get scen() { return scen; }, get A() { return A; }, get W() { return W; }, SHOPS, CFG, nodes: NN, get t() { return simT; } };
 })();
