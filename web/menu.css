@@ -113,10 +113,10 @@ body:not(:has(#rail)) .st-how p, body:not(:has(#rail)) .st-from { font-size: 11.
 .lbl.rk-n { background: #1b2a4a; color: #fff; font-weight: 700; font-size: 13px; padding: 3px 8px; border-radius: 999px; box-shadow: 0 1px 3px rgba(0,0,0,.35); pointer-events: auto; cursor: pointer; text-shadow: none; }
 #rk-out { scroll-margin-top: 16px; }   /* 결과로 스크롤할 때 윗줄이 잘리지 않게 */
 
-/* 왼쪽 기록지에서 연 건물(순위 결과·목록·'빈 1층에 가게 열어 보기'): 정보창을 기록지 바로 옆 팝업으로(street.js body.info-left).
-   노트북만. 폰은 아래에서 올라오는 시트 그대로. 카메라 단추·출처·재생 칸은 정보창이 오른쪽에 없으니 제자리로 */
+/* 건물 정보창은 늘 왼쪽 기록지 바로 옆 팝업으로: 순위·목록(왼쪽)과 정보창(오른쪽)을 오가던 흐름을 왼쪽 한곳에 모은다.
+   지도에서 직접 누른 건물도 같다. 노트북만. 폰은 아래에서 올라오는 시트 그대로. 카메라 단추·출처·재생 칸은 정보창이 오른쪽에 없으니 제자리로 */
 @media (min-width: 721px) {
-  body.info-left #info { right: auto; left: calc(var(--side) + 12px); box-shadow: 0 12px 40px rgba(0, 20, 60, .22); }
-  body.info-left:has(#info:not([hidden])) #nav, body.info-left:has(#info:not([hidden])) #credit, body.info-left:has(#info:not([hidden])) #scale { right: 16px; }
-  body.info-left:has(#info:not([hidden])) #sim { left: calc(var(--side) + 384px + (100% - var(--side) - 384px) / 2); width: min(560px, calc(100% - var(--side) - 384px - 92px)); }
+  body #info { right: auto; left: calc(var(--side) + 12px); box-shadow: 0 12px 40px rgba(0, 20, 60, .22); }
+  body:has(#info:not([hidden])) #nav, body:has(#info:not([hidden])) #credit, body:has(#info:not([hidden])) #scale { right: 16px; }
+  body:has(#info:not([hidden])) #sim { left: calc(var(--side) + 384px + (100% - var(--side) - 384px) / 2); width: min(560px, calc(100% - var(--side) - 384px - 92px)); }
 }

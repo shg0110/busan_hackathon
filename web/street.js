@@ -195,12 +195,7 @@ function streetPose(s) {
   return { t: new THREE.Vector3(mx, g, mz), c: new THREE.Vector3(mx + nx * side * D * 0.9, g + D * 0.72, mz + nz * side * D * 0.9) };
 }
 function flyStreet(s, dur, onEnd) { const P = streetPose(s); fly(P.t, P.c, dur, onEnd); }
-// 왼쪽 기록지(순위 결과·목록·순위 번호)에서 연 건물은 정보창을 기록지 바로 옆 팝업으로(body.info-left, menu.css).
-// 지도에서 직접 누른 건물은 전처럼 오른쪽. 다음 building-select 한 번에만 쓰는 표시
-M.infoLeftNext = false;
-document.addEventListener('building-select', (e) => { document.body.classList.toggle('info-left', !!M.infoLeftNext && e.detail.bi >= 0); M.infoLeftNext = false; });
 function flyBuilding(bi) {
-  M.infoLeftNext = true;
   const b = B[bi]; let x = 0, z = 0; for (const q of b.p) { x += q[0]; z += q[1]; } x /= b.p.length; z /= b.p.length;
   const g = M.hAt(x, z); fly(new THREE.Vector3(x, g, z), new THREE.Vector3(x + 60, g + 55 + b.h, z + 95), 700); M.select(bi);
 }
