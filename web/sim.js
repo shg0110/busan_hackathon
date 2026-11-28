@@ -63,6 +63,7 @@ const WKEYS = [...new Set([...GROUPS.flatMap(g => g === 'foreign' ? NAT.map(n =>
 const T0 = 300, T1 = 1740;   // 05:00 ~ 29:00(다음 날 05:00) — 24시간
 // 라스트 오더: 마감 30분 전까지만 새 손님을 받는다. 이미 들어온 손님은 마감 시각까지 머문다(enter). tools/build_personas.py 의 LAST_ORDER_MIN 과 같게
 const LAST_ORDER = 30;
+let WV = 0;   // 가게 앞 계수(s.pb)·영업시간을 바꿀 때마다 1 늘려 chooseShop 캐시(무게·여는 시각·값)를 비운다
 
 // ── 난수(시드 고정) ─────────────────────────────────────
 // 난수 상태를 f.s 에 두어 복사할 수 있게(재생 중간 저장·되돌리기용). 수열은 예전과 같음
@@ -220,7 +221,7 @@ function catWindows() { for (const k in CAT_WIN) delete CAT_WIN[k];
   const seen = new Set();
   for (const s of SHOPS) { const key = s.sub || '#' + s.c; if (seen.has(key)) continue; seen.add(key);
     const h = hoursOf(s.sub, s.c), w = CAT_WIN[s.c] || (CAT_WIN[s.c] = [Infinity, -Infinity]); w[0] = Math.min(w[0], h[0]); w[1] = Math.max(w[1], h[1]); } }
-function applyHours() { for (const s of SHOPS) { const h = TS.shop[s.i] || hoursOf(s.sub, s.c); s.open = h[0]; s.close = h[1]; } catWindows(); }
+function applyHours() { for (const s of SHOPS) { const h = TS.shop[s.i] || hoursOf(s.sub, s.c); s.open = h[0]; s.close = h[1]; } WV++; catWindows(); }
 const CAT_WIN = {};
 catWindows();
 const catOpen = (c, t) => { const w = CAT_WIN[c]; return !!w && t + 5 >= w[0] && t + 5 < w[1] - LAST_ORDER; };
@@ -505,11 +506,24 @@ function chooseShop(a, cat, t, nodeFrom) {
   if (!D) { const ix = [], ex = []; for (let i = 0; i < nReal; i++) { const s = list[i], dx = s.x - fx, dz = s.z - fz, d2 = dx * dx + dz * dz; if (d2 > far2) continue; ix.push(i); ex.push(Math.exp(-Math.sqrt(d2) / lam)); }
     D = { ix: Int32Array.from(ix), ex: Float64Array.from(ex) }; DCACHE.set(key, D); }
   const IX = D.ix, EX = D.ex, ki = WKI.has(g) ? WKI.get(g) : WKI.get(a.g);
-  const nI = IX.length, tot = nI + list.length - nReal, wal = a.wallet, w0 = CUR_WE;
-  for (let j = 0; j < tot; j++) {   // 앞은 캐시(실제 가게), 뒤는 끝의 실험 가게
-    let i, e; if (j < nI) { i = IX[j]; e = EX[j]; } else { i = nReal + j - nI; const v = list[i], dx = v.x - fx, dz = v.z - fz, d2 = dx * dx + dz * dz; if (d2 > far2) continue; e = Math.exp(-Math.sqrt(d2) / lam); }
-    const s = list[i];
-    if (s.off || !(t + 5 >= s.open && t + 5 < s.close - LAST_ORDER)) continue;   // openAt(s, t + 5)
+  const nI = IX.length, wal = a.wallet, w0 = CUR_WE;
+  // 1년(32일) 계산이 7초를 넘어, 실제 가게 쪽은 바뀌지 않는 값(여는 시각·라스트 오더 시각·1인 값·유흥 한도, 무게 × 거리 무게 × 가게 앞 계수)을
+  // 숫자 배열로 한 번만 만들어 두고 고리에서는 배열만 읽는다(가게 객체 읽기가 느렸음). 곱하는 순서·비교가 같아 결과도 같다
+  if (D.v !== WV) { D.v = WV; D.w = []; const OP = D.op = new Float64Array(nI), CL = D.cl = new Float64Array(nI), PR = D.pr = new Float64Array(nI), YU = D.yu = new Float64Array(nI), YF = D.yf = new Uint8Array(nI);
+    for (let j = 0; j < nI; j++) { const s = list[IX[j]]; OP[j] = s.open; CL[j] = s.close - LAST_ORDER; PR[j] = s.price; YF[j] = s.sub === 'yuheung' ? 1 : 0; YU[j] = s.ref * 1.3; } }
+  const t5 = t + 5, sm = a.sm && a.sm !== 1 ? a.sm : 0, OP = D.op, CL = D.cl, PR = D.pr, YU = D.yu, YF = D.yf;
+  let WA = null; if (ki !== undefined) { WA = D.w[ki * 2 + w0];
+    if (!WA) { WA = D.w[ki * 2 + w0] = new Float64Array(nI); for (let j = 0; j < nI; j++) { const s = list[IX[j]]; WA[j] = s.wgA[ki] * EX[j] * (s.pb ? s.pb[w0] : 1); } } }
+  for (let j = 0; j < nI; j++) {   // 실제 가게(캐시). 실제 가게는 꺼지는 일(s.off)이 없다 — 끄는 건 실험 가게뿐
+    if (!(t5 >= OP[j] && t5 < CL[j])) continue;   // openAt(s, t + 5)
+    const cap = YF[j] ? Math.max(wal * 3.5, YU[j]) : wal, pr = PR[j];
+    if ((sm ? Math.max(500, Math.round(pr * sm / 100) * 100) : pr) > cap) { pricey++; continue; }   // payOf(a, s)
+    let w; if (WA) w = WA[j]; else { const s = list[IX[j]]; w = (s.wg[g] ?? s.wg[a.g]) * EX[j] * (s.pb ? s.pb[w0] : 1); }
+    if (w > 1e-4) { sum += w; cw[n] = sum; ci[n] = IX[j]; n++; }
+  }
+  for (let i = nReal; i < list.length; i++) {   // 끝의 실험 가게
+    const s = list[i], dx = s.x - fx, dz = s.z - fz, d2 = dx * dx + dz * dz; if (d2 > far2) continue; const e = Math.exp(-Math.sqrt(d2) / lam);
+    if (s.off || !openAt(s, t + 5)) continue;
     const cap = s.sub === 'yuheung' ? Math.max(wal * 3.5, s.ref * 1.3) : wal;
     if (payOf(a, s) > cap) { pricey++; continue; }
     const w = (ki !== undefined ? s.wgA[ki] : (s.wg[g] ?? s.wg[a.g])) * e * (s.pb ? s.pb[w0] : 1);
@@ -1065,6 +1079,7 @@ function passbyAt(x, z) { if (!(PASSBY > 0) || !PASSF[0]) return null; return [0
 function buildPassby() {
   const t0 = performance.now();
   for (const s of SHOPS) s.pb = null;
+  WV++;
   if (!(PASSBY > 0)) return;
   for (const k of [0, 1]) {
     const F = new Float32Array(NN), live = swapState(blank(false)); reset(k === 1, 0);
@@ -1073,6 +1088,7 @@ function buildPassby() {
     const real = SHOPS.filter(s => !s.virtual); PASS_MEAN[k] = real.reduce((a, s) => a + frontFlow(k, s.x, s.z), 0) / (real.length || 1);
   }
   for (const s of SHOPS) s.pb = passbyAt(s.x, s.z);
+  WV++;
   PASSBY_MS = Math.round(performance.now() - t0);
 }
 buildPassby();
@@ -1100,7 +1116,7 @@ function addVirtual(bi, floor, sub, price, seats, hrs) {
 }
 function removeVirtual(s) { SHOPS.pop(); BYCAT[s.c].splice(BYCAT[s.c].indexOf(s), 1); SHOPNODE = null; catWindows(); }
 function neighbors(s, R) { return SHOPS.filter(o => !o.virtual && o.c === s.c && Math.hypot(o.x - s.x, o.z - s.z) <= R).map(o => o.i); }
-// 한 날씩 나눠 계산(하루 약 0.25초)하고 사이마다 화면에 진행을 알린다. 날마다 가상 가게를 넣었다 빼서 재생 화면 손님이 실험 가게로 가지 않게 한다
+// 약 0.5초 안으로(하루 약 0.17초, 가게 끈 날을 같이 돌리면 약 0.35초) 나눠 계산하고 사이마다 화면에 진행을 알린다. 날마다 가상 가게를 넣었다 빼서 재생 화면 손님이 실험 가게로 가지 않게 한다
 function experiment(bi, floor, sub, price, seats, hrs, onProg) {
   const plan = yearPlan(true), K = plan.length, rows = [];
   let s = addVirtual(bi, floor, sub, price, seats, hrs);
@@ -1110,8 +1126,9 @@ function experiment(bi, floor, sub, price, seats, hrs, onProg) {
   const nbCount = nb.length, nbSub = nb.filter(i => SHOPS[i].sub === sub).length;
   removeVirtual(s);
   return new Promise((done) => {
-    let k = 0;
+    let k = 0, c0 = 0, tS = 0, last = 0;
     (function one() {
+      tS = performance.now(); if (!c0) c0 = tS;
       const p = plan[k], we = !!p.we;
       s = addVirtual(bi, floor, sub, price, seats, hrs);
       const st = runDay(we, p.m, p.m), row = { v: st.visits[si], won: st.spend[si], lost: st.lost[si], hour: st.byHour[si] ? Array.from(st.byHour[si]) : new Array(24).fill(0),
@@ -1124,7 +1141,9 @@ function experiment(bi, floor, sub, price, seats, hrs, onProg) {
       removeVirtual(s);
       rows.push(row); k++;
       if (onProg) onProg(k, K, p);
-      if (k < K) { setTimeout(one, 0); return; }
+      // 다음 날까지 세도 한 묶음이 0.48초 안이면 쉬지 않고 이어 센다(다음 날 시간 = 방금 날 시간으로 어림): 날마다 쉬면 그때마다 3D 화면을 한 번씩 다시 그려 1년이 7초를 넘었음(레티나 화면)
+      const now = performance.now(); last = now - tS;
+      if (k < K) { if (now - c0 + last < 480) one(); else { c0 = 0; setTimeout(one, 0); } return; }
       const fv = yearFold(plan, rows.map(r => r.v)), fw = yearFold(plan, rows.map(r => r.won)), band = yearBand(plan, rows.map(r => r.v), fv), cv = fv.cover;
       const sumBy = (f) => rows.reduce((a, r, j) => a + cv[j] * f(r), 0);
       const hourOf = (we) => Array.from({ length: 24 }, (_, h) => rows.reduce((a, r, j) => a + (plan[j].we === we ? cv[j] * r.hour[h] : 0), 0));
