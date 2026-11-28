@@ -50,7 +50,7 @@ const PASSF = [null, null]; let PASS_MEAN = [1, 1], PASSBY_MS = 0;
 const PASSBY = Q('passby') != null && isFinite(+Q('passby')) ? +Q('passby') : (CFG.passby ?? 0);
 const FD = (CFG.foreignDaily && CFG.foreignDaily.v) || 15000;
 // ── 세부 업종·대표 메뉴(window.MENU ← tools/menu_build.py) ─────────────
-// 가게 1인 지출 = Σ(메뉴 가격 × 1인 수량 × 주문 비율). 메뉴 가격 근거: 거제시 개인서비스 가격동향(옥포1·2동), 카드 건당 금액, 나머지 가정
+// 가게 1인 지출 = Σ(메뉴 가격 × 인분 × 주문 비율). 메뉴 가격 근거: 거제시 개인서비스 가격동향(옥포1·2동), 카드 건당 금액, 나머지 가정
 const MENU = window.MENU || { subs: [], prefs: {} };
 const SUB = {}; for (const x of MENU.subs) SUB[x.id] = x;
 const SUBS_OF = {}; for (const c of CATS) SUBS_OF[c] = MENU.subs.filter(x => x.cat === c);
@@ -746,7 +746,7 @@ const assumed = GROUPS.filter(g => CFG.groups[g].src === '가정' || /가정/.te
     ${CFG.scale ? li('규모 맞춤(모든 부류 × ' + CFG.scale.v + ')', CFG.scale.src) : '<li><b>규모 비교(가상 ↔ 실제 카드)</b> <span id="scale-cmp">이 칸을 열 때 계산합니다.</span></li>'}
     ${li('교대 시간', `출근 ${sh(CFG.shift.in[0])}~${sh(CFG.shift.in[1])}, 퇴근 ${sh(CFG.shift.out[0])}~${sh(CFG.shift.out[1])} — ${CFG.shift_src || CFG.shift.src || '가정'}`)}
     ${CFG.foreignDaily ? li('외국인 하루 쓸 돈', CFG.foreignDaily.src) : ''}
-    ${li('세부 업종별 1인 지출(대표 메뉴 × 1인 수량)', MENU.subs.map(x => `${x.ko} ${x.basket.toLocaleString('ko-KR')}원(근거 ${x.confirmed[0]}/${x.confirmed[1]})`).join(' · '))}
+    ${li('세부 업종별 1인 지출(대표 메뉴 × 인분 × 주문 비율)', MENU.subs.map(x => `${x.ko} ${x.basket.toLocaleString('ko-KR')}원(근거 ${x.confirmed[0]}/${x.confirmed[1]})`).join(' · '))}
     ${li('메뉴 가격 근거', '① 옥포: 거제시 「개인서비스품목 가격동향」 2026-11-26 옥포1·2동 업소 가격(동마다 1곳, 두 동 평균)과 옥포 업체 공개 가격(당근 동네업체 페이지, 2026-11-27 확인) ② 옥포에 없으면 거제 다른 동·옆 동(아주동) 값 ③ 편의점은 전국 정가, 세탁은 경남 평균 ④ 유흥주점·식료품·미용·사우나는 옥포1·2동 카드 결제 건당 금액(2025-02)으로 계산 ⑤ 그 밖은 가정. 커피·햄버거는 업소마다 종류가 달라(4,700 vs 1,800, 3,800 vs 18,000) 평균을 쓰지 않음. 표: data/processed/okpo_menu_prices.csv')}
     ${li('업종 기준가(세부 업종이 비싼지 견주는 값)', CATS.map(c => `${CFG.cats[c].ko} ${CFG.cats[c].price.toLocaleString('ko-KR')}원`).join(' · ') + (ps.meal ? ' — ' + ps.meal : ''))}
     ${PD ? li('외국인 구성(페르소나)', Object.keys(WK_KO).map(k => `${WK_KO[k]} ${(pdW[k] || 0).toLocaleString('ko-KR')}명`).join(' · ') + ' — 체류자격(거제시 2026-10) → 성별 → 국적 순서로 뽑음')
@@ -1093,10 +1093,24 @@ document.addEventListener('click', (e) => {
 });
 document.addEventListener('change', (e) => { if (e.target.id === 'x-cat') { lastSub = e.target.value; fillDefaults(); } });
 document.addEventListener('input', (e) => { if (e.target.closest && e.target.closest('#x-menu')) updateBasket(); });
+// 메뉴 추가·지우기: 업종 기본 메뉴 밖의 내 가게 메뉴(이름·가격·인분을 직접 넣음). 업종을 바꾸면 기본 메뉴로 돌아감
+document.addEventListener('click', (e) => {
+  if (!e.target.closest) return;
+  if (e.target.closest('#x-menu-add')) {
+    e.target.closest('#x-menu-add').insertAdjacentHTML('beforebegin', `
+    <div class="m-row m-own">
+      <div class="m-name"><input class="m-n" type="text" maxlength="20" placeholder="메뉴 이름" aria-label="추가 메뉴 이름"><span class="src own">직접</span><button type="button" class="m-del" aria-label="이 메뉴 지우기">지우기</button></div>
+      <div class="m-calc"><input class="m-p" type="number" min="0" step="500" value="0" aria-label="추가 메뉴 가격(원)"><span class="op">원 ×</span>
+        <input class="m-q" type="number" min="0" step="0.5" value="1" aria-label="추가 메뉴 인분"><span class="op">인분 =</span><span class="m-s"></span></div>
+    </div>`);
+    const rows = document.querySelectorAll('#x-menu .m-own'); rows[rows.length - 1].querySelector('.m-n').focus();
+    updateBasket();
+  } else if (e.target.closest('#x-menu .m-del')) { e.target.closest('.m-row').remove(); updateBasket(); }
+});
 document.addEventListener('change', (e) => { if (e.target.id === 'x-open' || e.target.id === 'x-close') hoursNote(); });
 const obs = new MutationObserver(() => { if ($('x-cat') && !$('x-menu').childElementCount) fillDefaults(); });
 obs.observe($('i-body'), { childList: true });
-// 대표 메뉴 표: 메뉴마다 가격·1인 수량(= 1인 주문량 × 주문 비율)을 고칠 수 있다. 근거가 있는 가격은 '확인', 없는 것은 '가정'
+// 대표 메뉴 표: 메뉴마다 가격·인분(시키는 사람 한 명이 먹는 양)을 고칠 수 있다. 주문 비율(손님 중 시키는 비율)은 고치지 않고 표시만 하며 계산에 곱한다. 근거가 있는 가격은 '확인', 없는 것은 '가정'
 const fmtQ = (q) => (Math.round(q * 100) / 100).toString();
 // 내 가게 영업시간 칸: 업종을 바꾸면 그 업종 값(시간 정하기에서 바꾼 값 포함)으로 채움
 function fillHours(oSel, cSel, sub) { const h = hoursOf(sub, SUB[sub].cat); oSel.innerHTML = tOpts(0, 1380, h[0]); cSel.innerHTML = tOpts(360, T1, h[1]); }
@@ -1116,14 +1130,15 @@ function fillDefaults() {
   const sb = SUB[$('x-cat').value]; if (!sb) return;
   $('x-seats').value = sb.seats;
   fillHours($('x-open'), $('x-close'), $('x-cat').value); hoursNote();
-  $('x-menu').innerHTML = `<p class="x-menu-h">대표 메뉴 <span>가격 × 1인 수량</span></p>${sb.menus.map((m, i) => `
+  $('x-menu').innerHTML = `<p class="x-menu-h">대표 메뉴 <span>가격 × 인분</span></p>${sb.menus.map((m, i) => `
     <div class="m-row" data-i="${i}" title="${esc(m.src || '')}">
-      <div class="m-name"><b>${esc(m.n)}</b><span class="u">${esc(m.unit)}</span><span class="src ${m.lvl || (m.ok ? 'okpo' : 'guess')}">${esc(m.badge || (m.ok ? '확인' : '가정'))}</span></div>
+      <div class="m-name"><b>${esc(m.n)}</b><span class="u">${esc(m.unit)}</span><span class="src ${m.lvl || (m.ok ? 'okpo' : 'guess')}">${esc(m.badge || (m.ok ? '확인' : '가정'))}</span>${m.share < 1 ? `<span class="m-sh">손님 ${Math.round(m.share * 100)}%가 시킴</span>` : ''}</div>
       <div class="m-calc"><input class="m-p" type="number" min="0" step="500" value="${m.price}" aria-label="${esc(m.n)} 가격(원)"><span class="op">원 ×</span>
-        <input class="m-q" type="number" min="0" step="0.05" value="${fmtQ(m.qty * m.share)}" aria-label="${esc(m.n)} 1인 수량"><span class="op">=</span><span class="m-s"></span></div>
+        <input class="m-q" type="number" min="0" step="0.5" value="${fmtQ(m.qty)}" aria-label="${esc(m.n)} 인분"><span class="op">인분 =</span><span class="m-s"></span></div>
     </div>`).join('')}
+    <button type="button" class="m-add" id="x-menu-add">+ 메뉴 추가</button>
     <div class="m-tot"><span>1인 지출</span><b id="x-basket"></b></div>
-    <p class="x-menu-note">1인 수량 = 한 사람이 평균으로 시키는 양(2~3명이 한 접시를 나누면 0.4). 근거: ${esc(menuSrcShort(sb))}</p>`;
+    <p class="x-menu-note">인분 = 시키는 사람 한 명이 먹는 양(혼자 한 개 1인분, 둘이 한 개를 나누면 0.5인분, 1.5인분처럼 반 단위도 가능). '손님 70%가 시킴'처럼 적힌 메뉴는 금액에 그 비율을 곱합니다(가정). '+ 메뉴 추가'로 내 가게 메뉴를 더 넣을 수 있습니다(직접 넣은 값). 근거: ${esc(menuSrcShort(sb))}</p>`;
   updateBasket();
 }
 // 근거 수준 배지: 옥포(옥포 업소 가격) · 거제(옥포 밖 거제·옆 동) · 전국/경남(정가·평균) · 카드(카드 결제 건당으로 계산) · 가정
@@ -1134,13 +1149,15 @@ function menuSrcShort(sb) {
 }
 function readMenus() {
   const sb = SUB[$('x-cat').value];
-  return [...document.querySelectorAll('#x-menu .m-row')].map(tr => { const m = sb.menus[+tr.dataset.i];
+  return [...document.querySelectorAll('#x-menu .m-row')].map(tr => {
     const p = Math.max(0, +tr.querySelector('.m-p').value || 0), q = Math.max(0, +tr.querySelector('.m-q').value || 0);
-    return { n: m.n, unit: m.unit, price: p, qty: q, share: 1, ok: m.ok && p === m.price }; });
+    if (tr.classList.contains('m-own')) return { n: tr.querySelector('.m-n').value.trim() || '추가 메뉴', unit: '', price: p, qty: q, share: 1, ok: false };
+    const m = sb.menus[+tr.dataset.i];
+    return { n: m.n, unit: m.unit, price: p, qty: q, share: m.share, ok: m.ok && p === m.price }; });
 }
 function updateBasket() {
   const ms = readMenus(); let tot = 0;
-  document.querySelectorAll('#x-menu .m-row').forEach((tr, i) => { const v = ms[i].price * ms[i].qty; tot += v; tr.querySelector('.m-s').textContent = v ? wonX(Math.round(v / 100) * 100) : '—'; });
+  document.querySelectorAll('#x-menu .m-row').forEach((tr, i) => { const v = ms[i].price * ms[i].qty * ms[i].share; tot += v; tr.querySelector('.m-s').textContent = v ? wonX(Math.round(v / 100) * 100) : '—'; });
   $('x-basket').textContent = wonX(Math.round(tot / 100) * 100);
 }
 function runExp() {
@@ -1189,7 +1206,7 @@ function renderExp(r, sub, price, ms, bi, floor, menus, hrs) {
   const nbTxt = !r.nbCount ? `반경 250m 안에 ${ck} 가게가 없습니다.` :
     (r.wd.nbSame && nbBig) ? `${nbN}: 평일 손님 ${r.wd.nb >= 0 ? '+' : ''}${Math.round(r.wd.nb)}명 (다섯 번 모두 같은 방향)`
     : `${nbN}: 변화가 작거나 돌릴 때마다 달라 판단하기 어렵습니다(${r.wd.nb >= 0 ? '+' : ''}${Math.round(r.wd.nb)}명).`;
-  const bk = menus.filter(m => m.qty > 0 && m.price > 0).map(m => `${esc(m.n)} ${wonX(m.price)} × ${fmtQ(m.qty)}`).join(' + ');
+  const bk = menus.filter(m => m.qty > 0 && m.price > 0).map(m => `${esc(m.n)} ${wonX(m.price)} × ${fmtQ(m.qty)}인분${m.share < 1 ? `(손님 ${Math.round(m.share * 100)}%)` : ''}`).join(' + ');
   const same = HIST.filter(h => h.bi === bi && h.floor === floor);
   const cmp = same.length > 1 ? `<table class="exp-cmp"><tr><th>업종</th><th>1인</th><th>평일<br><small class="th-u">하루</small></th><th>주말<br><small class="th-u">하루</small></th><th>평일 매출<br><small class="th-u">하루</small></th></tr>${same.map(h => `<tr><td>${esc(SUB[h.sub].ko)}${h.hrs ? `<span class="cmp-h">${hoursTxt(h.hrs)}</span>` : ''}</td><td>${wonX(h.price)}</td><td>${Math.round(h.r.wd.v)}명</td><td>${Math.round(h.r.we.v)}명</td><td>${won(h.r.wd.won)}</td></tr>`).join('')}</table>` : '<p class="exp-tip">업종이나 영업시간을 바꿔 한 번 더 돌리면 이 자리에서 비교표가 생깁니다.</p>';
   $('x-out').innerHTML = `
