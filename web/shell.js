@@ -37,6 +37,21 @@ function place() {
 place();
 dispatchEvent(new Event('resize'));   // 캔버스가 기록지 오른쪽으로 좁아졌으니 지도를 다시 맞춘다
 
+// 기록지 접기 단추(사이드바 모양, 2026-11-28 팀 의견): 누르면 기록지가 왼쪽으로 들어가고 지도가 화면 전체, 다시 누르면 나옴
+{
+  const tog = document.createElement('button'); tog.type = 'button'; tog.className = 'rail-tog';
+  tog.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="15" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M9.5 4.5v15M5.6 8.5h1.6M5.6 11h1.6M5.6 13.5h1.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+  const sync = () => { const off = document.body.classList.contains('rail-off'); const t = off ? '기록지 펼치기' : '기록지 접고 지도 크게 보기';
+    tog.setAttribute('aria-label', t); tog.title = t; tog.setAttribute('aria-expanded', String(!off)); };
+  let rz = 0; const refit = () => { clearTimeout(rz); dispatchEvent(new Event('resize')); rz = setTimeout(() => dispatchEvent(new Event('resize')), 280); };   // 지도 캔버스 너비가 바뀜
+  tog.onclick = () => { document.body.classList.toggle('rail-off'); sync(); refit(); };
+  document.body.appendChild(tog); sync();
+  // 접힌 채로 건물을 누르면 정보가 기록지 자리에 열리므로 기록지를 다시 편다
+  const info = $('info');
+  if (info) new MutationObserver(() => { if (!info.hidden && document.body.classList.contains('rail-off')) { document.body.classList.remove('rail-off'); sync(); refit(); } })
+    .observe(info, { attributes: true, attributeFilter: ['hidden'] });
+}
+
 // 지도 위 사용법 안내 띠: 한 번이라도 지도를 만지면(끌기·바퀴·손가락) 또는 15초 뒤 사라진다(app.js 는 누를 때만 숨김)
 const hint = $('hint'), cv = $('c');
 if (hint) {

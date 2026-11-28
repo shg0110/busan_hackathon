@@ -23,7 +23,7 @@
   </header>
 
   <section class="r-sec" id="r-where" aria-labelledby="h-where">
-    <h2 id="h-where">어디를 볼까요</h2>
+    <h2 id="h-where"><i class="step-n" aria-hidden="true">1</i>어느 거리에 열어 볼까요</h2>
   </section>
 
   <section class="r-sec" id="r-now">
@@ -52,8 +52,9 @@
     </section>
   </section>
 
-  <section class="r-sec" id="r-layers" aria-labelledby="h-layers">
-    <h2 id="h-layers">지도에 보이는 것</h2>
+  <!-- 지도 표시 설정: 처음 보는 사람에게는 필요 없어서 접어 둔다(2026-11-28 '정보가 너무 많다' 평가) -->
+  <details class="r-sec" id="r-layers">
+    <summary id="h-layers">지도 표시 설정 <small>켜고 끄기 · 그림 읽는 법</small></summary>
     <div id="layers" role="group" aria-labelledby="h-layers">
       <label class="tog"><input type="checkbox" id="L-est"><span>층수를 추정한 건물</span></label>
       <label class="tog"><input type="checkbox" id="L-names" checked><span>지명</span></label>
@@ -87,15 +88,15 @@
       </ul>
       <p>지도에는 공공 자료에 있는 것만 그렸습니다. 다만 공원·숲 안의 나무는 녹지(OpenStreetMap)를 나타내는 그림이라, 한 그루씩의 자리는 실제와 다릅니다. 버스 정류장과 주차장은 실제 위치이고, 정류장의 쉼터·벤치·쓰레기통은 OpenStreetMap에 ‘있음’으로 적힌 곳에만 그렸습니다.</p>
     </details>
-  </section>
+  </details>
 </aside>
 
 <!-- 건물 정보 -->
 <aside id="info" aria-live="polite" hidden>
   <div class="info-head">
     <h2 id="i-title"></h2>
-    <button id="i-close" class="icon-btn" aria-label="닫기" title="닫기">
-      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    <button id="i-close" class="icon-btn" aria-label="돌아가기" title="돌아가기">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 4.5L7 10l5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="i-back-t">돌아가기</span>
     </button>
   </div>
   <div id="i-body"></div>

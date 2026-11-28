@@ -234,32 +234,49 @@ function strip(s) {
     <text x="2" y="${H - 2}" class="t">${lab('R')} 쪽 ↓ 위층</text></svg>`;
 }
 const nEmptyB = (s) => new Set(s.slots.filter(x => x.fl.some(f => f[1] === 'empty')).map(x => x.b)).size;
+// 결과 장: 주 버튼을 누르면 기록지가 이 장으로 넘어간다(고르는 장·거리 목록·지도 설정은 가림). 2026-11-28 '왼쪽에서 다 고르고 다음 장에서 결과' 평가 반영
+const RES_HTML = `
+    <div class="pg-res" hidden>
+      <button type="button" class="res-back" id="rk-back"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 4.5L7 10l5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>조건 바꾸기</button>
+      <h2 class="res-title" id="res-title"></h2>
+      <p class="res-cond" id="res-cond"></p>
+      <div id="rk-out"></div>
+      <div class="cta cta-res">
+        <button type="button" class="btn-sub" id="rk-again">다시 돌려 보기</button>
+        <button type="button" class="btn-primary" id="rk-play" title="가상 손님이 하루 동안 거리를 오가는 모습을 지도 위에서 재생합니다">손님 오가는 모습 보기</button>
+      </div>
+    </div>`;
 function render(s) {
   const c = s.count, w = s.whole;
   panel.innerHTML = `
-    <div class="st-head"><h2>${esc(s.ko)}</h2><button class="icon-btn" id="st-close" aria-label="상권 전체로" title="상권 전체로"><svg viewBox="0 0 20 20"><path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
-    <p class="st-line"><b>${s.len.toLocaleString('ko-KR')}m</b> 거리에 길가 건물 <b>${s.slots.length}채</b>.<br>상가 층 ${w.floors}개 가운데 <mark>${w.empty}개</mark>에 가게가 없습니다.${w.empty_area_pct != null ? ` 면적으로는 ${w.empty_area_pct}%입니다.` : ''}</p>
+   <div class="pg-pick">
+    <details class="st-more"><summary><span class="st-sum">상가 층 ${w.floors}개 중 <mark>${w.empty}개</mark>가 비어 있음</span><span class="more-t">자세히</span></summary>
     <p class="st-sub">길 양쪽 건물을 층마다 <span class="lgd">${['open', 'empty', 'unknown', 'home', 'other', 'nodata'].map(k => `<span class="lg-it"${TIP_LG[k] ? ` title="${TIP_LG[k]}"` : ''}><i style="background:${COL[k]}${k === 'nodata' ? ';box-shadow:inset 0 0 0 1px #adb5bd' : ''}"></i>${KO_LG[k]}</span>`).join(' ')}</span></p>
     ${strip(s)}
-    <p class="st-tip">칸을 누르면 그 건물로 갑니다. ${c.empty < w.empty ? `1층만 보면 빈 곳은 ${c.empty}곳뿐이라, 위층까지 봐야 실제 모습이 보입니다.` : `1층만 보면 빈 곳은 ${c.empty}곳입니다.`}</p>
+    <p class="st-tip">칸을 누르면 그 건물로 갑니다. ${c.empty < w.empty ? `1층만 보면 빈 곳은 ${c.empty}곳뿐이라, 위층까지 봐야 실제 모습이 보입니다.` : `1층만 보면 빈 곳은 ${c.empty}곳입니다.`}${w.empty_area_pct != null ? ` 빈 층은 면적으로 ${w.empty_area_pct}%입니다.` : ''}</p>
     <details class="st-how"><summary>어떻게 셌나요</summary><p>건축물대장 층별개요로 층마다 쓰임을 알아내고, 2026년 9월 상가정보에 그 층 가게가 있는지 맞춰 봤습니다. 상가 층 ${w.floors}개 중 영업 ${w.open}, 가게 없음 ${w.empty}, 확인 불가 ${w.unknown}입니다. ‘확인 불가’는 사무실·의원·학원처럼 가게인지 상가정보로 가릴 수 없는 층, ‘기타’는 주차장·공공시설처럼 상가도 집도 아닌 층, ‘자료 없음’은 건축물대장에 층별 쓰임 자료가 없는 층입니다. 길 왼쪽·오른쪽은 주소 건물번호 홀짝으로 나눴습니다(위치로 나눈 것과 ${s.sideCheck.known}곳 중 ${s.sideCheck.agree}곳 같음${s.sideCheck.fixed ? `, 다른 ${s.sideCheck.fixed}곳은 주소를 따름` : ''}).</p></details>
     <p class="st-sub">이 거리를 지나간 가상 손님 <span class="lgd" id="fl-lg"></span></p>
     <div id="st-flow"><p class="exp-wait">계산 중…</p></div>
-    <p class="st-sub">어느 빈 층에 열면 손님이 많을까</p>
-    <div class="st-rank">
-      <select id="rk-cat" aria-label="업종">${SIM.subOptions ? SIM.subOptions('viet') : ''}</select>
+    <p class="st-from">구간: ${esc(FROM[s.id] || s.note)}</p>
+    </details>
+    <h2 class="step-h"><i class="step-n" aria-hidden="true">2</i>어떤 가게를 열어 볼까요</h2>
+    <div class="st-rank st-form">
+      <label class="rk-l"><span class="sr">업종</span><select id="rk-cat" aria-label="업종">${SIM.subOptions ? SIM.subOptions('viet') : ''}</select></label>
       <div class="rk-hours"><label>여는 시각<select id="rk-open"></select></label><label>닫는 시각<select id="rk-close"></select></label></div>
-      <button class="btn-primary btn-main" id="rk-run">빈 층이 있는 ${nEmptyB(s)}채에 가게 열어 보기</button>
     </div>
-    <div id="rk-out"></div>
-    <p class="st-from">구간: ${esc(FROM[s.id] || s.note)}</p>`;
-  document.getElementById('st-close').onclick = () => choose('');
+    <div class="cta">
+      <button class="btn-primary btn-main" id="rk-run">결과 보기</button>
+      <p class="cta-note" id="rk-note"></p>
+    </div>
+   </div>${RES_HTML}`;
+  resWire();
   panel.querySelectorAll('rect[data-b]').forEach(r => { r.onclick = () => flyBuilding(+r.dataset.b); r.onkeydown = (e) => { if (e.key === 'Enter') flyBuilding(+r.dataset.b); }; });
   // 건물마다 가장 낮은 빈 층 하나(같은 건물 위층은 위치가 같아 결과도 같음)
   document.getElementById('rk-run').onclick = () => rank(s, s.slots.map(x => { const f = x.fl.filter(f => f[1] === 'empty').sort((a, c) => a[0] - c[0])[0]; return f ? { ...x, floor: f[0], area: f[2] } : null; }).filter(Boolean), '건물마다 가장 낮은 빈 층');
   // 주 버튼에 고른 업종을 넣어 누르기 전에 무엇을 하는지 알 수 있게: '빈 층이 있는 7채에 베트남 음식점 열어 보기'
+  // 버튼은 짧게('결과 보기'), 무엇을 하는지는 버튼 바로 아래 한 줄로
   const sel = document.getElementById('rk-cat'), runLabel = () => { const sb = SIM && SIM.SUB[sel.value];
-    document.getElementById('rk-run').textContent = `${nEmptyB(s)}채의 빈 층에 열어 보기`; };   // 업종은 바로 위 선택 칸에 보임(버튼은 한 줄로)
+    document.getElementById('rk-note').textContent = `빈 층이 있는 ${nEmptyB(s)}채에 열어 1년 남는 돈을 견줍니다`; };
   // 내 가게 영업시간: 업종을 바꾸면 그 업종 값으로 채우고, 직접 바꿔서 순위를 낼 수 있게
   const rkH = () => { if (SIM && SIM.fillHours) SIM.fillHours(document.getElementById('rk-open'), document.getElementById('rk-close'), sel.value); };
   sel.addEventListener('change', runLabel); sel.addEventListener('change', rkH); runLabel(); rkH();
@@ -301,16 +318,45 @@ function flow(s) {
 }
 // 자리 순위: owner = 이 계산을 시작한 화면(거리 또는 빈 1층 목록 LIST). 다른 화면으로 바뀌면(cur !== owner) 멈춘다.
 // slots = [{ b, floor, area, where?(자리 설명, 없으면 거리 왼쪽·오른쪽 위치), side, s }], pick = 각주에 쓸 '어느 자리를 골랐나'
+// ── 결과 장 넘기기 ──
+let rankTok = 0, lastRank = null;
+const rail = document.getElementById('rail');
+function showRes(on) {
+  const pick = panel.querySelector('.pg-pick'), res = panel.querySelector('.pg-res'); if (!res) return;
+  document.body.classList.toggle('res-mode', on); res.hidden = !on; if (pick) pick.hidden = on;
+  if (rail) rail.scrollTop = 0;
+  if (!on) { rankTok++; if (SIM && SIM.restore) SIM.restore(); const b = document.getElementById('rk-run'); if (b) b.disabled = false; clearRank(); simShow(false); need(); }
+}
+// 재생 막대(#sim)는 평소 숨기고(CSS: body.sim-on 이 아니고 접혀 있으면 안 보임), 결과 장의 '손님 오가는 모습 보기'로 한 줄짜리(접힌 채)로 띄워 재생한다
+function simShow(on) {
+  const sp = document.getElementById('sim'), fold = document.getElementById('sim-fold'), play = document.getElementById('sim-play'); if (!sp) return;
+  document.body.classList.toggle('sim-on', on);
+  if (on) { if (SIM && !SIM.playing && play) play.click(); }
+  else { if (SIM && SIM.playing && play) play.click(); if (!sp.classList.contains('folded') && fold) fold.click(); }
+  const b = document.getElementById('rk-play'); if (b) b.textContent = on ? '재생 닫기' : '손님 오가는 모습 보기';
+}
+// 다른 거리·목록으로 바꾸면 결과 장을 닫는다(계산 중이면 멈추고 재생 막대도 접음)
+function leaveRes() { if (!document.body.classList.contains('res-mode')) return; rankTok++; if (SIM && SIM.restore) SIM.restore(); simShow(false); document.body.classList.remove('res-mode'); }
+function resWire() {
+  const $ = (id) => document.getElementById(id);
+  $('rk-back').onclick = () => showRes(false);
+  $('rk-again').onclick = () => { if (lastRank) rank(...lastRank); };
+  $('rk-play').onclick = () => simShow(!document.body.classList.contains('sim-on'));
+}
 function rank(s, slots, pick) {
   const sub = document.getElementById('rk-cat').value, cfg = SIM.SUB[sub];   // 세부 업종 기본값(대표 메뉴 1인 지출·자리)
   const hrs = SIM.readHours(document.getElementById('rk-open'), document.getElementById('rk-close'));   // 내 가게 영업시간
   if (SIM.carryPlan) SIM.carryPlan({ sub, hrs, floors: new Map(slots.map(x => [x.b, x.floor])) });   // 순위 건물을 열면 같은 업종·시간·층으로 채움
   const out = document.getElementById('rk-out'), btn = document.getElementById('rk-run');
+  lastRank = [s, slots, pick]; const tok = ++rankTok; showRes(true); rankTok = tok;
+  const subKo = document.getElementById('rk-cat').selectedOptions[0].textContent.replace(/ \(옥포에 없음\)$/, '');
+  document.getElementById('res-title').textContent = `${s === LIST ? '고른 자리' : s.ko.split(' (')[0]}에 ${subKo} 가게를 열면`;
+  document.getElementById('res-cond').textContent = `영업 ${SIM.hoursTxt(hrs)} · 빈 자리 ${slots.length}곳 · 1년 남는 돈이 많은 순`;
+  for (const id of ['rk-again', 'rk-play']) document.getElementById(id).disabled = true;
   btn.disabled = true; const res = []; let i = 0; const t0 = performance.now(); clearRank(); need();
   out.innerHTML = `<p class="exp-wait">빈 층이 있는 ${slots.length}채에 차례로 가게를 열어 1년씩 돌려 보는 중입니다(계절마다 평일·쉬는 날).</p><div class="prog"><i style="width:0%"></i></div><p class="exp-wait" id="rk-p">0 / ${slots.length}</p>`;
-  out.scrollIntoView({ behavior: 'smooth', block: 'start' });   // 결과 자리가 기록지 아래 화면 밖이라 누른 사람이 진행을 못 봤음
   function next() {
-    if (cur !== s) return;
+    if (cur !== s || tok !== rankTok) return;   // 다른 화면으로 가거나 '조건 바꾸기'를 누르면 멈춤
     if (i >= slots.length) {
       SIM.restore(); btn.disabled = false;
       res.sort((a, b) => b.r.profit - a.r.profit);   // 1년 남는 돈 많은 순
@@ -327,7 +373,8 @@ function rank(s, slots, pick) {
         <p class="exp-foot">${esc(document.getElementById('rk-cat').selectedOptions[0].textContent)} · 영업 ${SIM.hoursTxt(hrs)} · 1인 ${SIM.wonX(cfg.basket)}(대표 메뉴 기준) · ${esc(pick)}, 1년 합계(2·5·8·11월을 평일·쉬는 날로 돌리고 같은 계절 다른 달은 사람 수 배율로 맞춤, 사람 1:1). 남는 돈 = 매출 − 임대료(R-ONE 옥포 층별 임대료 × 면적) − 임대료 밖 비용(매출의 83.6%, 농식품부 외식업체 경영실태조사). 숫자 아래 작은 범위는 돌릴 때마다 생기는 차이이고, 남는 돈 범위가 겹치면 같은 순위('비슷함'), 2층 이상은 덜 고르고 앞을 지나는 사람이 많을수록 더 고르는 것(가정 β=${SIM.passby.beta})을 반영 · 계산 ${((performance.now() - t0) / 1000).toFixed(1)}초. 행을 누르면 그 건물로 가서 자세히 실험할 수 있습니다. 가상 인물로 자리끼리 비교한 값입니다.</p>`;
       out.querySelectorAll('tr[data-b]').forEach(tr => tr.onclick = () => flyBuilding(+tr.dataset.b));
       res.slice().reverse().forEach(rankLabel); fitRank(res);   // 거꾸로 넣어야(unshift) 1위가 먼저 자리를 잡음
-      out.scrollIntoView({ behavior: 'smooth', block: 'start' });   // 끝나면 결과 맨 위로, 지도엔 순위 번호
+      tidyRes(out);
+      for (const id of ['rk-again', 'rk-play']) document.getElementById(id).disabled = false;
       need(); return;
     }
     const x = slots[i++];
@@ -336,6 +383,16 @@ function rank(s, slots, pick) {
     setTimeout(next, 0);
   }
   setTimeout(next, 30);
+}
+
+// 결과 다듬기: 표 위 첫 줄을 강조하고, 긴 설명 두 문단(.exp-nb·.exp-foot)은 '어떻게 계산했나요' 접기 안으로
+function tidyRes(out) {
+  const ps = [...out.querySelectorAll('.exp-nb, .exp-foot')]; if (!ps.length) return;
+  const d = document.createElement('details'); d.className = 'st-how res-how';
+  d.innerHTML = '<summary>어떻게 계산했나요</summary>'; ps.forEach(p => d.appendChild(p));
+  out.appendChild(d);
+  const tip = document.createElement('p'); tip.className = 'res-tip'; tip.textContent = '줄을 누르면 그 건물로 갑니다. 지도 위 번호가 순위입니다.';
+  const t = out.querySelector('table'); if (t) t.after(tip);
 }
 
 // ── 빈 1층 자리 목록(상권 전체) ───────────────────────────
@@ -416,10 +473,12 @@ function listTable() {
 }
 function openList() {
   if (!SIM || !window.FLOORS) return;
+  leaveRes();
   cur = LIST; clearRank(); drawBand(null); M.tint(null); M.select(-1);
   tabs.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.id === '')));
   document.body.classList.remove('street-mode'); document.body.classList.add('list-mode');
   panel.innerHTML = `
+   <div class="pg-pick">
     <div class="st-head"><h2>빈 1층 자리 목록</h2><button class="icon-btn" id="st-close" aria-label="목록 닫기" title="목록 닫기"><svg viewBox="0 0 20 20"><path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
     <p class="st-line">상권 안에서 가게가 없는 1층을 모았습니다. 줄을 누르면 그 건물로 가고, 왼쪽 네모로 최대 10곳을 골라 한꺼번에 열어 볼 수 있습니다.</p>
     <div class="ls-f">
@@ -438,8 +497,8 @@ function openList() {
       <p class="rk-why" id="rk-why"></p>
       <button class="btn-primary btn-main" id="rk-run"></button>
     </div>
-    <div id="rk-out"></div>`;
-  panel.hidden = false;
+   </div>${RES_HTML}`;
+  panel.hidden = false; resWire();
   const $ = (id) => document.getElementById(id), sel = $('rk-cat');
   $('st-close').onclick = () => choose('');
   $('ls-sort').value = LS.sort; $('ls-st').value = LS.st; $('ls-area').value = String(LS.area); $('ls-up').checked = LS.upper;
@@ -503,6 +562,7 @@ function streetUI(on) {
   }
 }
 function choose(id, noFly) {
+  leaveRes();
   const s = ST.find(x => x.id === id) || null; cur = s; clearRank(); document.body.classList.remove('list-mode');
   tabs.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.id === (s ? s.id : ''))));
   document.body.classList.toggle('street-mode', !!s);
