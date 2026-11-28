@@ -1070,7 +1070,9 @@ MP.infoExtra = (b, bi) => {
   const fl = window.FLOORS && window.FLOORS.b[String(bi)];
   const empties = fl ? fl.filter(f => f.state === 'empty') : [];
   if (!empties.length) return base;
-  const opts = empties.map(f => `<option value="${f.n}">${f.n}층 · ${Math.round(f.area || 0)}㎡</option>`).join('');
+  const cf = CARRY && CARRY.floors.get(bi);   // 자리 순위에서 고른 층·업종을 이어받음
+  if (cf) lastSub = CARRY.sub;
+  const opts = empties.map(f => `<option value="${f.n}"${f.n === cf ? ' selected' : ''}>${f.n}층 · ${Math.round(f.area || 0)}㎡</option>`).join('');
   return base + `<div class="exp" id="exp">
     <p class="exp-title">이 빈 층에 가게 열어 보기</p>
     <div class="exp-grid">
@@ -1088,6 +1090,10 @@ MP.infoExtra = (b, bi) => {
 };
 const HIST = [];   // 같은 자리에서 바꿔 본 결과(업종 비교표)
 let lastSub = 'hof';   // 기획 비교 기본: 옛날식 호프
+// 자리 순위(street.js rank)에서 고른 업종·영업시간·층: 순위에 든 건물을 열면 '가게 열어 보기' 칸을 이 값으로 채운다
+// { sub, hrs: [여는, 닫는(분)], floors: Map(건물 번호 → 층) }. 다음 순위 계산이 덮어쓴다
+let CARRY = null;
+const carryPlan = (p) => { CARRY = p; };
 document.addEventListener('click', (e) => {
   if (e.target.closest && e.target.closest('#x-run')) runExp();
 });
@@ -1129,7 +1135,9 @@ function hoursNote() { const el = $('x-hours-note'); if (!el) return; const sub 
 function fillDefaults() {
   const sb = SUB[$('x-cat').value]; if (!sb) return;
   $('x-seats').value = sb.seats;
-  fillHours($('x-open'), $('x-close'), $('x-cat').value); hoursNote();
+  fillHours($('x-open'), $('x-close'), $('x-cat').value);
+  if (CARRY && CARRY.sub === $('x-cat').value && CARRY.floors.has(MP.selected)) { $('x-open').value = CARRY.hrs[0]; $('x-close').value = CARRY.hrs[1]; }
+  hoursNote();
   $('x-menu').innerHTML = `<p class="x-menu-h">대표 메뉴 <span>가격 × 인분</span></p>${sb.menus.map((m, i) => `
     <div class="m-row" data-i="${i}" title="${esc(m.src || '')}">
       <div class="m-name"><b>${esc(m.n)}</b><span class="u">${esc(m.unit)}</span><span class="src ${m.lvl || (m.ok ? 'okpo' : 'guess')}">${esc(m.badge || (m.ok ? '확인' : '가정'))}</span>${m.share < 1 ? `<span class="m-sh">손님 ${Math.round(m.share * 100)}%가 시킴</span>` : ''}</div>
@@ -1578,6 +1586,6 @@ uiHooks.push(() => { updOcc(false); renderLive(false); });
 $('sim-play').addEventListener('click', () => { if (!playing) { updOcc(true); renderLive(true); } });   // 멈춘 순간 값으로 맞춤(재생 중엔 0.25~0.3초마다)
 updOcc(true);
 
-window.__sim = { demandTxt, _pass: { PASSF, nearest, passbyAt, frontFlow, get mean() { return PASS_MEAN; } }, get passby() { return { beta: PASSBY, ms: PASSBY_MS, mean: PASS_MEAN }; }, get playing() { return playing; }, get _fig() { return figMesh; }, get cfgVer() { return TS.ver; }, TS, applyTS, _catwin: CAT_WIN, hoursOf, fillHours, readHours, hoursTxt, _shops: () => SHOPS, _active: () => ACTIVE, _md: { MDX, MDZ, NX, NZ, NSW, NWD }, peakTxt, _ck: CK, runDay, experiment, seek, nodesNear, flowDay, trySlot, nodeFlow, nodeFlowAsync, restore: () => { drawDirty = true; need(); }, won, wonX, GROUPS, SUB, SUBS_OF, subOptions, NAT,
+window.__sim = { demandTxt, carryPlan, _pass: { PASSF, nearest, passbyAt, frontFlow, get mean() { return PASS_MEAN; } }, get passby() { return { beta: PASSBY, ms: PASSBY_MS, mean: PASS_MEAN }; }, get playing() { return playing; }, get _fig() { return figMesh; }, get cfgVer() { return TS.ver; }, TS, applyTS, _catwin: CAT_WIN, hoursOf, fillHours, readHours, hoursTxt, _shops: () => SHOPS, _active: () => ACTIVE, _md: { MDX, MDZ, NX, NZ, NSW, NWD }, peakTxt, _ck: CK, runDay, experiment, seek, nodesNear, flowDay, trySlot, nodeFlow, nodeFlowAsync, restore: () => { drawDirty = true; need(); }, won, wonX, GROUPS, SUB, SUBS_OF, subOptions, NAT,
   graph: { NX, NZ, ADJ, NN }, selectAgent, pickAt, occNow, get selAgent() { return curSel(); }, get scen() { return scen; }, get A() { return A; }, get W() { return W; }, SHOPS, CFG, nodes: NN, get t() { return simT; } };
 })();
