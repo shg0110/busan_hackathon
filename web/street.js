@@ -287,6 +287,7 @@ function flow(s) {
 function rank(s, slots, pick) {
   const sub = document.getElementById('rk-cat').value, cfg = SIM.SUB[sub];   // 세부 업종 기본값(대표 메뉴 1인 지출·자리)
   const hrs = SIM.readHours(document.getElementById('rk-open'), document.getElementById('rk-close'));   // 내 가게 영업시간
+  if (SIM.carryPlan) SIM.carryPlan({ sub, hrs, floors: new Map(slots.map(x => [x.b, x.floor])) });   // 순위 건물을 열면 같은 업종·시간·층으로 채움
   const out = document.getElementById('rk-out'), btn = document.getElementById('rk-run');
   btn.disabled = true; const res = []; let i = 0; const t0 = performance.now(); clearRank(); need();
   out.innerHTML = `<p class="exp-wait">빈 층이 있는 ${slots.length}채에 차례로 가게를 열어 하루씩 돌려 보는 중입니다(평일·주말 3번씩).</p><div class="prog"><i style="width:0%"></i></div><p class="exp-wait" id="rk-p">0 / ${slots.length}</p>`;
