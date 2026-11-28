@@ -117,7 +117,7 @@ function flyTo(bi) {
   requestAnimationFrame(f);
   M.select(bi);
 }
-function nextTour() { if (!tour.length) return; tourAt = (tourAt + 1) % tour.length; flyTo(tour[tourAt]);
+function nextTour() { if (!tour.length) return; tourAt = (tourAt + 1) % tour.length; M.infoLeftNext = true; flyTo(tour[tourAt]);   // 왼쪽 단추로 연 건물: 정보창을 왼쪽 팝업으로(street.js)
   document.getElementById('tour-n').textContent = `${tourAt + 1} / ${tour.length}`; }
 document.getElementById('tour-n').textContent = `${tour.length}곳`;
 // 누르면 빈 1층 자리 목록(street.js openList)을 연다. 목록을 못 쓰면(시뮬·거리 자료 없음) 예전처럼 넓은 순으로 한 곳씩 날아가 정보창의 '이 빈 층에 가게 열어 보기'(#exp)가 보이게
