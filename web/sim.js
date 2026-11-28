@@ -20,7 +20,7 @@ const CFG0 = {
     worker:   { ko: '조선소 통근자',   col: '#1c64f2', wd: 3000, we: 1800, src: '가정' },
     foreign:  { ko: '외국인 근로자',   col: '#7048e8', wd: 1500, we: 2200, src: '가정' },
     resident: { ko: '주민',           col: '#9a6236', wd: 3500, we: 3800, src: '가정' },
-    tourist:  { ko: '주말 방문객',     col: '#d6336c', wd: 0,    we: 600,  src: '가정' },
+    tourist:  { ko: '관광객',          col: '#d6336c', wd: 0,    we: 600,  src: '가정' },
   },
   shift: { in: [390, 460], out: [1020, 1110], src: '가정(근거 미확인)' },   // 출근 06:30~07:40, 퇴근 17:00~18:30
   // 업종: 가격(1인 원)·자리·머무는 시간(분)·영업시간(분, 1440 넘으면 다음 날)
@@ -753,7 +753,7 @@ function drawFigures(n) {
 // ── 화면: 하루 재생 패널 ─────────────────────────────────────
 const hm = (t) => { const d = t >= 1440, m = Math.floor(t) % 1440; return (d ? '다음 날 ' : '') + String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
 const wonX = (v) => Math.round(v).toLocaleString('ko-KR') + '원';   // 메뉴·1인 지출은 원 단위 그대로
-function won(v) { if (v >= 1e8) return (v / 1e8).toFixed(v >= 1e9 ? 1 : 2) + '억 원'; if (v >= 1e4) return Math.round(v / 1e4).toLocaleString('ko-KR') + '만 원'; return Math.round(v).toLocaleString('ko-KR') + '원'; }
+function won(v) { if (v < 0) return '−' + won(-v); if (v >= 1e8) return (v / 1e8).toFixed(v >= 1e9 ? 1 : 2) + '억 원'; if (v >= 1e4) return Math.round(v / 1e4).toLocaleString('ko-KR') + '만 원'; return Math.round(v).toLocaleString('ko-KR') + '원'; }
 // 재생 속도: 배속을 직접 정함. 1배 = 1초에 15분(하루 약 1분 24초). 0.25배 ~ 10배, −·+ 단추는 자주 쓰는 배속으로 한 단계씩
 const BASE_MIN = 15, MULT_MIN = 0.25, MULT_MAX = 10, MULT_STEPS = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 6, 8, 10];
 const fmtMult = (m) => (Math.round(m * 100) / 100).toString();
